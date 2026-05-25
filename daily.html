@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Daily — Kanban</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0e0f11;--bg2:#141518;--bg3:#1c1e22;--bg4:#242629;
+  --border:#2a2c31;--border2:#363940;
+  --text:#e8e9eb;--text2:#9a9da6;--text3:#5a5d66;
+  --blue:#4f8ef7;--blue-dim:#1a2d52;
+  --green:#3ecf8e;--green-dim:#0d3326;
+  --amber:#f7c35a;--amber-dim:#3d2e0a;
+  --red:#f76f6f;--red-dim:#3d1010;
+  --purple:#a78bfa;--purple-dim:#251d45;
+  --radius:10px;--radius-lg:14px;
+  --shadow:0 2px 14px rgba(0,0,0,.45);
+  --hdr:50px;
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow:hidden}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;line-height:1}
+input,textarea,select{font-family:inherit;color:inherit;background:none}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+/* ── APP SHELL ── */
+.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+/* ── HEADER ── */
+.header{display:flex;align-items:center;gap:6px;padding:0 12px;height:var(--hdr);border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;z-index:20;position:relative}
+.logo{font-size:18px;font-weight:600;letter-spacing:-.5px;color:var(--text);flex-shrink:0;margin-right:2px;cursor:default}
+.logo span{color:var(--blue)}
+.stat-pill{display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:500;border:1px solid var(--border);white-space:nowrap;flex-shrink:0}
+.stat-pill.red{color:var(--red);border-color:var(--red-dim);background:var(--red-dim)}
+.stat-pill.green{color:var(--green);border-color:var(--green-dim);background:var(--green-dim)}
+
+/* ── ICON BUTTON ── */
+.ibtn{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);color:var(--text2);transition:background .12s,color .12s,border-color .12s;flex-shrink:0;position:relative;font-size:15px;padding:0}
+.ibtn:hover{background:var(--bg3);color:var(--text)}
+.ibtn.active{background:var(--blue-dim);border-color:var(--blue);color:var(--blue)}
+.ibtn.primary{background:var(--blue);border-color:var(--blue);color:#fff;font-size:18px}
+.ibtn.primary:hover{opacity:.88}
+
+/* ── TOOLTIP ── */
+[data-tip]{position:relative}
+[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);color:var(--text);font-size:11px;font-weight:500;padding:4px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+[data-tip]:hover::before{content:'';position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--border2);pointer-events:none;z-index:9999}
+
+/* ── SEARCH ── */
+.search-wrap{position:relative;display:flex;align-items:center}
+.search-inp{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:5px 10px 5px 32px;font-size:13px;color:var(--text);width:0;opacity:0;pointer-events:none;transition:width .22s ease,opacity .18s;outline:none;position:absolute;left:0}
+.search-inp.open{width:180px;opacity:1;pointer-events:all;position:static;padding-left:32px}
+.search-inp:focus{border-color:var(--blue)}
+.search-ico-wrap{position:relative;display:flex;align-items:center}
+.search-inp.open + .search-ico-abs,
+.search-ico-abs{position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--text3);font-size:13px;z-index:1}
+
+/* ── BOARD ── */
+.board-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.board{display:flex;gap:10px;padding:12px;flex:1;overflow-x:auto;overflow-y:hidden;min-height:0;align-items:stretch}
+.board::-webkit-scrollbar{height:6px}
+
+/* ── COLUMN ── */
+.col{display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);min-width:230px;max-width:290px;flex:1;overflow:hidden;min-height:0;transition:opacity .15s,transform .15s,border-color .15s}
+.col.col-dragging{opacity:.4;transform:scale(.97)}
+.col.col-drop-target{border-color:var(--blue);background:rgba(79,142,247,.04)}
+.col.card-drop-over{outline:2px solid var(--blue);outline-offset:-2px;background:rgba(79,142,247,.03)}
+.col-hdr{padding:9px 10px 7px;display:flex;align-items:center;gap:5px;flex-shrink:0;border-bottom:1px solid var(--border)}
+.col-grip{display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;cursor:grab;color:var(--text3);font-size:13px;transition:.12s;flex-shrink:0;user-select:none}
+.col-grip:hover{color:var(--text2);background:var(--bg4)}
+.col-grip.locked{cursor:default;color:var(--amber);font-size:12px}
+.col-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.col-title-wrap{flex:1;min-width:0;overflow:hidden}
+.col-title{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.col-title-inp{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text);background:var(--bg3);border:1px solid var(--blue);border-radius:5px;padding:1px 6px;outline:none;width:100%}
+.col-count{font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;background:var(--bg4);flex-shrink:0}
+.col-blocker-badge{display:flex;align-items:center;gap:2px;font-size:10px;color:var(--red);flex-shrink:0}
+.col-hdr-actions{display:flex;gap:1px;opacity:0;transition:.12s;flex-shrink:0}
+.col-hdr:hover .col-hdr-actions{opacity:1}
+.chbtn{width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);transition:.1s;border:none;background:none;cursor:pointer}
+.chbtn:hover{background:var(--bg4);color:var(--text2)}
+.chbtn.lock-on{color:var(--amber)}
+.chbtn.del-col:hover{color:var(--red);background:var(--red-dim)}
+.col-body{flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:5px}
+.col-add-btn{width:100%;padding:7px 8px;border-radius:7px;font-size:12px;color:var(--text3);border:1px dashed var(--border);background:transparent;transition:.15s;text-align:left;display:flex;align-items:center;gap:5px;flex-shrink:0;margin-top:2px;cursor:pointer}
+.col-add-btn:hover{border-color:var(--text2);color:var(--text2);background:var(--bg3)}
+.col-empty{text-align:center;padding:24px 12px;color:var(--text3);font-size:12px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;opacity:.7}
+
+/* ADD COLUMN BUTTON */
+.add-col-btn{min-width:180px;width:180px;border:1.5px dashed var(--border2);border-radius:var(--radius-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--text3);font-size:12px;cursor:pointer;transition:.18s;background:transparent;flex-shrink:0;padding:16px}
+.add-col-btn:hover{border-color:var(--text2);color:var(--text2);background:var(--bg2)}
+
+/* ── CARD ── */
+.card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 10px 8px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s;position:relative;user-select:none}
+.card:hover{border-color:var(--border2);box-shadow:var(--shadow);transform:translateY(-1px)}
+.card.dragging{opacity:.35;cursor:grabbing;transform:scale(.97)}
+.card.aged-stale{border-left:2px solid var(--amber)}
+.card.aged-old{border-left:2px solid var(--red)}
+.card-title{font-size:13px;font-weight:500;line-height:1.4;word-break:break-word;margin-bottom:6px}
+.card-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.priority{font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;letter-spacing:.3px}
+.p0{background:var(--red-dim);color:var(--red)}
+.p1{background:var(--amber-dim);color:var(--amber)}
+.p2{background:var(--blue-dim);color:var(--blue)}
+.card-age{font-size:10px;color:var(--text3);margin-left:auto;display:flex;align-items:center;gap:3px;flex-shrink:0}
+.card-age.age-fresh{color:var(--green)}
+.card-age.age-recent{color:var(--text3)}
+.card-age.age-stale{color:var(--amber)}
+.card-age.age-old{color:var(--red)}
+.expiry-badge{font-size:10px;color:var(--text3);display:flex;align-items:center;gap:2px}
+.expiry-badge.warn{color:var(--amber)}
+.card-blocker{margin-top:7px;padding:6px 8px;background:var(--red-dim);border:1px solid rgba(247,111,111,.2);border-radius:6px;font-size:11px;color:var(--red);line-height:1.4}
+.blocker-lbl{font-weight:700;font-size:10px;letter-spacing:.5px;margin-bottom:2px;display:flex;align-items:center;gap:3px}
+
+/* ── MODAL ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;animation:fadein .14s ease}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);width:100%;max-width:680px;max-height:92vh;display:flex;flex-direction:column;animation:slidein .17s ease}
+@keyframes slidein{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-hdr{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.modal-title{font-size:15px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.modal-body{flex:1;overflow-y:auto;padding:16px}
+.modal-foot{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
+.flabel{font-size:11px;font-weight:600;color:var(--text2);letter-spacing:.4px;text-transform:uppercase;margin-bottom:5px;display:block}
+.finput{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--text);outline:none;transition:border-color .15s}
+.finput:focus{border-color:var(--blue)}
+.fselect{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;color:var(--text);outline:none;cursor:pointer;appearance:none;-webkit-appearance:none}
+.fselect:focus{border-color:var(--blue)}
+.frow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px}
+.fgroup{margin-bottom:14px}
+.btn{padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;border:1px solid var(--border);background:var(--bg3);color:var(--text2);transition:.14s;cursor:pointer}
+.btn:hover{background:var(--bg4);color:var(--text)}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.primary:hover{opacity:.88}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── MD RENDER ── */
+.md-render{font-size:13px;line-height:1.7;color:var(--text)}
+.md-render h1{font-size:17px;font-weight:600;margin:4px 0 10px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:6px}
+.md-render h2{font-size:15px;font-weight:600;margin:14px 0 6px;color:var(--text)}
+.md-render h3{font-size:13px;font-weight:600;margin:10px 0 4px;color:var(--text2)}
+.md-render p{margin:4px 0 8px;color:var(--text2)}
+.md-render ul,.md-render ol{margin:4px 0 8px 18px;color:var(--text2)}
+.md-render li{margin:3px 0;line-height:1.6}
+.md-render strong{color:var(--text);font-weight:600}
+.md-render em{font-style:italic}
+.md-render del{color:var(--text3);text-decoration:line-through}
+.md-render code{background:var(--bg4);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-family:'DM Mono',monospace;font-size:11px;color:var(--blue)}
+.md-render pre{background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:12px;overflow-x:auto;margin:8px 0}
+.md-render pre code{background:none;border:none;padding:0;font-size:12px;color:var(--text2);display:block;line-height:1.6}
+.md-render blockquote{border-left:3px solid var(--purple);padding:5px 5px 5px 12px;margin:8px 0;color:var(--text3);font-style:italic;background:var(--purple-dim);border-radius:0 6px 6px 0}
+.md-render hr{border:none;border-top:1px solid var(--border);margin:12px 0}
+.md-render .md-spacer{height:4px}
+.md-render .blocker-block{background:var(--red-dim);border:1px solid rgba(247,111,111,.25);border-radius:8px;padding:10px 14px;margin:10px 0}
+.md-render .blocker-label{font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--red);display:block;margin-bottom:4px}
+.md-render .blocker-detail{color:var(--red);font-size:13px;line-height:1.5;opacity:.85}
+.md-render ul.task-list{list-style:none;margin-left:4px}
+.md-render .task-item{display:flex;align-items:flex-start;gap:6px;padding:2px 0}
+.md-render .task-item.done{color:var(--text3);text-decoration:line-through}
+.md-render .cb{font-size:14px;flex-shrink:0}
+.md-render a{color:var(--blue)}
+
+/* ── SHORTCUTS ── */
+.sc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:400}
+.sc-box{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:24px;width:320px;max-height:80vh;overflow-y:auto}
+.sc-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2)}
+.sc-row:last-child{border-bottom:none}
+.kbd{background:var(--bg4);border:1px solid var(--border2);border-radius:4px;padding:1px 7px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text)}
+
+/* ── TOAST ── */
+.toasts{position:fixed;bottom:70px;right:14px;z-index:600;display:flex;flex-direction:column;gap:5px;pointer-events:none}
+.toast{padding:8px 14px;border-radius:8px;font-size:12px;font-weight:500;animation:toastin .2s ease;background:var(--bg3);border:1px solid var(--border2);color:var(--text);pointer-events:auto}
+.toast.success{background:var(--green-dim);border-color:rgba(62,207,142,.3);color:var(--green)}
+.toast.error{background:var(--red-dim);border-color:rgba(247,111,111,.3);color:var(--red)}
+@keyframes toastin{from{transform:translateX(14px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ── CONFETTI ── */
+.cp{position:fixed;top:-10px;pointer-events:none;z-index:700;border-radius:2px;animation:fall linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg);opacity:0}}
+
+/* ── COLOR SWATCH ── */
+.swatch{width:20px;height:20px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:.12s;flex-shrink:0}
+.swatch:hover,.swatch.sel{border-color:var(--text);transform:scale(1.15)}
+
+/* ── FAB ── */
+.fab{position:fixed;bottom:18px;right:18px;width:44px;height:44px;border-radius:50%;background:var(--blue);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(79,142,247,.45);border:none;cursor:pointer;z-index:50;transition:transform .15s,box-shadow .15s}
+.fab:hover{transform:scale(1.08);box-shadow:0 6px 22px rgba(79,142,247,.55)}
+
+/* ── LIGHT THEME ── */
+body.light{--bg:#f3f3f5;--bg2:#fff;--bg3:#ededf0;--bg4:#e4e4e9;--border:#dcdce2;--border2:#c8c8d0;--text:#18181f;--text2:#555566;--text3:#9898aa;--blue-dim:#e5eeff;--green-dim:#e5f8f1;--amber-dim:#fef8e6;--red-dim:#feeaea;--purple-dim:#f1efff}
+
+/* ── SPIN ── */
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+.spin{animation:spin .6s linear}
+
+/* ── MOBILE RESPONSIVE ── */
+@media(max-width:640px){
+  :root{--hdr:46px}
+  .header{padding:0 8px;gap:4px}
+  .logo{font-size:16px}
+  .stats-desktop{display:none}
+  .search-inp.open{width:140px}
+  .board{padding:8px;gap:8px;flex-direction:column;overflow-x:hidden;overflow-y:auto;align-items:stretch}
+  .col{min-width:0;max-width:100%;width:100%;flex:none}
+  .modal{max-height:96vh;border-radius:14px 14px 0 0;align-self:flex-end;margin-top:auto;max-width:100%}
+  .overlay{align-items:flex-end;padding:0}
+  .frow{grid-template-columns:1fr 1fr}
+  .add-col-btn{min-width:0;width:100%}
+  .fab{bottom:14px;right:14px;width:40px;height:40px;font-size:18px}
+  .toasts{right:8px;bottom:60px}
+}
+@media(min-width:641px) and (max-width:900px){
+  .col{min-width:200px;max-width:250px}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+
+/* ─── CONSTANTS ─── */
+const PRIORITY_LIST=['P0','P1','P2','None'];
+const COL_PALETTE=['#4f8ef7','#f7c35a','#a78bfa','#3ecf8e','#f76f6f','#fb923c','#34d399','#e879f9','#60a5fa','#fbbf24','#a3e635','#f472b6'];
+const DEFAULT_COLS=[
+  {id:'TODO',   label:'Todo',        color:'#4f8ef7',locked:false},
+  {id:'INPROG', label:'In Progress', color:'#f7c35a',locked:false},
+  {id:'DISCUSS',label:'Discussion',  color:'#a78bfa',locked:false},
+  {id:'DONE',   label:'Done',        color:'#3ecf8e',locked:false},
+];
+
+/* ─── UTILS ─── */
+function uid(){return Math.random().toString(36).slice(2,10)}
+
+function daysDiff(iso){
+  if(!iso)return 0;
+  return Math.floor((Date.now()-new Date(iso).getTime())/(1000*60*60*24));
+}
+
+function hoursAgo(iso){
+  if(!iso)return 0;
+  return Math.floor((Date.now()-new Date(iso).getTime())/(1000*60*60));
+}
+
+function fmtAge(iso,now){
+  if(!iso)return'just now';
+  const ms=(now||Date.now())-new Date(iso).getTime();
+  const mins=Math.floor(ms/60000);
+  const hrs=Math.floor(ms/3600000);
+  const days=Math.floor(ms/86400000);
+  const wks=Math.floor(days/7);
+  const mos=Math.floor(days/30);
+  if(mins<1)return'just now';
+  if(mins<60)return mins+'m ago';
+  if(hrs<24)return hrs+'h ago';
+  if(days===1)return'1d ago';
+  if(days<7)return days+'d ago';
+  if(wks<5)return wks+'w ago';
+  return mos+'mo ago';
+}
+
+function ageClass(iso,now){
+  const hrs=Math.floor(((now||Date.now())-new Date(iso||0).getTime())/3600000);
+  if(hrs<6)return'age-fresh';
+  if(hrs<48)return'age-recent';
+  if(hrs<168)return'age-stale';
+  return'age-old';
+}
+
+function parseBlocker(content){
+  if(!content)return null;
+  const lines=content.split('\n');
+  const bi=lines.findIndex(l=>/^#{1,3}\s*BLOCKER\s*$/i.test(l)||/^\*\*BLOCKER\*\*/i.test(l)||/^blocker:/i.test(l));
+  if(bi===-1)return null;
+  const after=lines.slice(bi+1).filter(l=>l.trim()).slice(0,3).join(' ');
+  return after||'(no detail)';
+}
+
+/* ─── STORAGE ─── */
+function loadData(){
+  try{const d=localStorage.getItem('daily_v3');return d?JSON.parse(d):null}catch{return null}
+}
+function saveData(d){
+  try{localStorage.setItem('daily_v3',JSON.stringify(d))}catch{}
+}
+function defaultData(){
+  const cols=[...DEFAULT_COLS];
+  const cards={
+    TODO:[{id:uid(),task:'Set up project structure',priority:'P1',content:'',createdAt:new Date(Date.now()-4*86400000).toISOString(),expiryDays:null}],
+    INPROG:[{id:uid(),task:'Design API endpoints',priority:'P0',content:'## BLOCKER\nWaiting on auth spec from backend team.',createdAt:new Date(Date.now()-50*3600000).toISOString(),expiryDays:null}],
+    DISCUSS:[{id:uid(),task:'Tech stack decision',priority:'P2',content:'Comparing React vs Next.js for frontend.',createdAt:new Date(Date.now()-3*3600000).toISOString(),expiryDays:null}],
+    DONE:[{id:uid(),task:'Initial repo setup',priority:'P2',content:'',createdAt:new Date(Date.now()-8*86400000).toISOString(),expiryDays:7,doneAt:new Date(Date.now()-86400000).toISOString()}],
+  };
+  return{cols,cards};
+}
+
+/* ─── MARKDOWN ─── */
+function escH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function inlineRender(s){
+  return escH(s)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/~~(.+?)~~/g,'<del>$1</del>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function renderMd(text){
+  if(!text)return'';
+  const lines=text.split('\n');
+  const out=[];let i=0;
+  while(i<lines.length){
+    const line=lines[i];
+    if(line.startsWith('```')){
+      const lang=line.slice(3).trim();
+      const cl=[];i++;
+      while(i<lines.length&&!lines[i].startsWith('```')){cl.push(escH(lines[i]));i++;}
+      out.push(`<pre><code${lang?` class="lang-${lang}"`:''}>${cl.join('\n')}</code></pre>`);
+      i++;continue;
+    }
+    const hm=line.match(/^(#{1,3})\s+(.+)$/);
+    if(hm){
+      const ht=hm[1].length;
+      if(hm[2].trim().toUpperCase()==='BLOCKER'){
+        out.push(`<div class="blocker-block"><span class="blocker-label">🚫 BLOCKER</span>`);
+        i++;
+        const det=[];
+        while(i<lines.length&&lines[i].trim()&&!lines[i].startsWith('#')){det.push(inlineRender(lines[i]));i++;}
+        if(det.length)out.push(`<div class="blocker-detail">${det.join('<br/>')}</div>`);
+        out.push('</div>');continue;
+      }
+      out.push(`<h${ht}>${inlineRender(hm[2])}</h${ht}>`);i++;continue;
+    }
+    if(/^(---|\*\*\*|___)$/.test(line.trim())){out.push('<hr/>');i++;continue;}
+    if(line.startsWith('> ')){
+      const bq=[line.slice(2)];
+      while(i+1<lines.length&&lines[i+1].startsWith('> ')){i++;bq.push(lines[i].slice(2));}
+      out.push(`<blockquote>${bq.map(inlineRender).join('<br/>')}</blockquote>`);
+      i++;continue;
+    }
+    if(/^[-*+]\s/.test(line)){
+      const items=[];
+      while(i<lines.length&&/^[-*+]\s/.test(lines[i])){items.push(`<li>${inlineRender(lines[i].replace(/^[-*+]\s/,''))}</li>`);i++;}
+      out.push(`<ul>${items.join('')}</ul>`);continue;
+    }
+    if(/^\d+\.\s/.test(line)){
+      const items=[];
+      while(i<lines.length&&/^\d+\.\s/.test(lines[i])){items.push(`<li>${inlineRender(lines[i].replace(/^\d+\.\s/,''))}</li>`);i++;}
+      out.push(`<ol>${items.join('')}</ol>`);continue;
+    }
+    if(/^\[[ x]\]\s/.test(line)){
+      const items=[];
+      while(i<lines.length&&/^\[[ x]\]\s/.test(lines[i])){
+        const done=lines[i][1]==='x';
+        items.push(`<li class="task-item${done?' done':''}"><span class="cb">${done?'☑':'☐'}</span>${inlineRender(lines[i].replace(/^\[[ x]\]\s/,''))}</li>`);
+        i++;
+      }
+      out.push(`<ul class="task-list">${items.join('')}</ul>`);continue;
+    }
+    if(!line.trim()){out.push('<div class="md-spacer"></div>');i++;continue;}
+    const para=[line];
+    while(i+1<lines.length&&lines[i+1].trim()&&!/^(#{1,3}\s|[-*+]\s|\d+\.\s|> |\[[ x]\]|```|---|___|\*\*\*)/.test(lines[i+1])){
+      i++;para.push(lines[i]);
+    }
+    out.push(`<p>${para.map(inlineRender).join('<br/>')}</p>`);
+    i++;
+  }
+  return out.join('');
+}
+
+/* ─── MD EDITOR ─── */
+function MdEditor({value,onChange}){
+  const ta=useRef();
+  const [mode,setMode]=useState('write');
+
+  function applyFmt(type){
+    const el=ta.current;if(!el)return;
+    const s=el.selectionStart,e=el.selectionEnd;
+    const sel=value.slice(s,e),pre=value.slice(0,s),post=value.slice(e);
+    let nv,ns,ne;
+    const lineStart=value.lastIndexOf('\n',s-1)+1;
+    switch(type){
+      case 'bold':      nv=pre+'**'+sel+'**'+post; ns=s+2;ne=e+2;break;
+      case 'italic':    nv=pre+'*'+sel+'*'+post;   ns=s+1;ne=e+1;break;
+      case 'strike':    nv=pre+'~~'+sel+'~~'+post;  ns=s+2;ne=e+2;break;
+      case 'code':      nv=pre+'`'+sel+'`'+post;   ns=s+1;ne=e+1;break;
+      case 'codeblock':{const c='```\n'+(sel||'code')+'\n```';nv=pre+c+post;ns=s+4;ne=s+4+(sel||'code').length;break;}
+      case 'h1':        nv=value.slice(0,lineStart)+'# '+value.slice(lineStart);  ns=s+2;ne=e+2;break;
+      case 'h2':        nv=value.slice(0,lineStart)+'## '+value.slice(lineStart); ns=s+3;ne=e+3;break;
+      case 'h3':        nv=value.slice(0,lineStart)+'### '+value.slice(lineStart);ns=s+4;ne=e+4;break;
+      case 'quote':     nv=value.slice(0,lineStart)+'> '+value.slice(lineStart);  ns=s+2;ne=e+2;break;
+      case 'ul':        nv=value.slice(0,lineStart)+'- '+value.slice(lineStart);  ns=s+2;ne=e+2;break;
+      case 'ol':        nv=value.slice(0,lineStart)+'1. '+value.slice(lineStart); ns=s+3;ne=e+3;break;
+      case 'check':     nv=value.slice(0,lineStart)+'[ ] '+value.slice(lineStart);ns=s+4;ne=e+4;break;
+      case 'hr':        nv=pre+'\n---\n'+post;ns=ne=s+5;break;
+      case 'link':{const p=sel||'link text';nv=pre+'['+p+'](url)'+post;ns=s+1;ne=s+1+p.length;break;}
+      case 'blocker':{const b='## BLOCKER\n'+(sel||'Describe blocker')+'\n';nv=pre+b+post;ns=s+11;ne=s+11+(sel||'Describe blocker').length;break;}
+      default:return;
+    }
+    onChange(nv);
+    setTimeout(()=>{if(el){el.selectionStart=ns;el.selectionEnd=ne;el.focus();}},0);
+  }
+
+  function onKD(e){
+    const el=e.target;const s=el.selectionStart;
+    if(e.key==='Tab'){
+      e.preventDefault();
+      const nv=value.slice(0,s)+'  '+value.slice(el.selectionEnd);
+      onChange(nv);setTimeout(()=>{el.selectionStart=el.selectionEnd=s+2;},0);return;
+    }
+    if(e.key==='Enter'){
+      const lineStart=value.lastIndexOf('\n',s-1)+1;
+      const line=value.slice(lineStart,s);
+      const um=line.match(/^([-*+])\s(.+)/),om=line.match(/^(\d+)\.\s(.+)/),cm=line.match(/^\[[ x]\]\s(.+)/);
+      if(um){e.preventDefault();const ins='\n'+um[1]+' ';onChange(value.slice(0,s)+ins+value.slice(s));setTimeout(()=>{el.selectionStart=el.selectionEnd=s+ins.length;},0);}
+      else if(om){e.preventDefault();const ins='\n'+(parseInt(om[1])+1)+'. ';onChange(value.slice(0,s)+ins+value.slice(s));setTimeout(()=>{el.selectionStart=el.selectionEnd=s+ins.length;},0);}
+      else if(cm){e.preventDefault();const ins='\n[ ] ';onChange(value.slice(0,s)+ins+value.slice(s));setTimeout(()=>{el.selectionStart=el.selectionEnd=s+ins.length;},0);}
+    }
+  }
+
+  const TOOLS=[
+    {g:'fmt',items:[{id:'bold',l:'B',tip:'Bold',st:{fontWeight:700}},{id:'italic',l:'I',tip:'Italic',st:{fontStyle:'italic'}},{id:'strike',l:'S̶',tip:'Strikethrough'},{id:'code',l:'`',tip:'Inline code'}]},
+    {g:'hd', items:[{id:'h1',l:'H1',tip:'Heading 1'},{id:'h2',l:'H2',tip:'Heading 2'},{id:'h3',l:'H3',tip:'Heading 3'}]},
+    {g:'blk',items:[{id:'ul',l:'• List',tip:'Bullet list'},{id:'ol',l:'1. List',tip:'Ordered list'},{id:'check',l:'☐ Task',tip:'Checkbox task'},{id:'quote',l:'❝ Quote',tip:'Blockquote'},{id:'codeblock',l:'</> Block',tip:'Code block'},{id:'hr',l:'― Rule',tip:'HR'},{id:'link',l:'🔗 Link',tip:'Link'}]},
+    {g:'sp', items:[{id:'blocker',l:'🚫 Blocker',tip:'Insert BLOCKER',sp:true}]},
+  ];
+
+  const viewBtns=[['write','✏️','Write'],['split','▥','Split'],['preview','👁','Preview']];
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+      {/* toolbar */}
+      <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',background:'var(--bg4)',borderBottom:'1px solid var(--border)',padding:'4px 6px',gap:2,rowGap:3}}>
+        {TOOLS.map((g,gi)=>(
+          <React.Fragment key={g.g}>
+            {gi>0&&<div style={{width:1,height:14,background:'var(--border2)',margin:'0 3px',flexShrink:0}}/>}
+            {g.items.map(t=>(
+              <button key={t.id} title={t.tip}
+                style={{padding:'2px 7px',borderRadius:5,fontSize:11,fontWeight:600,fontFamily:"'DM Mono',monospace",cursor:'pointer',lineHeight:1.5,
+                  color:t.sp?'var(--red)':'var(--text2)',background:t.sp?'var(--red-dim)':'transparent',
+                  border:t.sp?'1px solid rgba(247,111,111,.3)':'none',...(t.st||{})}}
+                onMouseEnter={e=>{if(!t.sp){e.currentTarget.style.background='var(--bg3)';e.currentTarget.style.color='var(--text)';}}}
+                onMouseLeave={e=>{e.currentTarget.style.background=t.sp?'var(--red-dim)':'transparent';e.currentTarget.style.color=t.sp?'var(--red)':'var(--text2)';}}
+                onMouseDown={e=>{e.preventDefault();applyFmt(t.id);}}>
+                {t.l}
+              </button>
+            ))}
+          </React.Fragment>
+        ))}
+        <div style={{marginLeft:'auto',display:'flex',gap:2,flexShrink:0}}>
+          {viewBtns.map(([id,ico,lbl])=>(
+            <button key={id} title={lbl} onMouseDown={e=>{e.preventDefault();setMode(id);}}
+              style={{padding:'2px 8px',borderRadius:5,fontSize:11,fontWeight:600,cursor:'pointer',
+                background:mode===id?'var(--blue)':'transparent',color:mode===id?'#fff':'var(--text3)',border:'none',lineHeight:1.5}}>
+              {ico}
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* panes */}
+      <div style={{display:'flex',minHeight:210,maxHeight:360}}>
+        {(mode==='write'||mode==='split')&&(
+          <textarea ref={ta} onKeyDown={onKD}
+            style={{flex:1,background:'var(--bg3)',border:'none',borderRight:mode==='split'?'1px solid var(--border)':'none',
+              padding:'12px',fontSize:13,fontFamily:"'DM Mono',monospace",color:'var(--text)',
+              resize:'none',outline:'none',lineHeight:1.7,overflowY:'auto'}}
+            value={value} onChange={e=>onChange(e.target.value)}
+            placeholder={"Write notes, steps, blockers...\n\nSelect text → click toolbar to format\n## BLOCKER → shows on card preview\n[ ] task  •  - bullet  •  1. ordered"}
+            spellCheck={false}/>
+        )}
+        {(mode==='preview'||mode==='split')&&(
+          <div className="md-render"
+            style={{flex:1,background:'var(--bg3)',padding:'12px',overflowY:'auto'}}
+            dangerouslySetInnerHTML={{__html:value?renderMd(value):'<p style="color:var(--text3);font-style:italic;font-size:12px">Nothing to preview…</p>'}}/>
+        )}
+      </div>
+      {/* footer */}
+      <div style={{padding:'3px 10px',background:'var(--bg4)',borderTop:'1px solid var(--border)',fontSize:10,color:'var(--text3)',display:'flex',gap:10}}>
+        <span>Tab=2sp</span><span>Enter in list=continues</span><span>Select→toolbar to wrap</span>
+        <span style={{marginLeft:'auto'}}>{value.length}ch · {value.split('\n').length}ln</span>
+      </div>
+    </div>
+  );
+}
+
+/* ─── CARD MODAL ─── */
+function CardModal({card,col,cols,onClose,onSave,onDelete,onMove,now}){
+  const [editing,setEditing]=useState(!card.content);
+  const [task,setTask]=useState(card.task);
+  const [priority,setPriority]=useState(card.priority||'None');
+  const [content,setContent]=useState(card.content||'');
+  const [expiryDays,setExpiryDays]=useState(card.expiryDays??null);
+  const colData=cols.find(c=>c.id===col)||cols[0];
+  const age=fmtAge(card.createdAt,now);
+
+  function save(){
+    onSave({...card,task,priority,content,expiryDays});
+    setEditing(false);
+  }
+  return(
+    <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div className="modal">
+        <div className="modal-hdr">
+          <div style={{width:8,height:8,borderRadius:'50%',background:colData.color,flexShrink:0}}/>
+          {editing
+            ?<input className="finput" style={{fontSize:14,fontWeight:600,flex:1,background:'transparent',border:'none',padding:0}} value={task} onChange={e=>setTask(e.target.value)} placeholder="Task title…" autoFocus/>
+            :<div className="modal-title">{task}</div>}
+          <div style={{display:'flex',gap:4,marginLeft:'auto',alignItems:'center',flexShrink:0}}>
+            <span style={{fontSize:10,color:'var(--text3)',marginRight:4}}>🕐 {age}</span>
+            {!editing&&priority!=='None'&&<span className={`priority p${priority[1]}`}>{priority}</span>}
+            {!editing&&<button className="ibtn" title="Edit notes" onClick={()=>setEditing(true)} style={{width:26,height:26,fontSize:12,border:'none'}}>✏️</button>}
+            <button className="ibtn" title="Delete card" onClick={()=>{if(confirm('Delete this card?'))onDelete(card.id)}} style={{width:26,height:26,fontSize:12,border:'none',color:'var(--red)'}}>🗑️</button>
+            <button className="ibtn" title="Close" onClick={onClose} style={{width:26,height:26,fontSize:13,border:'none'}}>✕</button>
+          </div>
+        </div>
+        <div className="modal-body">
+          {editing?(
+            <>
+              <div className="frow">
+                <div style={{gridColumn:'span 1'}}>
+                  <label className="flabel">Priority</label>
+                  <select className="fselect" value={priority} onChange={e=>setPriority(e.target.value)}>
+                    {PRIORITY_LIST.map(p=><option key={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="flabel">Move to</label>
+                  <select className="fselect" value={col} onChange={e=>{onMove(card.id,col,e.target.value);}}>
+                    {cols.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="flabel">Auto-delete</label>
+                  <select className="fselect" value={expiryDays??''} onChange={e=>setExpiryDays(e.target.value?Number(e.target.value):null)}>
+                    <option value=''>Never</option>
+                    <option value='3'>3 days</option>
+                    <option value='7'>7 days</option>
+                    <option value='14'>14 days</option>
+                  </select>
+                </div>
+              </div>
+              <div className="fgroup">
+                <label className="flabel">Notes & Details</label>
+                <MdEditor value={content} onChange={setContent}/>
+              </div>
+            </>
+          ):(
+            content
+              ?<div className="md-render" dangerouslySetInnerHTML={{__html:renderMd(content)}}/>
+              :<div style={{textAlign:'center',padding:'32px 0',color:'var(--text3)',fontSize:13}}>
+                <div style={{fontSize:28,marginBottom:8}}>📝</div>
+                <div>No notes yet</div>
+                <button className="btn" style={{marginTop:12}} onClick={()=>setEditing(true)}>Add notes</button>
+              </div>
+          )}
+        </div>
+        {editing&&(
+          <div className="modal-foot">
+            <button className="btn" onClick={()=>{setEditing(false);setTask(card.task);setContent(card.content);setPriority(card.priority);}}>Cancel</button>
+            <button className="btn primary" onClick={save}>Save</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── ADD CARD MODAL ─── */
+function AddCardModal({defaultCol,cols,onClose,onAdd}){
+  const [col,setCol]=useState(defaultCol);
+  const [task,setTask]=useState('');
+  const [priority,setPriority]=useState('None');
+  const [content,setContent]=useState('');
+  function add(){
+    if(!task.trim())return;
+    onAdd(col,{id:uid(),task:task.trim(),priority,content,createdAt:new Date().toISOString(),expiryDays:null,doneAt:undefined});
+    onClose();
+  }
+  const colData=cols.find(c=>c.id===col)||cols[0];
+  return(
+    <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div className="modal">
+        <div className="modal-hdr">
+          <div style={{width:8,height:8,borderRadius:'50%',background:colData?.color,flexShrink:0}}/>
+          <div className="modal-title">New Card</div>
+          <button className="ibtn" onClick={onClose} style={{width:26,height:26,marginLeft:'auto',border:'none'}}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="fgroup">
+            <label className="flabel">Task title</label>
+            <input className="finput" value={task} onChange={e=>setTask(e.target.value)} placeholder="What needs to be done?" autoFocus onKeyDown={e=>e.key==='Enter'&&add()}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+            <div>
+              <label className="flabel">Status</label>
+              <select className="fselect" value={col} onChange={e=>setCol(e.target.value)}>
+                {cols.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="flabel">Priority</label>
+              <select className="fselect" value={priority} onChange={e=>setPriority(e.target.value)}>
+                {PRIORITY_LIST.map(p=><option key={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="fgroup">
+            <label className="flabel">Notes (optional)</label>
+            <MdEditor value={content} onChange={setContent}/>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={add} disabled={!task.trim()}>Add Card</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── ADD COLUMN MODAL ─── */
+function AddColModal({onClose,onAdd}){
+  const [label,setLabel]=useState('');
+  const [color,setColor]=useState(COL_PALETTE[4]);
+  function add(){
+    if(!label.trim())return;
+    onAdd({id:uid(),label:label.trim(),color,locked:false});
+    onClose();
+  }
+  return(
+    <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div className="modal" style={{maxWidth:360}}>
+        <div className="modal-hdr">
+          <div className="modal-title">New Status</div>
+          <button className="ibtn" onClick={onClose} style={{width:26,height:26,marginLeft:'auto',border:'none'}}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="fgroup">
+            <label className="flabel">Name</label>
+            <input className="finput" value={label} onChange={e=>setLabel(e.target.value)} placeholder="e.g. Review, Testing, Blocked…" autoFocus onKeyDown={e=>e.key==='Enter'&&add()}/>
+          </div>
+          <div className="fgroup">
+            <label className="flabel">Color</label>
+            <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
+              {COL_PALETTE.map(c=>(
+                <div key={c} className={`swatch${color===c?' sel':''}`} style={{background:c}} onClick={()=>setColor(c)}/>
+              ))}
+            </div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:9,padding:'9px 12px',background:'var(--bg3)',borderRadius:8,border:'1px solid var(--border)'}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:color}}/>
+            <span style={{fontSize:11,fontWeight:700,letterSpacing:'.5px',textTransform:'uppercase',color:'var(--text2)'}}>{label||'Column name'}</span>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={add} disabled={!label.trim()}>Create</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── CARD COMPONENT ─── */
+function Card({card,onOpen,onDragStart,now}){
+  const blocker=parseBlocker(card.content);
+  const days=Math.floor(((now||Date.now())-new Date(card.createdAt).getTime())/86400000);
+  const ac=ageClass(card.createdAt,now);
+  const ageText=fmtAge(card.createdAt,now);
+  const ageCardClass=days>6?'aged-old':days>2?'aged-stale':'';
+
+  return(
+    <div className={`card ${ageCardClass}`} draggable
+      onDragStart={e=>{e.dataTransfer.effectAllowed='move';onDragStart(card.id);}}
+      onClick={()=>onOpen(card)}>
+      <div className="card-title">{card.task}</div>
+      <div className="card-meta">
+        {card.priority&&card.priority!=='None'&&<span className={`priority p${card.priority[1]}`}>{card.priority}</span>}
+        {card.expiryDays&&card.doneAt&&(()=>{
+          const rem=card.expiryDays-daysDiff(card.doneAt);
+          return<span className={`expiry-badge${rem<=1?' warn':''}`}>🗑 {rem>0?rem+'d':' today'}</span>;
+        })()}
+        {card.content&&!blocker&&<span style={{fontSize:10,color:'var(--text3)'}}>📝</span>}
+        {/* Age — always bottom right */}
+        <span className={`card-age ${ac}`} title={`Created ${new Date(card.createdAt).toLocaleString()}`}>
+          🕐 {ageText}
+        </span>
+      </div>
+      {blocker&&(
+        <div className="card-blocker">
+          <div className="blocker-lbl">🚫 BLOCKER</div>
+          <div style={{lineHeight:1.35}}>{blocker.slice(0,120)}{blocker.length>120?'…':''}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── COLUMN COMPONENT ─── */
+function Column({colData,cards,allCols,onCardDrop,onColDragStart,onColDrop,onColDragOver,onOpen,onAddCard,onDeleteCol,onToggleLock,onRenameCol,dragCardId,isColDragging,isColDropTarget,now}){
+  const [cardOver,setCardOver]=useState(false);
+  const [renaming,setRenaming]=useState(false);
+  const [renameVal,setRenameVal]=useState(colData.label);
+  const blockerCount=cards.filter(c=>parseBlocker(c.content)).length;
+
+  // sync label when colData changes (e.g. after rename)
+  useEffect(()=>setRenameVal(colData.label),[colData.label]);
+
+  function onDragOver(e){
+    e.preventDefault();
+    if(dragCardId)setCardOver(true);
+    else onColDragOver(colData.id);
+  }
+  function onDragLeave(e){if(!e.currentTarget.contains(e.relatedTarget)){setCardOver(false);}}
+  function onDrop(e){
+    e.preventDefault();setCardOver(false);
+    if(dragCardId)onCardDrop(colData.id);
+    else onColDrop(colData.id);
+  }
+
+  return(
+    <div className={`col${isColDragging?' col-dragging':''}${isColDropTarget?' col-drop-target':''}${cardOver?' card-drop-over':''}`}
+      onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+      {/* header */}
+      <div className="col-hdr">
+        {/* grip / lock */}
+        <div className={`col-grip${colData.locked?' locked':''}`}
+          title={colData.locked?'Locked — click 🔒 to unlock':'Drag to reorder column'}
+          draggable={!colData.locked}
+          onDragStart={e=>{if(colData.locked){e.preventDefault();return;}e.dataTransfer.effectAllowed='move';onColDragStart(colData.id);}}>
+          {colData.locked
+            ?<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            :<svg width="12" height="14" viewBox="0 0 10 14" fill="currentColor"><rect x="1" y="1" width="3" height="1.5" rx=".5"/><rect x="6" y="1" width="3" height="1.5" rx=".5"/><rect x="1" y="4" width="3" height="1.5" rx=".5"/><rect x="6" y="4" width="3" height="1.5" rx=".5"/><rect x="1" y="7" width="3" height="1.5" rx=".5"/><rect x="6" y="7" width="3" height="1.5" rx=".5"/><rect x="1" y="10" width="3" height="1.5" rx=".5"/><rect x="6" y="10" width="3" height="1.5" rx=".5"/></svg>
+          }
+        </div>
+        <div className="col-dot" style={{background:colData.color}}/>
+        <div className="col-title-wrap">
+          {renaming
+            ?<input className="col-title-inp" value={renameVal} autoFocus
+                onChange={e=>setRenameVal(e.target.value)}
+                onKeyDown={e=>{if(e.key==='Enter'){onRenameCol(colData.id,renameVal);setRenaming(false);}if(e.key==='Escape')setRenaming(false);}}
+                onBlur={()=>{if(renameVal.trim())onRenameCol(colData.id,renameVal);setRenaming(false);}}/>
+            :<div className="col-title" onDoubleClick={()=>setRenaming(true)} title="Double-click to rename">{colData.label}</div>
+          }
+        </div>
+        <span className="col-count" style={{color:colData.color}}>{cards.length}</span>
+        {blockerCount>0&&<span className="col-blocker-badge">🚫{blockerCount}</span>}
+        <div className="col-hdr-actions">
+          {/* lock/unlock */}
+          <button className={`chbtn${colData.locked?' lock-on':''}`}
+            title={colData.locked?'Unlock column':'Lock column position'}
+            onClick={()=>onToggleLock(colData.id)}>
+            {colData.locked
+              ?<svg width="10" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              :<svg width="10" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            }
+          </button>
+          {/* rename */}
+          <button className="chbtn" title="Rename" onClick={()=>setRenaming(true)}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          {/* delete */}
+          <button className="chbtn del-col" title="Delete column" onClick={()=>onDeleteCol(colData.id)}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
+        </div>
+      </div>
+      {/* body */}
+      <div className="col-body">
+        {cards.length===0&&(
+          <div className="col-empty">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity=".4"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            <span>Drop cards here</span>
+          </div>
+        )}
+        {cards.map(c=><Card key={c.id} card={c} now={now} onOpen={onOpen} onDragStart={id=>onCardDrop._setDrag(id,colData.id)}/>)}
+        <button className="col-add-btn" onClick={()=>onAddCard(colData.id)}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add card
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── SHORTCUTS PANEL ─── */
+function ShortcutsPanel({onClose}){
+  const rows=[['N','New card (first column)'],['?','Show shortcuts'],['Esc','Close modal / search'],['Drag card','Move between columns'],['Drag column grip','Reorder columns'],['🔒 icon','Lock column position'],['Double-click title','Rename column']];
+  return(
+    <div className="sc-overlay" onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div className="sc-box">
+        <div style={{fontSize:15,fontWeight:600,marginBottom:14}}>⌨️ Shortcuts</div>
+        {rows.map(([k,v])=>(
+          <div key={k} className="sc-row"><span>{v}</span><span className="kbd">{k}</span></div>
+        ))}
+        <button className="btn" style={{width:'100%',marginTop:14}} onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── CONFETTI ─── */
+function Confetti(){
+  const [pieces]=useState(()=>{
+    const cols=['#4f8ef7','#3ecf8e','#f7c35a','#a78bfa','#f76f6f'];
+    return Array.from({length:45},(_,i)=>({
+      id:i,left:Math.random()*100,color:cols[i%cols.length],
+      size:5+Math.random()*6,delay:Math.random()*.8,dur:1.4+Math.random()
+    }));
+  });
+  return pieces.map(p=>(
+    <div key={p.id} className="cp" style={{left:p.left+'%',width:p.size,height:p.size,background:p.color,animationDelay:p.delay+'s',animationDuration:p.dur+'s'}}/>
+  ));
+}
+
+/* ─── TOAST ─── */
+function Toast({toasts}){
+  return<div className="toasts">{toasts.map(t=><div key={t.id} className={`toast ${t.type||''}`}>{t.msg}</div>)}</div>;
+}
+
+/* ─── APP ─── */
+function App(){
+  const saved=loadData();
+  const def=defaultData();
+  const [cols,setCols]=useState(saved?.cols||def.cols);
+  const [cards,setCards]=useState(saved?.cards||def.cards);
+  const [now,setNow]=useState(Date.now());
+  const [spinning,setSpinning]=useState(false);
+
+  const [dragCardId,setDragCardId]=useState(null);
+  const [dragCardFrom,setDragCardFrom]=useState(null);
+  const [dragColId,setDragColId]=useState(null);
+  const [colDropTarget,setColDropTarget]=useState(null);
+
+  const [openCard,setOpenCard]=useState(null);
+  const [openCardCol,setOpenCardCol]=useState(null);
+  const [addCardCol,setAddCardCol]=useState(null);
+  const [showAddCol,setShowAddCol]=useState(false);
+  const [showShortcuts,setShowShortcuts]=useState(false);
+  const [confetti,setConfetti]=useState(false);
+  const confettiKey=useRef(0);
+  const [toasts,setToasts]=useState([]);
+  const [light,setLight]=useState(false);
+  const [search,setSearch]=useState('');
+  const [searchOpen,setSearchOpen]=useState(false);
+  const searchRef=useRef();
+
+  useEffect(()=>{saveData({cols,cards});},[cols,cards]);
+  useEffect(()=>{document.body.classList.toggle('light',light);},[light]);
+
+  // auto-delete expired
+  useEffect(()=>{
+    setCards(c=>{
+      const nc={...c};let changed=false;
+      Object.keys(nc).forEach(k=>{
+        const filtered=(nc[k]||[]).filter(card=>{
+          if(!card.expiryDays||!card.doneAt)return true;
+          return daysDiff(card.doneAt)<card.expiryDays;
+        });
+        if(filtered.length!==(nc[k]||[]).length){nc[k]=filtered;changed=true;}
+      });
+      if(changed)addToast('Expired tasks removed','success');
+      return changed?nc:c;
+    });
+  },[]);
+
+  useEffect(()=>{
+    function onKey(e){
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+      if(e.key==='n'||e.key==='N'){setAddCardCol(cols[0]?.id);}
+      if(e.key==='?'){setShowShortcuts(true);}
+      if(e.key==='Escape'){setOpenCard(null);setAddCardCol(null);setShowAddCol(false);setShowShortcuts(false);setSearch('');setSearchOpen(false);}
+    }
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  },[cols]);
+
+  function addToast(msg,type=''){
+    const id=uid();
+    setToasts(t=>[...t,{id,msg,type}]);
+    setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),2800);
+  }
+
+  function refreshAge(){
+    setSpinning(true);
+    setNow(Date.now());
+    setTimeout(()=>setSpinning(false),650);
+    addToast('Ages refreshed ✓','success');
+  }
+
+  // card drag
+  function onCardDragStart(id,fromCol){setDragCardId(id);setDragCardFrom(fromCol);}
+  function onCardDrop(toCol){
+    if(!dragCardId)return;
+    if(dragCardFrom===toCol){setDragCardId(null);setDragCardFrom(null);return;}
+    setCards(c=>{
+      const card=(c[dragCardFrom]||[]).find(x=>x.id===dragCardId);
+      if(!card)return c;
+      const updated={...card};
+      const isDone=cols.find(col=>col.id===toCol)?.label?.toLowerCase()==='done'||toCol.toUpperCase()==='DONE';
+      if(isDone&&!card.doneAt){updated.doneAt=new Date().toISOString();confettiKey.current++;setConfetti(true);setTimeout(()=>setConfetti(false),3200);addToast('🎉 Done!','success');}
+      return{...c,[dragCardFrom]:(c[dragCardFrom]||[]).filter(x=>x.id!==dragCardId),[toCol]:[...(c[toCol]||[]),updated]};
+    });
+    setDragCardId(null);setDragCardFrom(null);
+  }
+  // expose for Column
+  onCardDrop._setDrag=onCardDragStart;
+
+  // col drag
+  function onColDragStart(id){if(dragCardId)return;setDragColId(id);}
+  function onColDragOver(id){if(!dragColId||id===dragColId)return;setColDropTarget(id);}
+  function onColDrop(toId){
+    setColDropTarget(null);
+    if(!dragColId||dragColId===toId)return;
+    setCols(c=>{
+      const fi=c.findIndex(x=>x.id===dragColId),ti=c.findIndex(x=>x.id===toId);
+      if(fi<0||ti<0)return c;
+      const n=[...c];const[m]=n.splice(fi,1);n.splice(ti,0,m);return n;
+    });
+    setDragColId(null);addToast('Column reordered');
+  }
+
+  function onToggleLock(id){
+    const wasLocked=cols.find(x=>x.id===id)?.locked;
+    setCols(c=>c.map(x=>x.id===id?{...x,locked:!x.locked}:x));
+    addToast(wasLocked?'Column unlocked 🔓':'Column locked 🔒');
+  }
+  function onRenameCol(id,label){if(label.trim())setCols(c=>c.map(x=>x.id===id?{...x,label:label.trim()}:x));}
+  function onDeleteCol(id){
+    const name=cols.find(c=>c.id===id)?.label;
+    if(!confirm(`Delete "${name}"? All cards inside will be lost.`))return;
+    setCols(c=>c.filter(x=>x.id!==id));
+    setCards(c=>{const n={...c};delete n[id];return n;});
+    addToast('Column deleted');
+  }
+  function onAddCol(colDef){
+    setCols(c=>[...c,colDef]);
+    setCards(c=>({...c,[colDef.id]:[]}));
+    addToast(`"${colDef.label}" column created`,'success');
+  }
+  function onSaveCard(updated){
+    setCards(c=>{
+      const col=Object.keys(c).find(k=>(c[k]||[]).some(x=>x.id===updated.id));
+      if(!col)return c;
+      return{...c,[col]:(c[col]||[]).map(x=>x.id===updated.id?updated:x)};
+    });
+    setOpenCard(updated);addToast('Saved ✓','success');
+  }
+  function onDeleteCard(id){
+    setCards(c=>{
+      const col=Object.keys(c).find(k=>(c[k]||[]).some(x=>x.id===id));
+      if(!col)return c;
+      return{...c,[col]:(c[col]||[]).filter(x=>x.id!==id)};
+    });
+    setOpenCard(null);addToast('Card deleted');
+  }
+  function onMoveCard(id,fromCol,toCol){
+    if(fromCol===toCol)return;
+    setCards(c=>{
+      const card=(c[fromCol]||[]).find(x=>x.id===id);
+      if(!card)return c;
+      return{...c,[fromCol]:(c[fromCol]||[]).filter(x=>x.id!==id),[toCol]:[...(c[toCol]||[]),card]};
+    });
+    setOpenCardCol(toCol);addToast('Moved to '+cols.find(x=>x.id===toCol)?.label,'success');
+  }
+  function onAddCard(col,card){
+    setCards(c=>({...c,[col]:[...(c[col]||[]),card]}));
+    addToast('Card added','success');
+  }
+
+  function exportJSON(){
+    const blob=new Blob([JSON.stringify({cols,cards},null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='daily-export.json';a.click();
+    addToast('Exported!','success');
+  }
+  function importJSON(){
+    const inp=document.createElement('input');inp.type='file';inp.accept='.json';
+    inp.onchange=e=>{
+      const f=e.target.files[0];if(!f)return;
+      const r=new FileReader();r.onload=ev=>{
+        try{
+          const d=JSON.parse(ev.target.result);
+          if(d.cols&&d.cards){setCols(d.cols);setCards(d.cards);addToast('Board imported!','success');}
+          else addToast('Invalid format','error');
+        }catch{addToast('Failed to parse','error');}
+      };r.readAsText(f);
+    };inp.click();
+  }
+
+  const q=search.trim().toLowerCase();
+  const filteredCards=useMemo(()=>{
+    if(!q)return cards;
+    const out={};
+    Object.keys(cards).forEach(k=>{
+      out[k]=(cards[k]||[]).filter(c=>c.task.toLowerCase().includes(q)||(c.content||'').toLowerCase().includes(q));
+    });
+    return out;
+  },[cards,q,search]);
+
+  const totalAll=cols.reduce((a,c)=>a+(cards[c.id]||[]).length,0);
+  const totalBlockers=cols.reduce((a,c)=>a+(cards[c.id]||[]).filter(x=>parseBlocker(x.content)).length,0);
+  const totalDone=cols.reduce((a,c)=>a+(cards[c.id]||[]).filter(x=>x.doneAt).length,0);
+
+  return(
+    <div className="app">
+      {/* ── HEADER ── */}
+      <div className="header">
+        <div className="logo">Daily<span>.</span></div>
+
+        {/* Stats — hidden on mobile */}
+        <div className="stats-desktop" style={{display:'flex',gap:5,alignItems:'center'}}>
+          <div className="stat-pill">{totalAll} tasks</div>
+          {totalBlockers>0&&<div className="stat-pill red">🚫 {totalBlockers}</div>}
+          {totalDone>0&&<div className="stat-pill green">✓ {totalDone}</div>}
+        </div>
+
+        <div style={{marginLeft:'auto',display:'flex',gap:4,alignItems:'center'}}>
+          {/* Search */}
+          <div className="search-wrap">
+            {searchOpen&&(
+              <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+                <span style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--text3)',fontSize:13,pointerEvents:'none',zIndex:1}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </span>
+                <input ref={searchRef} className="search-inp open"
+                  value={search} onChange={e=>setSearch(e.target.value)}
+                  placeholder="Search cards…"
+                  onKeyDown={e=>{if(e.key==='Escape'){setSearch('');setSearchOpen(false);}}}/>
+              </div>
+            )}
+            <button className={`ibtn${searchOpen?' active':''}`} data-tip="Search (click to open)"
+              onClick={()=>{setSearchOpen(o=>!o);if(!searchOpen)setTimeout(()=>searchRef.current?.focus(),80);}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+          </div>
+
+          {/* Refresh ages */}
+          <button className="ibtn" data-tip="Refresh card ages" onClick={refreshAge}>
+            <svg className={spinning?'spin':''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          </button>
+
+          {/* Theme */}
+          <button className="ibtn" data-tip={light?'Dark mode':'Light mode'} onClick={()=>setLight(l=>!l)}>
+            {light
+              ?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              :<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>}
+          </button>
+
+          {/* Shortcuts */}
+          <button className="ibtn" data-tip="Keyboard shortcuts" onClick={()=>setShowShortcuts(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>
+          </button>
+
+          {/* Add column */}
+          <button className="ibtn" data-tip="Add column" onClick={()=>setShowAddCol(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1" opacity=".4"/><line x1="17.5" y1="8" x2="17.5" y2="16"/><line x1="13.5" y1="12" x2="21.5" y2="12"/></svg>
+          </button>
+
+          {/* Import */}
+          <button className="ibtn" data-tip="Import JSON" onClick={importJSON}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>
+
+          {/* Export */}
+          <button className="ibtn" data-tip="Export JSON" onClick={exportJSON}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </button>
+
+          {/* New card */}
+          <button className="ibtn primary" data-tip="New card (N)" onClick={()=>setAddCardCol(cols[0]?.id)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      {/* ── BOARD ── */}
+      <div className="board-wrap">
+        <div className="board" onDragEnd={()=>{setDragCardId(null);setDragCardFrom(null);setDragColId(null);setColDropTarget(null);}}>
+          {cols.map(col=>(
+            <Column key={col.id} colData={col}
+              cards={filteredCards[col.id]||[]}
+              allCols={cols}
+              now={now}
+              dragCardId={dragCardId}
+              isColDragging={dragColId===col.id}
+              isColDropTarget={colDropTarget===col.id}
+              onCardDrop={onCardDrop}
+              onColDragStart={onColDragStart}
+              onColDragOver={onColDragOver}
+              onColDrop={onColDrop}
+              onOpen={card=>{setOpenCard(card);setOpenCardCol(col.id);}}
+              onAddCard={setAddCardCol}
+              onDeleteCol={onDeleteCol}
+              onToggleLock={onToggleLock}
+              onRenameCol={onRenameCol}/>
+          ))}
+          {/* Add column */}
+          <button className="add-col-btn" onClick={()=>setShowAddCol(true)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>Add column</span>
+          </button>
+        </div>
+      </div>
+
+      {/* FAB */}
+      <button className="fab" onClick={()=>setAddCardCol(cols[0]?.id)} title="New card (N)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+
+      {/* MODALS */}
+      {openCard&&openCardCol&&(
+        <CardModal card={openCard} col={openCardCol} cols={cols} now={now}
+          onClose={()=>setOpenCard(null)}
+          onSave={onSaveCard}
+          onDelete={onDeleteCard}
+          onMove={onMoveCard}/>
+      )}
+      {addCardCol&&<AddCardModal defaultCol={addCardCol} cols={cols} onClose={()=>setAddCardCol(null)} onAdd={onAddCard}/>}
+      {showAddCol&&<AddColModal onClose={()=>setShowAddCol(false)} onAdd={onAddCol}/>}
+      {showShortcuts&&<ShortcutsPanel onClose={()=>setShowShortcuts(false)}/>}
+      {confetti&&<Confetti key={confettiKey.current}/>}
+      <Toast toasts={toasts}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
