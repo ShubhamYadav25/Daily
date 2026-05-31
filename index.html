@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>Daily.</title>
 <meta name="description" content="Daily. — Your personal kanban board"/>
 <meta name="theme-color" content="#0e0f11"/>
@@ -27,15 +27,20 @@
   --radius:10px;--radius-lg:14px;
   --shadow:0 2px 14px rgba(0,0,0,.45);
   --hdr:50px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
 }
-body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow:hidden;overscroll-behavior:contain}
+html{height:100%;overflow:hidden}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);height:100%;overflow:hidden;overscroll-behavior:contain}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;line-height:1}
 input,textarea,select{font-family:inherit;color:inherit;background:none}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
-.app{display:flex;flex-direction:column;height:100vh;overflow:hidden;min-height:100vh}
-.header{display:flex;align-items:center;gap:5px;padding:0 10px;height:var(--hdr);border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;z-index:20;position:relative}
+.app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
+
+/* ── HEADER ── */
+.header{display:flex;align-items:center;gap:5px;padding:0 10px;height:var(--hdr);border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;z-index:20;position:relative;padding-top:var(--safe-top)}
 .logo{font-size:18px;font-weight:600;letter-spacing:-.5px;color:var(--text);flex-shrink:0;margin-right:4px;cursor:default}
 .logo span{color:var(--blue)}
 .stat-pill{display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:500;border:1px solid var(--border);white-space:nowrap;flex-shrink:0}
@@ -50,13 +55,23 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 [data-tip]:hover::after{content:attr(data-tip);position:absolute;top:calc(100% + 7px);bottom:auto;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);color:var(--text);font-size:11px;font-weight:500;padding:4px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.4)}
 [data-tip]:hover::before{content:'';position:absolute;top:calc(100% + 2px);bottom:auto;left:50%;transform:translateX(-50%);border:5px solid transparent;border-bottom-color:var(--border2);border-top-color:transparent;pointer-events:none;z-index:9999}
 .search-wrap{position:relative;display:flex;align-items:center}
-.search-inp{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:5px 10px 5px 32px;font-size:13px;color:var(--text);outline:none;width:150px}
+.search-inp{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:5px 10px 5px 32px;font-size:13px;color:var(--text);outline:none;width:150px;transition:border-color .15s}
 .search-inp:focus{border-color:var(--blue)}
+
+/* Header actions area */
+.header-actions{display:flex;gap:3px;align-items:center;flex-shrink:0}
+
+/* Overflow menu */
+.overflow-menu{position:absolute;top:calc(100% + 4px);right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:500;min-width:180px;padding:4px;animation:fadein .12s ease}
+.overflow-item{display:flex;align-items:center;gap:9px;padding:8px 12px;border-radius:7px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;transition:.1s;white-space:nowrap;border:none;background:none;width:100%;text-align:left}
+.overflow-item:hover{background:var(--bg3);color:var(--text)}
+.overflow-sep{height:1px;background:var(--border);margin:3px 0}
+
+/* ── BOARD ── */
 .board-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
 .board{display:flex;gap:10px;padding:12px;flex:1;overflow-x:auto;overflow-y:hidden;min-height:0;align-items:stretch}
 .board::-webkit-scrollbar{height:6px}
 .col{display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);min-width:230px;max-width:290px;flex:1;overflow:hidden;min-height:0;transition:opacity .15s,transform .15s,border-color .15s;border-top:3px solid var(--border)}
-@media(min-width:641px){.col{border-top:1px solid var(--border)}}
 .col.col-dragging{opacity:.4;transform:scale(.97)}
 .col.col-drop-target{border-color:var(--blue);background:rgba(79,142,247,.04)}
 .col-hdr{padding:9px 10px 7px;display:flex;align-items:center;gap:5px;flex-shrink:0;border-bottom:1px solid var(--border)}
@@ -81,8 +96,11 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .col-empty{text-align:center;padding:24px 12px;color:var(--text3);font-size:12px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;opacity:.7}
 .add-col-btn{min-width:50px;width:50px;border:1.5px dashed var(--border2);border-radius:var(--radius-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--text3);font-size:18px;cursor:pointer;transition:.18s;background:transparent;flex-shrink:0;padding:16px 8px}
 .add-col-btn:hover{border-color:var(--text2);color:var(--text2);background:var(--bg2)}
+
+/* ── CARDS ── */
 .card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 10px 8px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s;position:relative;user-select:none}
 .card:hover{border-color:var(--border2);box-shadow:var(--shadow);transform:translateY(-1px)}
+.card:active{transform:scale(.98)}
 .card.dragging{opacity:.35;cursor:grabbing;transform:scale(.97)}
 .card.drag-over-top{border-top:2px solid var(--blue) !important}
 .card.drag-over-bottom{border-bottom:2px solid var(--blue) !important}
@@ -111,13 +129,15 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .color-dot{width:16px;height:16px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:.12s;flex-shrink:0}
 .color-dot:hover,.color-dot.sel{border-color:var(--text);transform:scale(1.2)}
 .color-dot.none-dot{background:var(--bg4);border:1px dashed var(--border2)}
-.overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;animation:fadein .14s ease}
+
+/* ── MODAL — CENTERED ON ALL SCREENS ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;animation:fadein .14s ease;overflow-y:auto}
 @keyframes fadein{from{opacity:0}to{opacity:1}}
-.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);width:100%;max-width:740px;max-height:92vh;display:flex;flex-direction:column;animation:slidein .17s ease}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);width:100%;max-width:740px;max-height:90vh;display:flex;flex-direction:column;animation:slidein .17s ease;margin:auto}
 @keyframes slidein{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
 .modal-hdr{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
 .modal-title{font-size:15px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.modal-body{flex:1;overflow-y:auto;padding:16px}
+.modal-body{flex:1;overflow-y:auto;padding:16px;-webkit-overflow-scrolling:touch}
 .modal-foot{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
 .flabel{font-size:11px;font-weight:600;color:var(--text2);letter-spacing:.4px;text-transform:uppercase;margin-bottom:5px;display:block}
 .finput{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--text);outline:none;transition:border-color .15s}
@@ -131,6 +151,8 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
 .btn.primary:hover{opacity:.88}
 .btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── MARKDOWN ── */
 .md-render{font-size:13px;line-height:1.7;color:var(--text)}
 .md-render h1{font-size:17px;font-weight:600;margin:4px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
 .md-render h2{font-size:15px;font-weight:600;margin:14px 0 6px}
@@ -155,22 +177,35 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .md-render .task-item.done .task-text{color:var(--text3);text-decoration:line-through}
 .md-render .cb{font-size:14px;flex-shrink:0;user-select:none}
 .md-render a{color:var(--blue)}
+
+/* ── FLOATING PANEL ── */
 .sc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:400}
 .sc-box{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:24px;width:320px;max-height:80vh;overflow-y:auto}
 .sc-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2)}
 .sc-row:last-child{border-bottom:none}
 .kbd{background:var(--bg4);border:1px solid var(--border2);border-radius:4px;padding:1px 7px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text)}
-.toasts{position:fixed;bottom:70px;right:14px;z-index:600;display:flex;flex-direction:column;gap:5px;pointer-events:none}
+
+/* ── TOASTS ── */
+.toasts{position:fixed;bottom:80px;right:14px;z-index:600;display:flex;flex-direction:column;gap:5px;pointer-events:none}
 .toast{padding:8px 14px;border-radius:8px;font-size:12px;font-weight:500;animation:toastin .2s ease;background:var(--bg3);border:1px solid var(--border2);color:var(--text);pointer-events:auto}
 .toast.success{background:var(--green-dim);border-color:rgba(62,207,142,.3);color:var(--green)}
 .toast.error{background:var(--red-dim);border-color:rgba(247,111,111,.3);color:var(--red)}
 @keyframes toastin{from{transform:translateX(14px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ── CONFETTI ── */
 .cp{position:fixed;top:-10px;pointer-events:none;z-index:700;border-radius:2px;animation:fall linear forwards}
 @keyframes fall{to{transform:translateY(110vh) rotate(720deg);opacity:0}}
+
+/* ── SWATCHES ── */
 .swatch{width:20px;height:20px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:.12s;flex-shrink:0}
 .swatch:hover,.swatch.sel{border-color:var(--text);transform:scale(1.15)}
-.fab{position:fixed;bottom:18px;right:18px;width:44px;height:44px;border-radius:50%;background:var(--blue);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(79,142,247,.45);border:none;cursor:pointer;z-index:50;transition:transform .15s,box-shadow .15s}
+
+/* ── FAB ── */
+.fab{position:fixed;bottom:calc(18px + var(--safe-bottom));right:18px;width:48px;height:48px;border-radius:50%;background:var(--blue);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(79,142,247,.45);border:none;cursor:pointer;z-index:50;transition:transform .15s,box-shadow .15s}
 .fab:hover{transform:scale(1.08)}
+.fab:active{transform:scale(.95)}
+
+/* ── FLOATING PANEL ── */
 .fp{position:fixed;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);box-shadow:0 8px 32px rgba(0,0,0,.6);z-index:300;display:flex;flex-direction:column;min-width:320px;min-height:200px}
 .fp-hdr{padding:9px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;cursor:move;user-select:none}
 .fp-title{font-size:12px;font-weight:600;flex:1;color:var(--text2)}
@@ -183,6 +218,8 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .fp-resize.ne{top:-4px;right:-4px;width:14px;height:14px;cursor:ne-resize}
 .fp-resize.sw{bottom:-4px;left:-4px;width:14px;height:14px;cursor:sw-resize}
 .fp-resize.se{bottom:-4px;right:-4px;width:14px;height:14px;cursor:se-resize;background:var(--border2);border-radius:0 0 var(--radius-lg) 0;opacity:.6}
+
+/* ── AI PANEL ── */
 .ai-panel{position:fixed;top:var(--hdr);right:0;width:320px;max-width:100vw;bottom:0;background:var(--bg2);border-left:1px solid var(--border2);z-index:150;display:flex;flex-direction:column;animation:slideL .18s ease}
 @keyframes slideL{from{transform:translateX(100%)}to{transform:translateX(0)}}
 .ai-panel-hdr{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -191,13 +228,19 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .ai-service-icon{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
 @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 .spin{animation:spin .6s linear}
+
+/* ── LIGHT MODE ── */
 body.light{--bg:#f3f3f5;--bg2:#fff;--bg3:#ededf0;--bg4:#e4e4e9;--border:#dcdce2;--border2:#c8c8d0;--text:#18181f;--text2:#555566;--text3:#9898aa;--blue-dim:#e5eeff;--green-dim:#e5f8f1;--amber-dim:#fef8e6;--red-dim:#feeaea;--purple-dim:#f1efff}
+
+/* ── RESIZABLE IMAGE ── */
 .resizable-img-container{display:inline-block;position:relative;margin:6px 0}
 .resizable-img-container img{display:block;border-radius:6px;object-fit:contain}
 .resizable-img-container .resize-handle{position:absolute;bottom:-5px;right:-5px;width:14px;height:14px;background:var(--blue);border:2px solid var(--bg2);border-radius:3px;cursor:se-resize;z-index:10;opacity:0;transition:opacity .15s}
 .resizable-img-container:hover .resize-handle{opacity:1}
-.alarm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;display:flex;align-items:center;justify-content:center;animation:fadein .2s ease}
-.alarm-box{background:var(--bg2);border:2px solid var(--red);border-radius:16px;padding:32px 40px;text-align:center;animation:slidein .2s ease}
+
+/* ── ALARM — HIGH Z-INDEX, ALWAYS VISIBLE ── */
+.alarm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;animation:fadein .2s ease;padding:20px}
+.alarm-box{background:var(--bg2);border:2px solid var(--red);border-radius:16px;padding:32px 40px;text-align:center;animation:slidein .2s ease;max-width:340px;width:100%}
 .alarm-box h2{color:var(--red);font-size:20px;margin-bottom:8px}
 .alarm-box p{color:var(--text2);font-size:14px;margin-bottom:16px}
 
@@ -209,31 +252,148 @@ body.light{--bg:#f3f3f5;--bg2:#fff;--bg3:#ededf0;--bg4:#e4e4e9;--border:#dcdce2;
 .draw-panel-body iframe{width:100%;height:100%;border:none;display:block}
 .draw-panel-badge{font-size:11px;color:var(--text3);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:3px 10px;display:flex;align-items:center;gap:5px}
 
-@media(max-width:640px){
-  :root{--hdr:46px}
-  body{overflow:auto}
-  .app{height:auto;min-height:100dvh;overflow:visible}
-  .header{padding:0 6px;gap:3px}
-  .logo{font-size:16px;margin-right:2px}
-  .stats-desktop{display:none}
-  .pwa-banner{position:fixed;bottom:18px;left:18px;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,.5);z-index:100;animation:slidein .2s ease}
-  .pwa-banner button.pwa-install{padding:6px 14px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer}
-  .pwa-banner button.pwa-dismiss{background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:4px}
-  .board-wrap{overflow:visible;flex:none}
-  .board{padding:8px;gap:8px;flex-direction:column;overflow:visible;align-items:stretch}
-  .col{min-width:0;max-width:100%;width:100%;flex:none}
-  .modal{max-height:96vh;border-radius:14px 14px 0 0;align-self:flex-end;margin-top:auto;max-width:100%}
-  .overlay{align-items:flex-end;padding:0}
-  .frow{grid-template-columns:1fr 1fr}
-  .add-col-btn{min-width:0;width:100%;flex-direction:row;padding:14px;height:50px}
-  .fab{bottom:14px;right:14px;width:40px;height:40px}
-  .toasts{right:8px;bottom:60px}
-  .fp{bottom:60px!important;right:8px!important;left:8px!important;top:auto!important;width:auto!important}
-  .ai-panel{width:100vw}
-  [data-tip]:hover::after,[data-tip]:hover::before{display:none}
-  .search-inp{width:100px}
+/* ── DESKTOP: > 900px ── */
+@media(min-width:901px){
+  .col{border-top:1px solid var(--border)}
+  .col-hdr-actions{opacity:0}
+  .col-hdr:hover .col-hdr-actions{opacity:1}
 }
-@media(min-width:641px) and (max-width:900px){.col{min-width:200px;max-width:250px}}
+
+/* ── TABLET: 641–900px ── */
+@media(min-width:641px) and (max-width:900px){
+  .col{min-width:200px;max-width:250px;border-top:3px solid var(--border)}
+  .col-hdr-actions{opacity:1}
+  .header{padding:0 8px;gap:4px}
+  .search-inp{width:120px}
+}
+
+/* ── MOBILE: ≤ 640px ── */
+@media(max-width:640px){
+  :root{--hdr:48px}
+  html,body{height:100%;overflow:hidden}
+  .app{height:100vh;height:100dvh;overflow:hidden}
+
+  /* Header */
+  .header{padding:0 8px;gap:3px;padding-top:var(--safe-top)}
+  .logo{font-size:16px;margin-right:2px}
+
+  /* Hide desktop-only stat pills in header (shown via overflow) */
+  .stats-desktop{display:none!important}
+
+  /* Search input narrower */
+  .search-inp{width:110px;font-size:12px}
+
+  /* ibtn slightly smaller */
+  .ibtn{width:30px;height:30px;border-radius:7px}
+
+  /* Board: horizontal scroll like desktop but with touch */
+  .board-wrap{flex:1;overflow:hidden;min-height:0}
+  .board{
+    padding:8px;
+    gap:8px;
+    flex-direction:row;
+    overflow-x:auto;
+    overflow-y:hidden;
+    align-items:stretch;
+    -webkit-overflow-scrolling:touch;
+    scroll-snap-type:x mandatory;
+  }
+  .board::-webkit-scrollbar{height:3px}
+
+  /* Columns: snap + nearly full width */
+  .col{
+    min-width:calc(85vw);
+    max-width:calc(90vw);
+    flex-shrink:0;
+    scroll-snap-align:start;
+    border-top:3px solid var(--border);
+  }
+
+  /* Always show col header actions on mobile */
+  .col-hdr-actions{opacity:1!important}
+
+  /* Modal: centered (not bottom-sheet) */
+  .overlay{
+    padding:12px;
+    align-items:center;
+  }
+  .modal{
+    max-height:88vh;
+    border-radius:var(--radius-lg);
+    max-width:100%;
+    margin:auto;
+  }
+
+  /* Narrower form grid */
+  .frow{grid-template-columns:1fr 1fr}
+
+  /* Add col button fits inline */
+  .add-col-btn{
+    min-width:44px;
+    width:44px;
+    flex-direction:column;
+    padding:12px 6px;
+    height:auto;
+    scroll-snap-align:start;
+    flex-shrink:0;
+  }
+
+  /* FAB */
+  .fab{
+    bottom:calc(16px + var(--safe-bottom));
+    right:16px;
+    width:44px;
+    height:44px;
+    font-size:20px;
+  }
+
+  /* Toasts */
+  .toasts{right:8px;bottom:calc(72px + var(--safe-bottom))}
+
+  /* Floating panel: bottom sheet */
+  .fp{
+    bottom:calc(8px + var(--safe-bottom))!important;
+    right:8px!important;
+    left:8px!important;
+    top:auto!important;
+    width:auto!important;
+    min-width:0;
+    max-height:70vh;
+    border-radius:var(--radius-lg);
+  }
+
+  /* AI panel full width */
+  .ai-panel{width:100vw}
+
+  /* Disable tooltips on touch */
+  [data-tip]:hover::after,[data-tip]:hover::before{display:none}
+
+  /* Alarm always on top and centered */
+  .alarm-overlay{z-index:9999;padding:16px}
+  .alarm-box{padding:24px 20px}
+  .alarm-box h2{font-size:18px}
+
+  /* Draw panel header */
+  .draw-panel-hdr{padding:0 10px;gap:7px;overflow:hidden}
+  .draw-panel-badge{display:none}
+
+  /* SC box */
+  .sc-box{width:calc(100vw - 32px);max-height:85vh}
+
+  /* Overflow menu positioning */
+  .overflow-menu{right:0;min-width:200px}
+
+  /* Touch-friendly card */
+  .card{padding:10px 11px 9px}
+  .card-title{font-size:13px}
+}
+
+/* ── PWA BANNER ── */
+.pwa-banner{position:fixed;bottom:calc(18px + var(--safe-bottom));left:18px;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:12px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,.5);z-index:100;animation:slidein .2s ease}
+.pwa-banner button.pwa-install{padding:6px 14px;border-radius:8px;background:var(--blue);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer}
+.pwa-banner button.pwa-dismiss{background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:4px}
+
+/* ── MD EDITOR ── */
 </style>
 </head>
 <body>
@@ -323,6 +483,8 @@ function parseBlocker(content){
   return lines.slice(bi+1).filter(l=>l.trim()).slice(0,3).join(' ')||'(no detail)';
 }
 function fmtSecs(s){const m=Math.floor(s/60),sec=s%60;return`${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;}
+function isMobile(){return window.innerWidth<=640;}
+function isTablet(){return window.innerWidth>640&&window.innerWidth<=900;}
 
 /* ── STORAGE ── */
 function loadData(){try{const d=localStorage.getItem('daily_v5');return d?JSON.parse(d):null}catch{return null}}
@@ -430,7 +592,7 @@ function useResize(initW,initH,initX,initY){
 function MdEditor({value,onChange}){
   const ta=useRef();
   const [mode,setMode]=useState('write');
-  const [edH,setEdH]=useState(220);
+  const [edH,setEdH]=useState(isMobile()?160:220);
   const resizing=useRef(false);const resizeStart=useRef(null);
 
   function applyFmt(type){
@@ -481,17 +643,24 @@ function MdEditor({value,onChange}){
 
   function startVResize(e){
     resizing.current=true;resizeStart.current={y:e.clientY,h:edH};
-    const onMove=ev=>{if(!resizing.current)return;setEdH(Math.max(100,Math.min(800,resizeStart.current.h+(ev.clientY-resizeStart.current.y))));};
+    const onMove=ev=>{if(!resizing.current)return;setEdH(Math.max(80,Math.min(600,resizeStart.current.h+(ev.clientY-resizeStart.current.y))));};
     const onUp=()=>{resizing.current=false;window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);};
     window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);e.preventDefault();
   }
 
-  const TOOLS=[
+  const mobile=isMobile();
+  // On mobile show fewer toolbar items
+  const TOOLS_DESKTOP=[
     {g:'fmt',items:[{id:'bold',l:'B',tip:'Bold',st:{fontWeight:700}},{id:'italic',l:'I',tip:'Italic',st:{fontStyle:'italic'}},{id:'strike',l:'S̶',tip:'Strike'},{id:'code',l:'`',tip:'Code'}]},
     {g:'hd',items:[{id:'h1',l:'H1',tip:'H1'},{id:'h2',l:'H2',tip:'H2'},{id:'h3',l:'H3',tip:'H3'}]},
     {g:'blk',items:[{id:'ul',l:'•',tip:'Bullet'},{id:'ol',l:'1.',tip:'List'},{id:'check',l:'☐',tip:'Task'},{id:'quote',l:'❝',tip:'Quote'},{id:'codeblock',l:'</>',tip:'Code block'},{id:'hr',l:'—',tip:'HR'},{id:'link',l:'🔗',tip:'Link'}]},
     {g:'sp',items:[{id:'blocker',l:'🚫',tip:'Blocker',sp:true},{id:'json',l:'{}',tip:'Format JSON',sj:true},{id:'image',l:'🖼',tip:'Image'}]},
   ];
+  const TOOLS_MOBILE=[
+    {g:'fmt',items:[{id:'bold',l:'B',tip:'Bold',st:{fontWeight:700}},{id:'italic',l:'I',tip:'Italic',st:{fontStyle:'italic'}},{id:'code',l:'`',tip:'Code'}]},
+    {g:'blk',items:[{id:'ul',l:'•',tip:'Bullet'},{id:'check',l:'☐',tip:'Task'},{id:'blocker',l:'🚫',tip:'Blocker',sp:true},{id:'image',l:'🖼',tip:'Image'}]},
+  ];
+  const TOOLS=mobile?TOOLS_MOBILE:TOOLS_DESKTOP;
 
   return(
     <div style={{display:'flex',flexDirection:'column',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
@@ -501,7 +670,7 @@ function MdEditor({value,onChange}){
             {gi>0&&<div style={{width:1,height:14,background:'var(--border2)',margin:'0 3px',flexShrink:0}}/>}
             {g.items.map(t=>(
               <button key={t.id} title={t.tip}
-                style={{padding:'2px 6px',borderRadius:5,fontSize:11,fontWeight:700,fontFamily:"'DM Mono',monospace",cursor:'pointer',lineHeight:1.5,color:t.sp?'var(--red)':t.sj?'var(--amber)':'var(--text2)',background:t.sp?'var(--red-dim)':t.sj?'var(--amber-dim)':'transparent',border:t.sp?'1px solid rgba(247,111,111,.3)':t.sj?'1px solid rgba(247,195,90,.3)':'none',...(t.st||{})}}
+                style={{padding:'3px 7px',borderRadius:5,fontSize:11,fontWeight:700,fontFamily:"'DM Mono',monospace",cursor:'pointer',lineHeight:1.5,color:t.sp?'var(--red)':t.sj?'var(--amber)':'var(--text2)',background:t.sp?'var(--red-dim)':t.sj?'var(--amber-dim)':'transparent',border:t.sp?'1px solid rgba(247,111,111,.3)':t.sj?'1px solid rgba(247,195,90,.3)':'none',...(t.st||{})}}
                 onMouseDown={ev=>{ev.preventDefault();applyFmt(t.id);}}>
                 {t.l}
               </button>
@@ -511,7 +680,7 @@ function MdEditor({value,onChange}){
         <div style={{marginLeft:'auto',display:'flex',gap:2}}>
           {[['write','✏️'],['split','▥'],['preview','👁']].map(([id,ico])=>(
             <button key={id} onMouseDown={ev=>{ev.preventDefault();setMode(id);}}
-              style={{padding:'2px 8px',borderRadius:5,fontSize:11,fontWeight:600,cursor:'pointer',background:mode===id?'var(--blue)':'transparent',color:mode===id?'#fff':'var(--text3)',border:'none',lineHeight:1.5}}>
+              style={{padding:'3px 7px',borderRadius:5,fontSize:11,fontWeight:600,cursor:'pointer',background:mode===id?'var(--blue)':'transparent',color:mode===id?'#fff':'var(--text3)',border:'none',lineHeight:1.5}}>
               {ico}
             </button>
           ))}
@@ -520,17 +689,17 @@ function MdEditor({value,onChange}){
       <div style={{display:'flex',height:edH}}>
         {(mode==='write'||mode==='split')&&(
           <textarea ref={ta} onKeyDown={onKD} onPaste={onPaste}
-            style={{flex:1,background:'var(--bg3)',border:'none',borderRight:mode==='split'?'1px solid var(--border)':'none',padding:'12px',fontSize:13,fontFamily:"'DM Mono',monospace",color:'var(--text)',resize:'none',outline:'none',lineHeight:1.7,overflowY:'auto'}}
+            style={{flex:1,background:'var(--bg3)',border:'none',borderRight:mode==='split'?'1px solid var(--border)':'none',padding:'10px',fontSize:13,fontFamily:"'DM Mono',monospace",color:'var(--text)',resize:'none',outline:'none',lineHeight:1.7,overflowY:'auto',WebkitOverflowScrolling:'touch'}}
             value={value} onChange={ev=>onChange(ev.target.value)}
-            placeholder={"Notes, steps, blockers...\nPaste/🖼 images · {} JSON · 🚫 blocker · ☐ tasks"}
+            placeholder={"Notes, steps, blockers...\nPaste/🖼 images · 🚫 blocker · ☐ tasks"}
             spellCheck={false}/>
         )}
         {(mode==='preview'||mode==='split')&&(
-          <div className="md-render" style={{flex:1,background:'var(--bg3)',padding:'12px',overflowY:'auto'}}
+          <div className="md-render" style={{flex:1,background:'var(--bg3)',padding:'10px',overflowY:'auto'}}
             dangerouslySetInnerHTML={{__html:value?renderMd(value):'<p style="color:var(--text3);font-style:italic;font-size:12px">Nothing to preview…</p>'}}/>
         )}
       </div>
-      <div onMouseDown={startVResize} style={{height:6,background:'var(--bg4)',borderTop:'1px solid var(--border)',cursor:'ns-resize',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 10px',flexShrink:0}}>
+      <div onMouseDown={startVResize} style={{height:6,background:'var(--bg4)',borderTop:'1px solid var(--border)',cursor:'ns-resize',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 10px',flexShrink:0,touchAction:'none'}}>
         <span style={{fontSize:10,color:'var(--text3)',pointerEvents:'none'}}>{value.length}ch</span>
         <span style={{color:'var(--text3)',fontSize:10,letterSpacing:2,pointerEvents:'none'}}>···</span>
         <span style={{fontSize:10,color:'var(--text3)',pointerEvents:'none'}}>{value.split('\n').length}ln</span>
@@ -559,8 +728,8 @@ function MdView({value,onChange,imageSizes,onImageResize}){
 /* ── CARD COLOR PICKER ── */
 function CardColorPicker({color,onChange}){
   return(
-    <div style={{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center'}}>
-      {CARD_COLORS.map(c=>(<div key={c||'none'} title={c||'No color'} className={`color-dot${(color||'')===(c||'')?'sel':''} ${!c?'none-dot':''}`} style={{background:c||'transparent'}} onClick={()=>onChange(c)}/>))}
+    <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+      {CARD_COLORS.map(c=>(<div key={c||'none'} title={c||'No color'} className={`color-dot${(color||'')===(c||'')?'sel':''} ${!c?'none-dot':''}`} style={{background:c||'transparent',width:20,height:20}} onClick={()=>onChange(c)}/>))}
     </div>
   );
 }
@@ -568,10 +737,10 @@ function CardColorPicker({color,onChange}){
 /* ── TIMER WIDGET ── */
 function TimerWidgetInline({timer,onSet,onClear,onStart,onStop}){
   const [showSet,setShowSet]=useState(false);const [mins,setMins]=useState('25');
-  if(showSet)return(<div style={{display:'flex',alignItems:'center',gap:4}} onClick={e=>e.stopPropagation()}><input value={mins} onChange={e=>setMins(e.target.value.replace(/\D/g,''))} style={{width:40,background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:5,padding:'2px 6px',fontSize:11,color:'var(--text)',outline:'none'}} placeholder="min" autoFocus onKeyDown={e=>{if(e.key==='Enter'){onSet(parseInt(mins)||25);setShowSet(false);}if(e.key==='Escape')setShowSet(false);}}/><button style={{fontSize:10,padding:'2px 6px',borderRadius:4,background:'var(--blue)',color:'#fff',border:'none',cursor:'pointer'}} onClick={()=>{onSet(parseInt(mins)||25);setShowSet(false);}}>✓</button><button style={{fontSize:10,padding:'2px 4px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}} onClick={()=>setShowSet(false)}>✕</button></div>);
-  if(!timer)return(<button onClick={e=>{e.stopPropagation();setShowSet(true);}} style={{fontSize:10,padding:'2px 8px',borderRadius:5,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text3)',cursor:'pointer',display:'flex',alignItems:'center',gap:3}} title="Set Timer">⏱</button>);
+  if(showSet)return(<div style={{display:'flex',alignItems:'center',gap:4}} onClick={e=>e.stopPropagation()}><input value={mins} onChange={e=>setMins(e.target.value.replace(/\D/g,''))} style={{width:44,background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:5,padding:'3px 6px',fontSize:12,color:'var(--text)',outline:'none'}} placeholder="min" autoFocus onKeyDown={e=>{if(e.key==='Enter'){onSet(parseInt(mins)||25);setShowSet(false);}if(e.key==='Escape')setShowSet(false);}}/><button style={{fontSize:11,padding:'3px 7px',borderRadius:4,background:'var(--blue)',color:'#fff',border:'none',cursor:'pointer'}} onClick={()=>{onSet(parseInt(mins)||25);setShowSet(false);}}>✓</button><button style={{fontSize:11,padding:'3px 5px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}} onClick={()=>setShowSet(false)}>✕</button></div>);
+  if(!timer)return(<button onClick={e=>{e.stopPropagation();setShowSet(true);}} style={{fontSize:11,padding:'3px 9px',borderRadius:5,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text3)',cursor:'pointer',display:'flex',alignItems:'center',gap:3}} title="Set Timer">⏱</button>);
   const expired=timer.remaining<=0;
-  return(<div style={{display:'flex',alignItems:'center',gap:3}} onClick={e=>e.stopPropagation()}><span className={`timer-badge ${expired?'expired':timer.running?'running':'paused'}`}>⏱ {fmtSecs(Math.max(0,timer.remaining))}</span>{!expired&&(timer.running?<button style={{fontSize:9,padding:'1px 4px',borderRadius:3,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--amber)',cursor:'pointer'}} onClick={onStop}>⏸</button>:<button style={{fontSize:9,padding:'1px 4px',borderRadius:3,border:'1px solid var(--blue)',background:'var(--blue-dim)',color:'var(--blue)',cursor:'pointer'}} onClick={onStart}>▶</button>)}<button style={{fontSize:9,padding:'1px 3px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}} onClick={onClear} title="Clear">✕</button></div>);
+  return(<div style={{display:'flex',alignItems:'center',gap:3}} onClick={e=>e.stopPropagation()}><span className={`timer-badge ${expired?'expired':timer.running?'running':'paused'}`}>⏱ {fmtSecs(Math.max(0,timer.remaining))}</span>{!expired&&(timer.running?<button style={{fontSize:10,padding:'2px 5px',borderRadius:3,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--amber)',cursor:'pointer'}} onClick={onStop}>⏸</button>:<button style={{fontSize:10,padding:'2px 5px',borderRadius:3,border:'1px solid var(--blue)',background:'var(--blue-dim)',color:'var(--blue)',cursor:'pointer'}} onClick={onStart}>▶</button>)}<button style={{fontSize:10,padding:'2px 4px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}} onClick={onClear} title="Clear">✕</button></div>);
 }
 
 /* ── CARD MODAL ── */
@@ -586,6 +755,7 @@ function CardModal({card,col,cols,onClose,onSave,onDelete,onMove,now,timers,setT
   const colData=cols.find(c=>c.id===col)||cols[0];
   const age=fmtAge(card.createdAt,now);
   const timer=timers[card.id]||null;
+  const mobile=isMobile();
 
   function handleImageResize(imgId,w){setImageSizes(s=>{const n={...s,[imgId]:{w}};try{localStorage.setItem('daily_imgsz_'+card.id,JSON.stringify(n));}catch{}return n;});}
   function saveCard(){onSave({...card,task,priority,content,expiryDays,color});setEditing(false);}
@@ -595,30 +765,37 @@ function CardModal({card,col,cols,onClose,onSave,onDelete,onMove,now,timers,setT
     if(window.Notification&&Notification.permission==='default')Notification.requestPermission();
   }
 
+  // Prevent body scroll when modal open
+  useEffect(()=>{
+    document.body.style.overflow='hidden';
+    return()=>{document.body.style.overflow='';};
+  },[]);
+
   return(
     <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="modal">
+      <div className="modal" onClick={e=>e.stopPropagation()}>
         <div className="modal-hdr">
           <div style={{width:8,height:8,borderRadius:'50%',background:colData.color,flexShrink:0}}/>
           {color&&<div style={{width:8,height:8,borderRadius:'50%',background:color,flexShrink:0}}/>}
-          {editing?<input className="finput" style={{fontSize:14,fontWeight:600,flex:1,background:'transparent',border:'none',padding:0}} value={task} onChange={e=>setTask(e.target.value)} placeholder="Task title…" autoFocus/>:<div className="modal-title">{task}</div>}
+          {editing?<input className="finput" style={{fontSize:14,fontWeight:600,flex:1,background:'transparent',border:'none',padding:0,minWidth:0}} value={task} onChange={e=>setTask(e.target.value)} placeholder="Task title…" autoFocus/>:<div className="modal-title">{task}</div>}
           <div style={{display:'flex',gap:4,marginLeft:'auto',alignItems:'center',flexShrink:0}}>
-            <span style={{fontSize:10,color:'var(--text3)',marginRight:2}}>🕐 {age}</span>
+            {!mobile&&<span style={{fontSize:10,color:'var(--text3)',marginRight:2}}>🕐 {age}</span>}
             <TimerWidgetInline timer={timer} onSet={setTimer} onClear={()=>setTimers(t=>{const n={...t};delete n[card.id];saveTimers(n);return n;})} onStart={()=>setTimers(t=>{const cur=t[card.id];if(!cur)return t;const endAt=Date.now()+cur.remaining*1000;const n={...t,[card.id]:{...cur,running:true,endAt}};saveTimers(n);return n;})} onStop={()=>setTimers(t=>{const cur=t[card.id];if(!cur)return t;const n={...t,[card.id]:{...cur,running:false}};saveTimers(n);return n;})}/>
             {!editing&&priority!=='None'&&<span className={`priority p${priority[1]}`}>{priority}</span>}
-            {!editing&&<button className="ibtn" title="Edit" onClick={()=>setEditing(true)} style={{width:26,height:26,border:'none',fontSize:12}}>✏️</button>}
-            <button className="ibtn" title="Delete" onClick={()=>{if(confirm('Delete?'))onDelete(card.id)}} style={{width:26,height:26,border:'none',fontSize:12,color:'var(--red)'}}>🗑️</button>
-            <button className="ibtn" title="Close" onClick={onClose} style={{width:26,height:26,border:'none',fontSize:13}}>✕</button>
+            {!editing&&<button className="ibtn" title="Edit" onClick={()=>setEditing(true)} style={{width:28,height:28,border:'none',fontSize:13}}>✏️</button>}
+            <button className="ibtn" title="Delete" onClick={()=>{if(confirm('Delete?'))onDelete(card.id)}} style={{width:28,height:28,border:'none',fontSize:13,color:'var(--red)'}}>🗑️</button>
+            <button className="ibtn" title="Close" onClick={onClose} style={{width:28,height:28,border:'none',fontSize:14}}>✕</button>
           </div>
         </div>
         <div className="modal-body">
           {editing?(
             <>
-              <div className="frow">
+              <div className="frow" style={mobile?{gridTemplateColumns:'1fr 1fr'}:{}}>
                 <div><label className="flabel">Priority</label><select className="fselect" value={priority} onChange={e=>setPriority(e.target.value)}>{PRIORITY_LIST.map(p=><option key={p}>{p}</option>)}</select></div>
                 <div><label className="flabel">Move to</label><select className="fselect" value={col} onChange={e=>onMove(card.id,col,e.target.value)}>{cols.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></div>
-                <div><label className="flabel">Auto-delete</label><select className="fselect" value={expiryDays??''} onChange={e=>setExpiryDays(e.target.value?Number(e.target.value):null)}><option value=''>Never</option><option value='3'>3d</option><option value='7'>7d</option><option value='14'>14d</option></select></div>
+                {!mobile&&<div><label className="flabel">Auto-delete</label><select className="fselect" value={expiryDays??''} onChange={e=>setExpiryDays(e.target.value?Number(e.target.value):null)}><option value=''>Never</option><option value='3'>3d</option><option value='7'>7d</option><option value='14'>14d</option></select></div>}
               </div>
+              {mobile&&<div className="fgroup"><label className="flabel">Auto-delete</label><select className="fselect" value={expiryDays??''} onChange={e=>setExpiryDays(e.target.value?Number(e.target.value):null)}><option value=''>Never</option><option value='3'>3d</option><option value='7'>7d</option><option value='14'>14d</option></select></div>}
               <div className="fgroup"><label className="flabel">Card Color</label><CardColorPicker color={color} onChange={setColor}/></div>
               <div className="fgroup"><label className="flabel">Notes</label><MdEditor value={content} onChange={setContent}/></div>
             </>
@@ -637,10 +814,12 @@ function AddCardModal({defaultCol,cols,onClose,onAdd}){
   const [col,setCol]=useState(defaultCol);const [task,setTask]=useState('');const [priority,setPriority]=useState('None');const [content,setContent]=useState('');const [color,setColor]=useState('');
   function add(){if(!task.trim())return;onAdd(col,{id:uid(),task:task.trim(),priority,content,color,createdAt:new Date().toISOString(),expiryDays:null});onClose();}
   const colData=cols.find(c=>c.id===col)||cols[0];
+  const mobile=isMobile();
+  useEffect(()=>{document.body.style.overflow='hidden';return()=>{document.body.style.overflow='';};},[]);
   return(
     <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="modal">
-        <div className="modal-hdr"><div style={{width:8,height:8,borderRadius:'50%',background:colData?.color,flexShrink:0}}/><div className="modal-title">New Card</div><button className="ibtn" onClick={onClose} style={{width:26,height:26,marginLeft:'auto',border:'none'}}>✕</button></div>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-hdr"><div style={{width:8,height:8,borderRadius:'50%',background:colData?.color,flexShrink:0}}/><div className="modal-title">New Card</div><button className="ibtn" onClick={onClose} style={{width:28,height:28,marginLeft:'auto',border:'none'}}>✕</button></div>
         <div className="modal-body">
           <div className="fgroup"><label className="flabel">Task title</label><input className="finput" value={task} onChange={e=>setTask(e.target.value)} placeholder="What needs to be done?" autoFocus onKeyDown={e=>e.key==='Enter'&&add()}/></div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
@@ -648,7 +827,7 @@ function AddCardModal({defaultCol,cols,onClose,onAdd}){
             <div><label className="flabel">Priority</label><select className="fselect" value={priority} onChange={e=>setPriority(e.target.value)}>{PRIORITY_LIST.map(p=><option key={p}>{p}</option>)}</select></div>
           </div>
           <div className="fgroup"><label className="flabel">Card Color</label><CardColorPicker color={color} onChange={setColor}/></div>
-          <div className="fgroup"><label className="flabel">Notes (optional)</label><MdEditor value={content} onChange={setContent}/></div>
+          {!mobile&&<div className="fgroup"><label className="flabel">Notes (optional)</label><MdEditor value={content} onChange={setContent}/></div>}
         </div>
         <div className="modal-foot"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={add} disabled={!task.trim()}>Add Card</button></div>
       </div>
@@ -660,10 +839,11 @@ function AddCardModal({defaultCol,cols,onClose,onAdd}){
 function AddColModal({onClose,onAdd}){
   const [label,setLabel]=useState('');const [color,setColor]=useState(COL_PALETTE[4]);
   function add(){if(!label.trim())return;onAdd({id:uid(),label:label.trim(),color,locked:false});onClose();}
+  useEffect(()=>{document.body.style.overflow='hidden';return()=>{document.body.style.overflow='';};},[]);
   return(
     <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="modal" style={{maxWidth:360}}>
-        <div className="modal-hdr"><div className="modal-title">New Status Column</div><button className="ibtn" onClick={onClose} style={{width:26,height:26,marginLeft:'auto',border:'none'}}>✕</button></div>
+      <div className="modal" style={{maxWidth:360}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-hdr"><div className="modal-title">New Status Column</div><button className="ibtn" onClick={onClose} style={{width:28,height:28,marginLeft:'auto',border:'none'}}>✕</button></div>
         <div className="modal-body">
           <div className="fgroup"><label className="flabel">Name</label><input className="finput" value={label} onChange={e=>setLabel(e.target.value)} placeholder="e.g. Review…" autoFocus onKeyDown={e=>e.key==='Enter'&&add()}/></div>
           <div className="fgroup"><label className="flabel">Color</label><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{COL_PALETTE.map(c=><div key={c} className={`swatch${color===c?' sel':''}`} style={{background:c}} onClick={()=>setColor(c)}/>)}</div></div>
@@ -760,7 +940,7 @@ function Column({colData,cards,allCols,onCardDrop,onCardReorder,onColDragStart,o
 
 /* ── FLOATING PANEL ── */
 function FloatingPanel({title,icon,onClose,children,initW=560,initH=420,initX=null,initY=null,storageKey,extraHeaderContent}){
-  const isMobile=window.innerWidth<=640;
+  const mobile=isMobile();
   const defX=initX!==null?initX:Math.max(20,window.innerWidth-initW-20);
   const defY=initY!==null?initY:Math.max(60,window.innerHeight-initH-80);
   const {sz,setSz,startResize}=useResize(initW,initH,defX,defY);
@@ -778,7 +958,16 @@ function FloatingPanel({title,icon,onClose,children,initW=560,initH=420,initX=nu
     window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);e.preventDefault();
   }
 
-  if(isMobile)return(<div className="fp" style={{bottom:60,left:8,right:8,top:'auto',height:'auto',minHeight:300,maxHeight:'80vh',position:'fixed'}}><div className="fp-hdr"><span style={{fontSize:14}}>{icon}</span><span className="fp-title">{title}</span>{extraHeaderContent}<button onClick={onClose} style={{fontSize:14,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'2px 6px',marginLeft:extraHeaderContent?0:'auto'}}>✕</button></div><div style={{flex:1,overflow:'auto',minHeight:0,display:'flex',flexDirection:'column'}}>{children}</div></div>);
+  if(mobile)return(
+    <div ref={ref} className="fp">
+      <div className="fp-hdr">
+        <span style={{fontSize:14}}>{icon}</span><span className="fp-title">{title}</span>
+        {extraHeaderContent}
+        <button onClick={onClose} style={{fontSize:14,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'2px 6px',marginLeft:extraHeaderContent?0:'auto'}}>✕</button>
+      </div>
+      <div style={{flex:1,overflow:'auto',minHeight:0,display:'flex',flexDirection:'column'}}>{children}</div>
+    </div>
+  );
 
   return(
     <div ref={ref} className="fp" style={{left:sz.x,top:sz.y,width:sz.w,height:sz.h,position:'fixed'}}>
@@ -799,6 +988,7 @@ function ScratchPad({onClose}){
   useEffect(()=>saveLS('daily_scratch',content),[content]);
   const ref=useRef();
   useEffect(()=>{
+    if(isMobile())return;
     function onDown(e){const el=ref.current;if(el&&!el.contains(e.target))onClose();}
     const t=setTimeout(()=>window.addEventListener('mousedown',onDown),150);
     return()=>{clearTimeout(t);window.removeEventListener('mousedown',onDown);};
@@ -821,41 +1011,23 @@ function ScratchPad({onClose}){
 /* ── EXCALIDRAW DRAWING PANEL ── */
 function DrawPanel({onClose,light}){
   const iframeRef=useRef();
-  // Use Excalidraw's hosted app directly in an iframe
   const excalidrawUrl='https://excalidraw.com';
-
+  const mobile=isMobile();
   return(
     <div className="draw-panel-overlay">
       <div className="draw-panel-hdr">
         <div className="logo" style={{fontSize:15}}>Daily<span style={{color:'var(--blue)'}}>.</span></div>
         <div style={{width:1,height:18,background:'var(--border)',margin:'0 4px'}}/>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="2.5"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg>
-        <span style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Drawing Board</span>
-        <div className="draw-panel-badge">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-          Powered by Excalidraw
-        </div>
+        <span style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Drawing</span>
+        {!mobile&&<div className="draw-panel-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Powered by Excalidraw</div>}
         <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
-          <a href={excalidrawUrl} target="_blank" rel="noopener"
-            style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',textDecoration:'none',display:'flex',alignItems:'center',gap:4}}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Open full page
-          </a>
-          <button onClick={onClose}
-            style={{padding:'5px 14px',borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',fontSize:12,fontWeight:500,display:'flex',alignItems:'center',gap:5}}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            Close
-          </button>
+          {!mobile&&<a href={excalidrawUrl} target="_blank" rel="noopener" style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',textDecoration:'none',display:'flex',alignItems:'center',gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Open full page</a>}
+          <button onClick={onClose} style={{padding:'5px 14px',borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',fontSize:12,fontWeight:500,display:'flex',alignItems:'center',gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Close</button>
         </div>
       </div>
       <div className="draw-panel-body">
-        <iframe
-          ref={iframeRef}
-          src={excalidrawUrl}
-          title="Excalidraw Drawing Board"
-          allow="clipboard-read; clipboard-write"
-          style={{width:'100%',height:'100%',border:'none',display:'block'}}
-        />
+        <iframe ref={iframeRef} src={excalidrawUrl} title="Excalidraw Drawing Board" allow="clipboard-read; clipboard-write" style={{width:'100%',height:'100%',border:'none',display:'block'}}/>
       </div>
     </div>
   );
@@ -868,7 +1040,7 @@ function AiPanel({onClose}){
       <div className="ai-panel-hdr">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
         <span style={{fontWeight:600,fontSize:13}}>AI Assistants</span>
-        <button onClick={onClose} style={{marginLeft:'auto',fontSize:16,color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕</button>
+        <button onClick={onClose} style={{marginLeft:'auto',fontSize:16,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px'}}>✕</button>
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:5,padding:14,flex:1,overflowY:'auto'}}>
         <div style={{fontSize:11,color:'var(--text3)',marginBottom:4}}>Opens in a new tab →</div>
@@ -886,7 +1058,7 @@ function AiPanel({onClose}){
 
 /* ── SHORTCUTS ── */
 function ShortcutsPanel({onClose}){
-  const rows=[['N','New card'],['E','Scratch pad'],['D','Drawing board (Excalidraw)'],['?','Shortcuts'],['Esc','Close'],['Drag card','Move / reorder'],['Drag grip','Reorder column'],['☐ checkbox','Click in preview to toggle']];
+  const rows=[['N','New card'],['E','Scratch pad'],['D','Drawing board'],['?','Shortcuts'],['Esc','Close'],['Drag card','Move / reorder'],['Drag grip','Reorder column'],['☐ checkbox','Click in preview to toggle'],['Swipe','Scroll between columns (mobile)']];
   return(
     <div className="sc-overlay" onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
       <div className="sc-box">
@@ -914,8 +1086,30 @@ function AlarmOverlay({alarms,onDismiss}){
         <div style={{fontSize:48,marginBottom:8}}>⏰</div>
         <h2>Timer Done!</h2>
         {alarms.map(a=><p key={a.id} style={{margin:'4px 0'}}>"{a.task}"</p>)}
-        <button className="btn primary" style={{marginTop:8,padding:'8px 24px'}} onClick={onDismiss}>Dismiss</button>
+        <button className="btn primary" style={{marginTop:12,padding:'10px 28px',fontSize:14,width:'100%'}} onClick={onDismiss}>Dismiss</button>
       </div>
+    </div>
+  );
+}
+
+/* ── OVERFLOW MENU ── */
+function OverflowMenu({items,onClose}){
+  const ref=useRef();
+  useEffect(()=>{
+    function onClick(e){if(ref.current&&!ref.current.contains(e.target))onClose();}
+    setTimeout(()=>document.addEventListener('mousedown',onClick),50);
+    return()=>document.removeEventListener('mousedown',onClick);
+  },[onClose]);
+  return(
+    <div ref={ref} className="overflow-menu">
+      {items.map((item,i)=>item===null
+        ?<div key={i} className="overflow-sep"/>
+        :<button key={i} className="overflow-item" onClick={()=>{item.action();onClose();}}>
+          <span style={{fontSize:14}}>{item.icon}</span>
+          <span>{item.label}</span>
+          {item.badge&&<span style={{marginLeft:'auto',fontSize:10,padding:'1px 6px',borderRadius:8,background:item.badge.bg||'var(--bg4)',color:item.badge.color||'var(--text2)'}}>{item.badge.text}</span>}
+        </button>
+      )}
     </div>
   );
 }
@@ -927,6 +1121,16 @@ function App(){
   const [cards,setCards]=useState(saved?.cards||def.cards);
   const [now,setNow]=useState(Date.now());
   const [spinning,setSpinning]=useState(false);
+  const [windowW,setWindowW]=useState(window.innerWidth);
+
+  useEffect(()=>{
+    function onResize(){setWindowW(window.innerWidth);}
+    window.addEventListener('resize',onResize);
+    return()=>window.removeEventListener('resize',onResize);
+  },[]);
+
+  const mobile=windowW<=640;
+  const tablet=windowW>640&&windowW<=900;
 
   const [timers,setTimers]=useState(()=>{
     const saved=loadTimers();const now=Date.now();const updated={};
@@ -962,6 +1166,7 @@ function App(){
   const [addCardCol,setAddCardCol]=useState(null);const [showAddCol,setShowAddCol]=useState(false);
   const [showShortcuts,setShowShortcuts]=useState(false);const [showEditor,setShowEditor]=useState(false);
   const [showDraw,setShowDraw]=useState(false);const [showAi,setShowAi]=useState(false);
+  const [showOverflow,setShowOverflow]=useState(false);
   const [confetti,setConfetti]=useState(false);const confettiKey=useRef(0);
   const [toasts,setToasts]=useState([]);
   const [light,setLight]=useState(()=>{try{return localStorage.getItem('daily_theme')==='light';}catch{return false;}});
@@ -987,7 +1192,7 @@ function App(){
       if(e.key==='e'||e.key==='E')setShowEditor(o=>!o);
       if(e.key==='d'||e.key==='D')setShowDraw(o=>!o);
       if(e.key==='?')setShowShortcuts(true);
-      if(e.key==='Escape'){setOpenCard(null);setAddCardCol(null);setShowAddCol(false);setShowShortcuts(false);setSearch('');setSearchOpen(false);if(!showDraw)setShowDraw(false);}
+      if(e.key==='Escape'){setOpenCard(null);setAddCardCol(null);setShowAddCol(false);setShowShortcuts(false);setSearch('');setSearchOpen(false);setShowOverflow(false);}
     }
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
   },[cols,showDraw]);
@@ -1055,7 +1260,22 @@ function App(){
   const totalDone=useMemo(()=>cols.reduce((a,c)=>a+(cards[c.id]||[]).filter(x=>x.doneAt).length,0),[cols,cards]);
   const activeTimers=useMemo(()=>Object.values(timers).filter(t=>t.running&&t.remaining>0).length,[timers]);
 
-  // If drawing board is open, render it fullscreen
+  // Overflow menu items for mobile/tablet
+  const overflowItems = [
+    {icon:'🔍',label:'Search',action:()=>{setSearchOpen(o=>!o);if(!searchOpen)setTimeout(()=>searchRef.current?.focus(),80);}},
+    {icon:'📝',label:'Scratch Pad',action:()=>setShowEditor(o=>!o)},
+    {icon:'✏️',label:'Drawing Board',action:()=>setShowDraw(true)},
+    {icon:'🤖',label:'AI Assistants',action:()=>setShowAi(o=>!o)},
+    null,
+    {icon:'🔄',label:'Refresh Ages',action:()=>refreshAge()},
+    {icon:light?'🌙':'☀️',label:light?'Dark Mode':'Light Mode',action:()=>setLight(l=>!l)},
+    {icon:'⌨️',label:'Shortcuts',action:()=>setShowShortcuts(true)},
+    null,
+    {icon:'⬇️',label:'Import JSON',action:()=>importJSON()},
+    {icon:'⬆️',label:'Export JSON',action:()=>exportJSON()},
+    ...(pwaPrompt?[null,{icon:'📱',label:'Install App',action:()=>installPwa(),badge:{text:'Install',bg:'var(--blue-dim)',color:'var(--blue)'}}]:[]),
+  ];
+
   if(showDraw){
     return(
       <>
@@ -1066,57 +1286,99 @@ function App(){
     );
   }
 
+  // Determine which header buttons to show directly vs in overflow
+  // Desktop (>900): show all buttons
+  // Tablet (641-900): show key buttons + overflow for rest
+  // Mobile (≤640): logo + search + new + overflow
+
+  const renderDesktopHeader=()=>(
+    <>
+      <div className="stats-desktop" style={{display:'flex',gap:5,flexShrink:0}}>
+        <div className="stat-pill">{totalAll} tasks</div>
+        {totalBlockers>0&&<div className="stat-pill red">🚫 {totalBlockers}</div>}
+        {totalDone>0&&<div className="stat-pill green">✓ {totalDone}</div>}
+        {activeTimers>0&&<div className="stat-pill" style={{color:'var(--blue)',borderColor:'var(--blue-dim)',background:'var(--blue-dim)'}}>⏱ {activeTimers}</div>}
+      </div>
+      <div style={{marginLeft:'auto',display:'flex',gap:3,alignItems:'center'}}>
+        <div className="search-wrap">
+          {searchOpen&&(
+            <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+              <span style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--text3)',pointerEvents:'none'}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+              <input ref={searchRef} className="search-inp" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" onKeyDown={e=>{if(e.key==='Escape'){setSearch('');setSearchOpen(false);}}}/>
+            </div>
+          )}
+          <button className={`ibtn${searchOpen?' active':''}`} data-tip="Search" onClick={()=>{setSearchOpen(o=>!o);if(!searchOpen)setTimeout(()=>searchRef.current?.focus(),80);}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
+        </div>
+        <button className={`ibtn${showEditor?' active':''}`} data-tip="Scratch Pad (E)" onClick={()=>setShowEditor(o=>!o)}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button className="ibtn" data-tip="Drawing Board (D)" onClick={()=>setShowDraw(true)} style={{color:'var(--blue)',borderColor:'var(--blue-dim)',background:'var(--blue-dim)'}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg>
+        </button>
+        <button className={`ibtn${showAi?' active':''}`} data-tip="AI Assistants" onClick={()=>setShowAi(o=>!o)}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        </button>
+        <button className="ibtn" data-tip="Refresh ages" onClick={refreshAge}>
+          <svg className={spinning?'spin':''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+        <button className="ibtn" data-tip={light?'Dark mode':'Light mode'} onClick={()=>setLight(l=>!l)}>
+          {light?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>}
+        </button>
+        <button className="ibtn" data-tip="Shortcuts" onClick={()=>setShowShortcuts(true)}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>
+        </button>
+        <button className="ibtn" data-tip="Import JSON" onClick={importJSON}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button className="ibtn" data-tip="Export JSON" onClick={exportJSON}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </button>
+        <button className={`ibtn${pwaPrompt?' active':''}`} data-tip={pwaPrompt?"Install as App":"Add to Home Screen"} onClick={installPwa} style={pwaPrompt?{color:'var(--blue)',borderColor:'var(--blue-dim)',background:'var(--blue-dim)'}:{}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2v12M7 9l5 5 5-5"/><path d="M20 17v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/></svg>
+        </button>
+      </div>
+    </>
+  );
+
+  const renderMobileTabletHeader=()=>(
+    <>
+      {/* Stats as small pills */}
+      <div style={{display:'flex',gap:4,flexShrink:0,overflow:'hidden'}}>
+        <div className="stat-pill" style={{fontSize:10,padding:'2px 6px'}}>{totalAll}</div>
+        {totalBlockers>0&&<div className="stat-pill red" style={{fontSize:10,padding:'2px 6px'}}>🚫{totalBlockers}</div>}
+        {activeTimers>0&&<div className="stat-pill" style={{fontSize:10,padding:'2px 6px',color:'var(--blue)',borderColor:'var(--blue-dim)',background:'var(--blue-dim)'}}>⏱{activeTimers}</div>}
+      </div>
+      <div style={{marginLeft:'auto',display:'flex',gap:3,alignItems:'center'}}>
+        {/* Search (always visible) */}
+        {searchOpen&&(
+          <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+            <span style={{position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',color:'var(--text3)',pointerEvents:'none'}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+            <input ref={searchRef} className="search-inp" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" onKeyDown={e=>{if(e.key==='Escape'){setSearch('');setSearchOpen(false);}}} style={{paddingLeft:28}}/>
+          </div>
+        )}
+        <button className={`ibtn${searchOpen?' active':''}`} onClick={()=>{setSearchOpen(o=>!o);if(!searchOpen)setTimeout(()=>searchRef.current?.focus(),80);}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        {/* Overflow menu button */}
+        <div style={{position:'relative'}}>
+          <button className={`ibtn${showOverflow?' active':''}`} onClick={()=>setShowOverflow(o=>!o)} style={{position:'relative'}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/></svg>
+            {pwaPrompt&&<span style={{position:'absolute',top:3,right:3,width:6,height:6,borderRadius:'50%',background:'var(--blue)',border:'1.5px solid var(--bg2)'}}/>}
+          </button>
+          {showOverflow&&<OverflowMenu items={overflowItems} onClose={()=>setShowOverflow(false)}/>}
+        </div>
+      </div>
+    </>
+  );
+
   return(
     <div className="app">
       {/* HEADER */}
       <div className="header">
         <div className="logo">Daily<span>.</span></div>
-        <div className="stats-desktop" style={{display:'flex',gap:5,flexShrink:0}}>
-          <div className="stat-pill">{totalAll} tasks</div>
-          {totalBlockers>0&&<div className="stat-pill red">🚫 {totalBlockers}</div>}
-          {totalDone>0&&<div className="stat-pill green">✓ {totalDone}</div>}
-          {activeTimers>0&&<div className="stat-pill" style={{color:'var(--blue)',borderColor:'var(--blue-dim)',background:'var(--blue-dim)'}}>⏱ {activeTimers}</div>}
-        </div>
-        <div style={{marginLeft:'auto',display:'flex',gap:3,alignItems:'center'}}>
-          <div className="search-wrap">
-            {searchOpen&&(
-              <div style={{position:'relative',display:'flex',alignItems:'center'}}>
-                <span style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--text3)',pointerEvents:'none'}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-                <input ref={searchRef} className="search-inp" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" onKeyDown={e=>{if(e.key==='Escape'){setSearch('');setSearchOpen(false);}}}/>
-              </div>
-            )}
-            <button className={`ibtn${searchOpen?' active':''}`} data-tip="Search" onClick={()=>{setSearchOpen(o=>!o);if(!searchOpen)setTimeout(()=>searchRef.current?.focus(),80);}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            </button>
-          </div>
-          <button className={`ibtn${showEditor?' active':''}`} data-tip="Scratch Pad (E)" onClick={()=>setShowEditor(o=>!o)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </button>
-          <button className="ibtn" data-tip="Drawing Board (D) — Excalidraw" onClick={()=>setShowDraw(true)} style={{color:'var(--blue)',borderColor:'var(--blue-dim)',background:'var(--blue-dim)'}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg>
-          </button>
-          <button className={`ibtn${showAi?' active':''}`} data-tip="AI Assistants" onClick={()=>setShowAi(o=>!o)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-          </button>
-          <button className="ibtn" data-tip="Refresh ages" onClick={refreshAge}>
-            <svg className={spinning?'spin':''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          </button>
-          <button className="ibtn" data-tip={light?'Dark mode':'Light mode'} onClick={()=>setLight(l=>!l)}>
-            {light?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>}
-          </button>
-          <button className="ibtn" data-tip="Shortcuts" onClick={()=>setShowShortcuts(true)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>
-          </button>
-          <button className="ibtn" data-tip="Import JSON" onClick={importJSON}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          </button>
-          <button className="ibtn" data-tip="Export JSON" onClick={exportJSON}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          </button>
-          <button className={`ibtn${pwaPrompt?' active':''}`} data-tip={pwaPrompt?"Install as App":"Add to Home Screen"} onClick={installPwa} style={pwaPrompt?{color:'var(--blue)',borderColor:'var(--blue-dim)',background:'var(--blue-dim)'}:{}}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2v12M7 9l5 5 5-5"/><path d="M20 17v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/></svg>
-          </button>
-        </div>
+        {(mobile||tablet)?renderMobileTabletHeader():renderDesktopHeader()}
       </div>
 
       {/* BOARD */}
@@ -1150,8 +1412,9 @@ function App(){
       {showAi&&<AiPanel onClose={()=>setShowAi(false)}/>}
       {confetti&&<Confetti key={confettiKey.current}/>}
       <Toast toasts={toasts}/>
+      {/* ALARM: z-index 9999, always on top */}
       <AlarmOverlay alarms={alarms} onDismiss={dismissAlarms}/>
-      {pwaPrompt&&(
+      {pwaPrompt&&!mobile&&(
         <div className="pwa-banner">
           <div><div style={{fontSize:13,fontWeight:600,marginBottom:2}}>📱 Install Daily.</div><div style={{fontSize:11,color:'var(--text3)'}}>Use as a standalone app</div></div>
           <button className="pwa-install" onClick={installPwa}>Install</button>
