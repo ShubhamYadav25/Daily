@@ -31,11 +31,7 @@
   --hdr:50px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-top: env(safe-area-inset-top, 0px);
 }
-html{height:100%;overflow:hidden}
-body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);height:100%;overflow:hidden;overscroll-behavior:contain}
 html{height:100%;overflow:hidden}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);height:100%;overflow:hidden;overscroll-behavior:contain}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;line-height:1}
@@ -43,10 +39,6 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
-.app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
-
-/* ── HEADER ── */
-.header{display:flex;align-items:center;gap:5px;padding:0 10px;height:var(--hdr);border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;z-index:20;position:relative;padding-top:var(--safe-top)}
 .app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
 
 /* ── HEADER ── */
@@ -65,7 +57,6 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 [data-tip]:hover::after{content:attr(data-tip);position:absolute;top:calc(100% + 7px);bottom:auto;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);color:var(--text);font-size:11px;font-weight:500;padding:4px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.4)}
 [data-tip]:hover::before{content:'';position:absolute;top:calc(100% + 2px);bottom:auto;left:50%;transform:translateX(-50%);border:5px solid transparent;border-bottom-color:var(--border2);border-top-color:transparent;pointer-events:none;z-index:9999}
 .search-wrap{position:relative;display:flex;align-items:center}
-.search-inp{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:5px 10px 5px 32px;font-size:13px;color:var(--text);outline:none;width:150px;transition:border-color .15s}
 .search-inp{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:5px 10px 5px 32px;font-size:13px;color:var(--text);outline:none;width:150px;transition:border-color .15s}
 .search-inp:focus{border-color:var(--blue)}
 .header-actions{display:flex;gap:3px;align-items:center;flex-shrink:0}
@@ -111,11 +102,8 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .add-col-btn:hover{border-color:var(--text2);color:var(--text2);background:var(--bg2)}
 
 /* ── CARDS ── */
-
-/* ── CARDS ── */
 .card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 10px 8px;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s;position:relative;user-select:none}
 .card:hover{border-color:var(--border2);box-shadow:var(--shadow);transform:translateY(-1px)}
-.card:active{transform:scale(.98)}
 .card:active{transform:scale(.98)}
 .card.dragging{opacity:.35;cursor:grabbing;transform:scale(.97)}
 .card.drag-over-top{border-top:2px solid var(--blue) !important}
@@ -148,16 +136,11 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 
 /* ── MODAL — CENTERED ON ALL SCREENS ── */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;animation:fadein .14s ease;overflow-y:auto}
-
-/* ── MODAL — CENTERED ON ALL SCREENS ── */
-.overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px;animation:fadein .14s ease;overflow-y:auto}
 @keyframes fadein{from{opacity:0}to{opacity:1}}
-.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);width:100%;max-width:740px;max-height:90vh;display:flex;flex-direction:column;animation:slidein .17s ease;margin:auto}
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);width:100%;max-width:740px;max-height:90vh;display:flex;flex-direction:column;animation:slidein .17s ease;margin:auto}
 @keyframes slidein{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
 .modal-hdr{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
 .modal-title{font-size:15px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.modal-body{flex:1;overflow-y:auto;padding:16px;-webkit-overflow-scrolling:touch}
 .modal-body{flex:1;overflow-y:auto;padding:16px;-webkit-overflow-scrolling:touch}
 .modal-foot{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
 .flabel{font-size:11px;font-weight:600;color:var(--text2);letter-spacing:.4px;text-transform:uppercase;margin-bottom:5px;display:block}
@@ -172,8 +155,6 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
 .btn.primary:hover{opacity:.88}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-
-/* ── MARKDOWN ── */
 
 /* ── MARKDOWN ── */
 .md-render{font-size:13px;line-height:1.7;color:var(--text)}
@@ -200,8 +181,6 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .md-render .task-item.done .task-text{color:var(--text3);text-decoration:line-through}
 .md-render .cb{font-size:14px;flex-shrink:0;user-select:none}
 .md-render a{color:var(--blue)}
-
-/* ── FLOATING PANEL ── */
 
 /* ── FLOATING PANEL ── */
 .sc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:400}
@@ -233,12 +212,8 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 @keyframes toastin{from{transform:translateX(14px);opacity:0}to{transform:translateX(0);opacity:1}}
 
 /* ── CONFETTI ── */
-
-/* ── CONFETTI ── */
 .cp{position:fixed;top:-10px;pointer-events:none;z-index:700;border-radius:2px;animation:fall linear forwards}
 @keyframes fall{to{transform:translateY(110vh) rotate(720deg);opacity:0}}
-
-/* ── SWATCHES ── */
 
 /* ── SWATCHES ── */
 .swatch{width:20px;height:20px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:.12s;flex-shrink:0}
@@ -246,13 +221,7 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 
 /* ── FAB ── */
 .fab{position:fixed;bottom:calc(18px + var(--safe-bottom));right:18px;width:48px;height:48px;border-radius:50%;background:var(--blue);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(79,142,247,.45);border:none;cursor:pointer;z-index:50;transition:transform .15s,box-shadow .15s}
-
-/* ── FAB ── */
-.fab{position:fixed;bottom:calc(18px + var(--safe-bottom));right:18px;width:48px;height:48px;border-radius:50%;background:var(--blue);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(79,142,247,.45);border:none;cursor:pointer;z-index:50;transition:transform .15s,box-shadow .15s}
 .fab:hover{transform:scale(1.08)}
-.fab:active{transform:scale(.95)}
-
-/* ── FLOATING PANEL ── */
 .fab:active{transform:scale(.95)}
 
 /* ── FLOATING PANEL ── */
@@ -270,8 +239,6 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .fp-resize.se{bottom:-4px;right:-4px;width:14px;height:14px;cursor:se-resize;background:var(--border2);border-radius:0 0 var(--radius-lg) 0;opacity:.6}
 
 /* ── AI PANEL ── */
-
-/* ── AI PANEL ── */
 .ai-panel{position:fixed;top:var(--hdr);right:0;width:320px;max-width:100vw;bottom:0;background:var(--bg2);border-left:1px solid var(--border2);z-index:150;display:flex;flex-direction:column;animation:slideL .18s ease}
 @keyframes slideL{from{transform:translateX(100%)}to{transform:translateX(0)}}
 .ai-panel-hdr{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -282,21 +249,13 @@ input,textarea,select{font-family:inherit;color:inherit;background:none}
 .spin{animation:spin .6s linear}
 
 /* ── LIGHT MODE ── */
-
-/* ── LIGHT MODE ── */
 body.light{--bg:#f3f3f5;--bg2:#fff;--bg3:#ededf0;--bg4:#e4e4e9;--border:#dcdce2;--border2:#c8c8d0;--text:#18181f;--text2:#555566;--text3:#9898aa;--blue-dim:#e5eeff;--green-dim:#e5f8f1;--amber-dim:#fef8e6;--red-dim:#feeaea;--purple-dim:#f1efff}
-
-/* ── RESIZABLE IMAGE ── */
 
 /* ── RESIZABLE IMAGE ── */
 .resizable-img-container{display:inline-block;position:relative;margin:6px 0}
 .resizable-img-container img{display:block;border-radius:6px;object-fit:contain}
 .resizable-img-container .resize-handle{position:absolute;bottom:-5px;right:-5px;width:14px;height:14px;background:var(--blue);border:2px solid var(--bg2);border-radius:3px;cursor:se-resize;z-index:10;opacity:0;transition:opacity .15s}
 .resizable-img-container:hover .resize-handle{opacity:1}
-
-/* ── ALARM — HIGH Z-INDEX, ALWAYS VISIBLE ── */
-.alarm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;animation:fadein .2s ease;padding:20px}
-.alarm-box{background:var(--bg2);border:2px solid var(--red);border-radius:16px;padding:32px 40px;text-align:center;animation:slidein .2s ease;max-width:340px;width:100%}
 
 /* ── ALARM — HIGH Z-INDEX, ALWAYS VISIBLE ── */
 .alarm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;animation:fadein .2s ease;padding:20px}
@@ -312,22 +271,6 @@ body.light{--bg:#f3f3f5;--bg2:#fff;--bg3:#ededf0;--bg4:#e4e4e9;--border:#dcdce2;
 .draw-panel-body iframe{width:100%;height:100%;border:none;display:block}
 .draw-panel-badge{font-size:11px;color:var(--text3);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:3px 10px;display:flex;align-items:center;gap:5px}
 
-/* ── DESKTOP: > 900px ── */
-@media(min-width:901px){
-  .col{border-top:1px solid var(--border)}
-  .col-hdr-actions{opacity:0}
-  .col-hdr:hover .col-hdr-actions{opacity:1}
-}
-
-/* ── TABLET: 641–900px ── */
-@media(min-width:641px) and (max-width:900px){
-  .col{min-width:200px;max-width:250px;border-top:3px solid var(--border)}
-  .col-hdr-actions{opacity:1}
-  .header{padding:0 8px;gap:4px}
-  .search-inp{width:120px}
-}
-
-/* ── MOBILE: ≤ 640px ── */
 /* ── DESKTOP: > 900px ── */
 @media(min-width:901px){
   .col{border-top:1px solid var(--border)}
@@ -366,8 +309,6 @@ body.light{--bg:#f3f3f5;--bg2:#fff;--bg3:#ededf0;--bg4:#e4e4e9;--border:#dcdce2;
   .toasts{right:8px;bottom:calc(72px + var(--safe-bottom))}
   .fp{bottom:calc(8px + var(--safe-bottom))!important;right:8px!important;left:8px!important;top:auto!important;width:auto!important;min-width:0;max-height:70vh;border-radius:var(--radius-lg)}
   .ai-panel{width:100vw}
-
-  /* Disable tooltips on touch */
   [data-tip]:hover::after,[data-tip]:hover::before{display:none}
   .alarm-overlay{z-index:9999;padding:16px}
   .alarm-box{padding:24px 20px}
@@ -473,8 +414,6 @@ function parseBlocker(content){
   return lines.slice(bi+1).filter(l=>l.trim()).slice(0,3).join(' ')||'(no detail)';
 }
 function fmtSecs(s){const m=Math.floor(s/60),sec=s%60;return`${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;}
-function isMobile(){return window.innerWidth<=640;}
-function isTablet(){return window.innerWidth>640&&window.innerWidth<=900;}
 function isMobile(){return window.innerWidth<=640;}
 function isTablet(){return window.innerWidth>640&&window.innerWidth<=900;}
 
@@ -619,7 +558,6 @@ function MdEditor({value,onChange}){
   const ta=useRef();
   const [mode,setMode]=useState('write');
   const [edH,setEdH]=useState(isMobile()?160:220);
-  const [edH,setEdH]=useState(isMobile()?160:220);
   const resizing=useRef(false);const resizeStart=useRef(null);
   const [showFontMenu,setShowFontMenu]=useState(false);
   const [showColorMenu,setShowColorMenu]=useState(false);
@@ -732,7 +670,6 @@ function MdEditor({value,onChange}){
   function startVResize(e){
     resizing.current=true;resizeStart.current={y:e.clientY,h:edH};
     const onMove=ev=>{if(!resizing.current)return;setEdH(Math.max(80,Math.min(600,resizeStart.current.h+(ev.clientY-resizeStart.current.y))));};
-    const onMove=ev=>{if(!resizing.current)return;setEdH(Math.max(80,Math.min(600,resizeStart.current.h+(ev.clientY-resizeStart.current.y))));};
     const onUp=()=>{resizing.current=false;window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);};
     window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);e.preventDefault();
   }
@@ -758,7 +695,6 @@ function MdEditor({value,onChange}){
             {gi>0&&<div style={{width:1,height:14,background:'var(--border2)',margin:'0 3px',flexShrink:0}}/>}
             {g.items.map(t=>(
               <button key={t.id} title={t.tip}
-                style={{padding:'3px 7px',borderRadius:5,fontSize:11,fontWeight:700,fontFamily:"'DM Mono',monospace",cursor:'pointer',lineHeight:1.5,color:t.sp?'var(--red)':t.sj?'var(--amber)':'var(--text2)',background:t.sp?'var(--red-dim)':t.sj?'var(--amber-dim)':'transparent',border:t.sp?'1px solid rgba(247,111,111,.3)':t.sj?'1px solid rgba(247,195,90,.3)':'none',...(t.st||{})}}
                 style={{padding:'3px 7px',borderRadius:5,fontSize:11,fontWeight:700,fontFamily:"'DM Mono',monospace",cursor:'pointer',lineHeight:1.5,color:t.sp?'var(--red)':t.sj?'var(--amber)':'var(--text2)',background:t.sp?'var(--red-dim)':t.sj?'var(--amber-dim)':'transparent',border:t.sp?'1px solid rgba(247,111,111,.3)':t.sj?'1px solid rgba(247,195,90,.3)':'none',...(t.st||{})}}
                 onMouseDown={ev=>{ev.preventDefault();applyFmt(t.id);}}>
                 {t.l}
@@ -799,7 +735,6 @@ function MdEditor({value,onChange}){
           {[['write','✏️'],['split','▥'],['preview','👁']].map(([id,ico])=>(
             <button key={id} onMouseDown={ev=>{ev.preventDefault();setMode(id);}}
               style={{padding:'3px 7px',borderRadius:5,fontSize:11,fontWeight:600,cursor:'pointer',background:mode===id?'var(--blue)':'transparent',color:mode===id?'#fff':'var(--text3)',border:'none',lineHeight:1.5}}>
-              style={{padding:'3px 7px',borderRadius:5,fontSize:11,fontWeight:600,cursor:'pointer',background:mode===id?'var(--blue)':'transparent',color:mode===id?'#fff':'var(--text3)',border:'none',lineHeight:1.5}}>
               {ico}
             </button>
           ))}
@@ -821,11 +756,9 @@ function MdEditor({value,onChange}){
         )}
         {(mode==='preview'||mode==='split')&&(
           <div className="md-render" style={{flex:1,background:'var(--bg3)',padding:'10px',overflowY:'auto'}}
-          <div className="md-render" style={{flex:1,background:'var(--bg3)',padding:'10px',overflowY:'auto'}}
             dangerouslySetInnerHTML={{__html:value?renderMd(value):'<p style="color:var(--text3);font-style:italic;font-size:12px">Nothing to preview…</p>'}}/>
         )}
       </div>
-      <div onMouseDown={startVResize} style={{height:6,background:'var(--bg4)',borderTop:'1px solid var(--border)',cursor:'ns-resize',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 10px',flexShrink:0,touchAction:'none'}}>
       <div onMouseDown={startVResize} style={{height:6,background:'var(--bg4)',borderTop:'1px solid var(--border)',cursor:'ns-resize',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 10px',flexShrink:0,touchAction:'none'}}>
         <span style={{fontSize:10,color:'var(--text3)',pointerEvents:'none'}}>{value.length}ch</span>
         <span style={{color:'var(--text3)',fontSize:10,letterSpacing:2,pointerEvents:'none'}}>···</span>
@@ -857,8 +790,6 @@ function CardColorPicker({color,onChange}){
   return(
     <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
       {CARD_COLORS.map(c=>(<div key={c||'none'} title={c||'No color'} className={`color-dot${(color||'')===(c||'')?'sel':''} ${!c?'none-dot':''}`} style={{background:c||'transparent',width:20,height:20}} onClick={()=>onChange(c)}/>))}
-    <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
-      {CARD_COLORS.map(c=>(<div key={c||'none'} title={c||'No color'} className={`color-dot${(color||'')===(c||'')?'sel':''} ${!c?'none-dot':''}`} style={{background:c||'transparent',width:20,height:20}} onClick={()=>onChange(c)}/>))}
     </div>
   );
 }
@@ -868,10 +799,7 @@ function TimerWidgetInline({timer,onSet,onClear,onStart,onStop}){
   const [showSet,setShowSet]=useState(false);const [mins,setMins]=useState('25');
   if(showSet)return(<div style={{display:'flex',alignItems:'center',gap:4}} onClick={e=>e.stopPropagation()}><input value={mins} onChange={e=>setMins(e.target.value.replace(/\D/g,''))} style={{width:44,background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:5,padding:'3px 6px',fontSize:12,color:'var(--text)',outline:'none'}} placeholder="min" autoFocus onKeyDown={e=>{if(e.key==='Enter'){onSet(parseInt(mins)||25);setShowSet(false);}if(e.key==='Escape')setShowSet(false);}}/><button style={{fontSize:11,padding:'3px 7px',borderRadius:4,background:'var(--blue)',color:'#fff',border:'none',cursor:'pointer'}} onClick={()=>{onSet(parseInt(mins)||25);setShowSet(false);}}>✓</button><button style={{fontSize:11,padding:'3px 5px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}} onClick={()=>setShowSet(false)}>✕</button></div>);
   if(!timer)return(<button onClick={e=>{e.stopPropagation();setShowSet(true);}} style={{fontSize:11,padding:'3px 9px',borderRadius:5,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text3)',cursor:'pointer',display:'flex',alignItems:'center',gap:3}} title="Set Timer">⏱</button>);
-  if(showSet)return(<div style={{display:'flex',alignItems:'center',gap:4}} onClick={e=>e.stopPropagation()}><input value={mins} onChange={e=>setMins(e.target.value.replace(/\D/g,''))} style={{width:44,background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:5,padding:'3px 6px',fontSize:12,color:'var(--text)',outline:'none'}} placeholder="min" autoFocus onKeyDown={e=>{if(e.key==='Enter'){onSet(parseInt(mins)||25);setShowSet(false);}if(e.key==='Escape')setShowSet(false);}}/><button style={{fontSize:11,padding:'3px 7px',borderRadius:4,background:'var(--blue)',color:'#fff',border:'none',cursor:'pointer'}} onClick={()=>{onSet(parseInt(mins)||25);setShowSet(false);}}>✓</button><button style={{fontSize:11,padding:'3px 5px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}} onClick={()=>setShowSet(false)}>✕</button></div>);
-  if(!timer)return(<button onClick={e=>{e.stopPropagation();setShowSet(true);}} style={{fontSize:11,padding:'3px 9px',borderRadius:5,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text3)',cursor:'pointer',display:'flex',alignItems:'center',gap:3}} title="Set Timer">⏱</button>);
   const expired=timer.remaining<=0;
-  return(<div style={{display:'flex',alignItems:'center',gap:3}} onClick={e=>e.stopPropagation()}><span className={`timer-badge ${expired?'expired':timer.running?'running':'paused'}`}>⏱ {fmtSecs(Math.max(0,timer.remaining))}</span>{!expired&&(timer.running?<button style={{fontSize:10,padding:'2px 5px',borderRadius:3,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--amber)',cursor:'pointer'}} onClick={onStop}>⏸</button>:<button style={{fontSize:10,padding:'2px 5px',borderRadius:3,border:'1px solid var(--blue)',background:'var(--blue-dim)',color:'var(--blue)',cursor:'pointer'}} onClick={onStart}>▶</button>)}<button style={{fontSize:10,padding:'2px 4px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}} onClick={onClear} title="Clear">✕</button></div>);
   return(<div style={{display:'flex',alignItems:'center',gap:3}} onClick={e=>e.stopPropagation()}><span className={`timer-badge ${expired?'expired':timer.running?'running':'paused'}`}>⏱ {fmtSecs(Math.max(0,timer.remaining))}</span>{!expired&&(timer.running?<button style={{fontSize:10,padding:'2px 5px',borderRadius:3,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--amber)',cursor:'pointer'}} onClick={onStop}>⏸</button>:<button style={{fontSize:10,padding:'2px 5px',borderRadius:3,border:'1px solid var(--blue)',background:'var(--blue-dim)',color:'var(--blue)',cursor:'pointer'}} onClick={onStart}>▶</button>)}<button style={{fontSize:10,padding:'2px 4px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}} onClick={onClear} title="Clear">✕</button></div>);
 }
 
@@ -942,9 +870,7 @@ function CardModal({card,col,cols,onClose,onSave,onDelete,onMove,now,timers,setT
           <div style={{width:8,height:8,borderRadius:'50%',background:colData.color,flexShrink:0}}/>
           {color&&<div style={{width:8,height:8,borderRadius:'50%',background:color,flexShrink:0}}/>}
           {editing?<input className="finput" style={{fontSize:14,fontWeight:600,flex:1,background:'transparent',border:'none',padding:0,minWidth:0}} value={task} onChange={e=>setTask(e.target.value)} placeholder="Task title…" autoFocus/>:<div className="modal-title">{task}</div>}
-          {editing?<input className="finput" style={{fontSize:14,fontWeight:600,flex:1,background:'transparent',border:'none',padding:0,minWidth:0}} value={task} onChange={e=>setTask(e.target.value)} placeholder="Task title…" autoFocus/>:<div className="modal-title">{task}</div>}
           <div style={{display:'flex',gap:4,marginLeft:'auto',alignItems:'center',flexShrink:0}}>
-            {!mobile&&<span style={{fontSize:10,color:'var(--text3)',marginRight:2}}>🕐 {age}</span>}
             {!mobile&&<span style={{fontSize:10,color:'var(--text3)',marginRight:2}}>🕐 {age}</span>}
             <TimerWidgetInline timer={timer} onSet={setTimer} onClear={()=>setTimers(t=>{const n={...t};delete n[card.id];saveTimers(n);return n;})} onStart={()=>setTimers(t=>{const cur=t[card.id];if(!cur)return t;const endAt=Date.now()+cur.remaining*1000;const n={...t,[card.id]:{...cur,running:true,endAt}};saveTimers(n);return n;})} onStop={()=>setTimers(t=>{const cur=t[card.id];if(!cur)return t;const n={...t,[card.id]:{...cur,running:false}};saveTimers(n);return n;})}/>
             {!editing&&priority!=='None'&&<span className={`priority p${priority[1]}`}>{priority}</span>}
@@ -958,13 +884,10 @@ function CardModal({card,col,cols,onClose,onSave,onDelete,onMove,now,timers,setT
           {editing?(
             <>
               <div className="frow" style={mobile?{gridTemplateColumns:'1fr 1fr'}:{}}>
-              <div className="frow" style={mobile?{gridTemplateColumns:'1fr 1fr'}:{}}>
                 <div><label className="flabel">Priority</label><select className="fselect" value={priority} onChange={e=>setPriority(e.target.value)}>{PRIORITY_LIST.map(p=><option key={p}>{p}</option>)}</select></div>
                 <div><label className="flabel">Move to</label><select className="fselect" value={col} onChange={e=>onMove(card.id,col,e.target.value)}>{cols.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></div>
                 {!mobile&&<div><label className="flabel">Auto-delete</label><select className="fselect" value={expiryDays??''} onChange={e=>setExpiryDays(e.target.value?Number(e.target.value):null)}><option value=''>Never</option><option value='3'>3d</option><option value='7'>7d</option><option value='14'>14d</option></select></div>}
-                {!mobile&&<div><label className="flabel">Auto-delete</label><select className="fselect" value={expiryDays??''} onChange={e=>setExpiryDays(e.target.value?Number(e.target.value):null)}><option value=''>Never</option><option value='3'>3d</option><option value='7'>7d</option><option value='14'>14d</option></select></div>}
               </div>
-              {mobile&&<div className="fgroup"><label className="flabel">Auto-delete</label><select className="fselect" value={expiryDays??''} onChange={e=>setExpiryDays(e.target.value?Number(e.target.value):null)}><option value=''>Never</option><option value='3'>3d</option><option value='7'>7d</option><option value='14'>14d</option></select></div>}
               {mobile&&<div className="fgroup"><label className="flabel">Auto-delete</label><select className="fselect" value={expiryDays??''} onChange={e=>setExpiryDays(e.target.value?Number(e.target.value):null)}><option value=''>Never</option><option value='3'>3d</option><option value='7'>7d</option><option value='14'>14d</option></select></div>}
               <div className="fgroup"><label className="flabel">Card Color</label><CardColorPicker color={color} onChange={setColor}/></div>
               <div className="fgroup"><label className="flabel">Notes</label><MdEditor value={content} onChange={setContent}/></div>
@@ -986,12 +909,8 @@ function AddCardModal({defaultCol,cols,onClose,onAdd}){
   const colData=cols.find(c=>c.id===col)||cols[0];
   const mobile=isMobile();
   useEffect(()=>{document.body.style.overflow='hidden';return()=>{document.body.style.overflow='';};},[]);
-  const mobile=isMobile();
-  useEffect(()=>{document.body.style.overflow='hidden';return()=>{document.body.style.overflow='';};},[]);
   return(
     <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-hdr"><div style={{width:8,height:8,borderRadius:'50%',background:colData?.color,flexShrink:0}}/><div className="modal-title">New Card</div><button className="ibtn" onClick={onClose} style={{width:28,height:28,marginLeft:'auto',border:'none'}}>✕</button></div>
       <div className="modal" onClick={e=>e.stopPropagation()}>
         <div className="modal-hdr"><div style={{width:8,height:8,borderRadius:'50%',background:colData?.color,flexShrink:0}}/><div className="modal-title">New Card</div><button className="ibtn" onClick={onClose} style={{width:28,height:28,marginLeft:'auto',border:'none'}}>✕</button></div>
         <div className="modal-body">
@@ -1001,7 +920,6 @@ function AddCardModal({defaultCol,cols,onClose,onAdd}){
             <div><label className="flabel">Priority</label><select className="fselect" value={priority} onChange={e=>setPriority(e.target.value)}>{PRIORITY_LIST.map(p=><option key={p}>{p}</option>)}</select></div>
           </div>
           <div className="fgroup"><label className="flabel">Card Color</label><CardColorPicker color={color} onChange={setColor}/></div>
-          {!mobile&&<div className="fgroup"><label className="flabel">Notes (optional)</label><MdEditor value={content} onChange={setContent}/></div>}
           {!mobile&&<div className="fgroup"><label className="flabel">Notes (optional)</label><MdEditor value={content} onChange={setContent}/></div>}
         </div>
         <div className="modal-foot"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={add} disabled={!task.trim()}>Add Card</button></div>
@@ -1015,11 +933,8 @@ function AddColModal({onClose,onAdd}){
   const [label,setLabel]=useState('');const [color,setColor]=useState(COL_PALETTE[4]);
   function add(){if(!label.trim())return;onAdd({id:uid(),label:label.trim(),color,locked:false});onClose();}
   useEffect(()=>{document.body.style.overflow='hidden';return()=>{document.body.style.overflow='';};},[]);
-  useEffect(()=>{document.body.style.overflow='hidden';return()=>{document.body.style.overflow='';};},[]);
   return(
     <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="modal" style={{maxWidth:360}} onClick={e=>e.stopPropagation()}>
-        <div className="modal-hdr"><div className="modal-title">New Status Column</div><button className="ibtn" onClick={onClose} style={{width:28,height:28,marginLeft:'auto',border:'none'}}>✕</button></div>
       <div className="modal" style={{maxWidth:360}} onClick={e=>e.stopPropagation()}>
         <div className="modal-hdr"><div className="modal-title">New Status Column</div><button className="ibtn" onClick={onClose} style={{width:28,height:28,marginLeft:'auto',border:'none'}}>✕</button></div>
         <div className="modal-body">
@@ -1119,7 +1034,6 @@ function Column({colData,cards,allCols,onCardDrop,onCardReorder,onColDragStart,o
 /* ── FLOATING PANEL ── */
 function FloatingPanel({title,icon,onClose,children,initW=560,initH=420,initX=null,initY=null,storageKey,extraHeaderContent}){
   const mobile=isMobile();
-  const mobile=isMobile();
   const defX=initX!==null?initX:Math.max(20,window.innerWidth-initW-20);
   const defY=initY!==null?initY:Math.max(60,window.innerHeight-initH-80);
   const {sz,setSz,startResize}=useResize(initW,initH,defX,defY);
@@ -1137,16 +1051,6 @@ function FloatingPanel({title,icon,onClose,children,initW=560,initH=420,initX=nu
     window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);e.preventDefault();
   }
 
-  if(mobile)return(
-    <div ref={ref} className="fp">
-      <div className="fp-hdr">
-        <span style={{fontSize:14}}>{icon}</span><span className="fp-title">{title}</span>
-        {extraHeaderContent}
-        <button onClick={onClose} style={{fontSize:14,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'2px 6px',marginLeft:extraHeaderContent?0:'auto'}}>✕</button>
-      </div>
-      <div style={{flex:1,overflow:'auto',minHeight:0,display:'flex',flexDirection:'column'}}>{children}</div>
-    </div>
-  );
   if(mobile)return(
     <div ref={ref} className="fp">
       <div className="fp-hdr">
@@ -1176,7 +1080,6 @@ function ScratchPad({content,onChange,onClose}){
   const ref=useRef();
   useEffect(()=>{
     if(isMobile())return;
-    if(isMobile())return;
     function onDown(e){const el=ref.current;if(el&&!el.contains(e.target))onClose();}
     const t=setTimeout(()=>window.addEventListener('mousedown',onDown),150);
     return()=>{clearTimeout(t);window.removeEventListener('mousedown',onDown);};
@@ -1201,7 +1104,6 @@ function DrawPanel({onClose,light}){
   const iframeRef=useRef();
   const excalidrawUrl='https://excalidraw.com';
   const mobile=isMobile();
-  const mobile=isMobile();
   return(
     <div className="draw-panel-overlay">
       <div className="draw-panel-hdr">
@@ -1210,17 +1112,12 @@ function DrawPanel({onClose,light}){
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="2.5"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg>
         <span style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Drawing</span>
         {!mobile&&<div className="draw-panel-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Powered by Excalidraw</div>}
-        <span style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Drawing</span>
-        {!mobile&&<div className="draw-panel-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Powered by Excalidraw</div>}
         <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
-          {!mobile&&<a href={excalidrawUrl} target="_blank" rel="noopener" style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',textDecoration:'none',display:'flex',alignItems:'center',gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Open full page</a>}
-          <button onClick={onClose} style={{padding:'5px 14px',borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',fontSize:12,fontWeight:500,display:'flex',alignItems:'center',gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Close</button>
           {!mobile&&<a href={excalidrawUrl} target="_blank" rel="noopener" style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',textDecoration:'none',display:'flex',alignItems:'center',gap:4}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Open full page</a>}
           <button onClick={onClose} style={{padding:'5px 14px',borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',fontSize:12,fontWeight:500,display:'flex',alignItems:'center',gap:5}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Close</button>
         </div>
       </div>
       <div className="draw-panel-body">
-        <iframe ref={iframeRef} src={excalidrawUrl} title="Excalidraw Drawing Board" allow="clipboard-read; clipboard-write" style={{width:'100%',height:'100%',border:'none',display:'block'}}/>
         <iframe ref={iframeRef} src={excalidrawUrl} title="Excalidraw Drawing Board" allow="clipboard-read; clipboard-write" style={{width:'100%',height:'100%',border:'none',display:'block'}}/>
       </div>
     </div>
@@ -1234,7 +1131,6 @@ function AiPanel({onClose}){
       <div className="ai-panel-hdr">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
         <span style={{fontWeight:600,fontSize:13}}>AI Assistants</span>
-        <button onClick={onClose} style={{marginLeft:'auto',fontSize:16,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px'}}>✕</button>
         <button onClick={onClose} style={{marginLeft:'auto',fontSize:16,color:'var(--text3)',background:'none',border:'none',cursor:'pointer',padding:'4px 8px'}}>✕</button>
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:5,padding:14,flex:1,overflowY:'auto'}}>
@@ -1253,7 +1149,6 @@ function AiPanel({onClose}){
 
 /* ── SHORTCUTS ── */
 function ShortcutsPanel({onClose}){
-  const rows=[['N','New card'],['E','Scratch pad'],['D','Drawing board'],['?','Shortcuts'],['Esc','Close'],['Drag card','Move / reorder'],['Drag grip','Reorder column'],['☐ checkbox','Click in preview to toggle'],['Swipe','Scroll between columns (mobile)']];
   const rows=[['N','New card'],['E','Scratch pad'],['D','Drawing board'],['?','Shortcuts'],['Esc','Close'],['Drag card','Move / reorder'],['Drag grip','Reorder column'],['☐ checkbox','Click in preview to toggle'],['Swipe','Scroll between columns (mobile)']];
   return(
     <div className="sc-overlay" onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
@@ -1425,28 +1320,6 @@ function SyncModal({onClose,peerStatus,peerCount,roomId,setRoomId,createRoom,joi
         </div>
         <button className="btn" onClick={onClose}>Close</button>
       </div>
-    </div>
-  );
-}
-
-/* ── OVERFLOW MENU ── */
-function OverflowMenu({items,onClose}){
-  const ref=useRef();
-  useEffect(()=>{
-    function onClick(e){if(ref.current&&!ref.current.contains(e.target))onClose();}
-    setTimeout(()=>document.addEventListener('mousedown',onClick),50);
-    return()=>document.removeEventListener('mousedown',onClick);
-  },[onClose]);
-  return(
-    <div ref={ref} className="overflow-menu">
-      {items.map((item,i)=>item===null
-        ?<div key={i} className="overflow-sep"/>
-        :<button key={i} className="overflow-item" onClick={()=>{item.action();onClose();}}>
-          <span style={{fontSize:14}}>{item.icon}</span>
-          <span>{item.label}</span>
-          {item.badge&&<span style={{marginLeft:'auto',fontSize:10,padding:'1px 6px',borderRadius:8,background:item.badge.bg||'var(--bg4)',color:item.badge.color||'var(--text2)'}}>{item.badge.text}</span>}
-        </button>
-      )}
     </div>
   );
 }
@@ -1662,7 +1535,6 @@ function App(){
   const [showShortcuts,setShowShortcuts]=useState(false);const [showEditor,setShowEditor]=useState(false);
   const [showDraw,setShowDraw]=useState(false);const [showAi,setShowAi]=useState(false);
   const [showOverflow,setShowOverflow]=useState(false);
-  const [showOverflow,setShowOverflow]=useState(false);
   const [confetti,setConfetti]=useState(false);const confettiKey=useRef(0);
   const [toasts,setToasts]=useState([]);
   const [light,setLight]=useState(()=>{try{return localStorage.getItem('daily_theme')==='light';}catch{return false;}});
@@ -1688,7 +1560,6 @@ function App(){
       if(e.key==='e'||e.key==='E')setShowEditor(o=>!o);
       if(e.key==='d'||e.key==='D')setShowDraw(o=>!o);
       if(e.key==='?')setShowShortcuts(true);
-      if(e.key==='Escape'){setOpenCard(null);setAddCardCol(null);setShowAddCol(false);setShowShortcuts(false);setSearch('');setSearchOpen(false);setShowOverflow(false);}
       if(e.key==='Escape'){setOpenCard(null);setAddCardCol(null);setShowAddCol(false);setShowShortcuts(false);setSearch('');setSearchOpen(false);setShowOverflow(false);}
     }
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
@@ -1863,9 +1734,7 @@ const renderDesktopHeader = () => (
       {conflicts.length>0&&<ConflictModal conflicts={conflicts} onResolve={resolveConflict} onResolveAll={resolveAll}/>}
       {confetti&&<Confetti key={confettiKey.current}/>}
       <Toast toasts={toasts}/>
-      {/* ALARM: z-index 9999, always on top */}
       <AlarmOverlay alarms={alarms} onDismiss={dismissAlarms}/>
-      {pwaPrompt&&!mobile&&(
       {pwaPrompt&&!mobile&&(
         <div className="pwa-banner">
           <div><div style={{fontSize:13,fontWeight:600,marginBottom:2}}>📱 Install Daily.</div><div style={{fontSize:11,color:'var(--text3)'}}>Use as a standalone app</div></div>
