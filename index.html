@@ -10,6 +10,7 @@
 <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23000000"/><path d="M22 14H34C46 14 54 22 54 32C54 42 46 50 34 50H22V14Z" fill="%23ffffff"/></svg>'/>
 <!-- MQTT.js — sync via HiveMQ public broker (free, reliable, HTTP+HTTPS, no account) -->
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gun@0.2020.1236/gun.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1420,19 +1421,26 @@ function App(){
 
   function broadcastGun(room){
     const r=room||activeRoom;
-    if(!gunRef.current||!r)return;
-    try{
-      gunRef.current.get('dailydot-v2-'+r).put({
-        _cols:JSON.stringify(colsRef.current),
-        _cards:JSON.stringify(cardsRef.current),
-        _scratch:scratchRef.current||'',
-        _ts:Date.now(),
-        _sid:SESSION_ID.current,
-      });
-    }catch(e){console.warn('Gun broadcast',e);}
+    if(!gunRef.current){
+      try {
+        if(typeof Gun === 'undefined') throw new Error('Gun library not loaded');
+        gunRef.current = Gun({ peers: GUN_RELAYS });
+        addToast('Sync engine ready', 'success');
+      } catch(e) {
+        console.warn('Gun init failed', e);
+        addToast('Sync init failed: library not loaded', 'error');
+        setPeerStatus('disconnected');
+        return;
+      }
+    }
   }
 
   function joinGunRoom(room){
+    if(typeof Gun === 'undefined'){
+      addToast('Sync unavailable – reload page', 'error');
+      return;
+    }
+
     const r=(room||'').trim();if(!r)return;
     // Init Gun once (connects to multiple public relays)
     if(!gunRef.current){
