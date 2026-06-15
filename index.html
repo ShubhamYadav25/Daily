@@ -1319,6 +1319,12 @@ function SyncModal({onClose,peerStatus,peerCount,roomId,setRoomId,createRoom,joi
           {peerCount>0&&<span style={{fontSize:11,color:'var(--text3)'}}>· {peerCount} peer{peerCount!==1?'s':''}</span>}
           <div className={`sync-dot${connected?' connected':connecting?' connecting':''}`}/>
         </div>
+        {/* Retry button - only show when disconnected and we have a roomId to try */}
+        {peerStatus === 'disconnected' && roomId && !activeRoom && (
+          <button className="btn" style={{marginTop: 8}} onClick={() => joinRoom()}>
+            Retry
+          </button>
+        )}
         <button className="btn" onClick={onClose}>Close</button>
       </div>
     </div>
@@ -1337,10 +1343,14 @@ function App(){
   useEffect(()=>saveLS('daily_scratch',scratch),[scratch]);
 
   // ── GUN.JS SYNC ────────────────────────────────────────────────────────────
-  // Gun.js connects to FREE public relay servers via WSS (WebSocket Secure).
-  // Works on HTTP AND HTTPS. Deploy a single index.html to GitHub Pages,
-  // Netlify, Vercel — completely FREE. No server, no account, no setup.
-  const GUN_RELAYS=['https://gun-rs.alwaysdata.net/gun','https://peer.wallie.io/gun','https://gundb-relay-mlmr.onrender.com/gun'];
+  const GUN_RELAYS = [
+    'https://gun-us.herokuapp.com/gun',
+    'https://gun-manhattan.herokuapp.com/gun',
+    'https://gun-eu.herokuapp.com/gun',
+    'wss://gun.xyz/socket.io',
+    'https://peer.wallie.io/gun',
+    'https://gundb-relay.peer.uno/gun'
+  ];
   const SESSION_ID=useRef(Math.random().toString(36).slice(2,10));
   const gunRef=useRef(null);
   const gunNodeRef=useRef(null);
@@ -1435,42 +1445,82 @@ function App(){
     }
   }
 
-  function joinGunRoom(room){
-    if(typeof Gun === 'undefined'){
-      addToast('Sync unavailable – reload page', 'error');
+  function joinGunRoom(room, retryCount = 0){
+  if(typeof Gun === 'undefined'){
+    addToast('Sync unavailable – reload page', 'error');
+    return;
+  }
+  const r = (room || '').trim();
+  if(!r) return;
+  
+  // Initialize Gun if not already
+  if(!gunRef.current){
+    try {
+      // Add connection timeout and retry options
+      gunRef.current = Gun({
+        peers: GUN_RELAYS,
+        retry: 5000,        // retry every 5 seconds
+        timeout: 10000,     // connection timeout
+        multicast: false    // reduce traffic
+      });
+      
+      // Monitor connection status
+      gunRef.current.on('out', {ok: () => {
+        setPeerStatus('connected');
+        addToast('Sync connected ✓', 'success');
+      }});
+      
+      gunRef.current.on('out', {err: (err) => {
+        console.warn('Gun connection error', err);
+        setPeerStatus('disconnected');
+        if(retryCount < 3){
+          setTimeout(() => joinGunRoom(r, retryCount + 1), 3000);
+        } else {
+          addToast('Sync unavailable – using local only', 'error');
+        }
+      }});
+      
+    } catch(e) {
+      console.warn('Gun init failed', e);
+      addToast('Sync init failed: ' + e.message, 'error');
+      setPeerStatus('disconnected');
       return;
     }
-
-    const r=(room||'').trim();if(!r)return;
-    // Init Gun once (connects to multiple public relays)
-    if(!gunRef.current){
-      try{gunRef.current=Gun(GUN_RELAYS);}
-      catch(e){addToast('Sync init failed','error');return;}
-    }
-    // Unsubscribe from previous room
-    if(gunNodeRef.current){try{gunNodeRef.current.off();}catch{}}
-    setPeerStatus('connecting');
-    const node=gunRef.current.get('dailydot-v2-'+r);
-    gunNodeRef.current=node;
-    setActiveRoom(r);setMyPeerId(r);
-    // Subscribe — Gun fires whenever any peer updates the node
-    let firstFire=true;
-    node.on((data)=>{
-      if(!data||!data._ts)return;
-      // Ignore our own broadcasts
-      if(data._sid===SESSION_ID.current)return;
-      if(firstFire){firstFire=false;setPeerStatus('connected');setPeerCount(1);addToast('Sync connected ✓','success');}
-      handleIncoming({
-        cols:tryParse(data._cols,null),
-        cards:tryParse(data._cards,null),
-        scratch:data._scratch||'',
-        ts:data._ts,
-      });
-    });
-    // Send our state immediately so the other device gets it
-    setTimeout(()=>broadcastGun(r),300);
-    addToast('Room "'+r+'" — waiting for peer…');
   }
+  
+  // Unsubscribe from previous room
+  if(gunNodeRef.current){
+    try { gunNodeRef.current.off(); } catch(e) {}
+  }
+  
+  setPeerStatus('connecting');
+  const node = gunRef.current.get('dailydot-v2-' + r);
+  gunNodeRef.current = node;
+  setActiveRoom(r);
+  setMyPeerId(r);
+  
+  let firstFire = true;
+  node.on((data) => {
+    if(!data || !data._ts) return;
+    if(data._sid === SESSION_ID.current) return;
+    if(firstFire){
+      firstFire = false;
+      setPeerStatus('connected');
+      setPeerCount(1);
+      addToast('Sync connected ✓', 'success');
+    }
+    handleIncoming({
+      cols: tryParse(data._cols, null),
+      cards: tryParse(data._cards, null),
+      scratch: data._scratch || '',
+      ts: data._ts,
+    });
+  });
+  
+  // Broadcast initial state after connection
+  setTimeout(() => broadcastGun(r), 500);
+  addToast('Joining room: ' + r);
+}
 
   function createRoom(){
     const r='daily-'+Math.random().toString(36).slice(2,8);
