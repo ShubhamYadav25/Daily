@@ -8,9 +8,8 @@
 <meta name="theme-color" content="#0e0f11"/>
 <link rel="manifest" href="#" id="manifest-link"/>
 <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23000000"/><path d="M22 14H34C46 14 54 22 54 32C54 42 46 50 34 50H22V14Z" fill="%23ffffff"/></svg>'/>
-<!-- Yjs + WebRTC for CRDT sync -->
-<script src="https://unpkg.com/yjs@13/dist/y.min.js"></script>
-<script src="https://unpkg.com/y-webrtc@10/dist/y-webrtc.min.js"></script>
+<!-- PeerJS: free WebRTC P2P, uses public signaling server — no backend needed -->
+<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -709,7 +708,7 @@ function MdEditor({value,onChange}){
             <button title="Text color" style={{padding:'3px 7px',borderRadius:5,fontSize:13,cursor:'pointer',color:'var(--text2)',background:showColorMenu?'var(--bg3)':'transparent',border:'none',lineHeight:1.5}}
               onMouseDown={ev=>{ev.preventDefault();setShowColorMenu(v=>!v);setShowFontMenu(false);}}>🎨</button>
             {showColorMenu&&(
-              <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:7,display:'flex',gap:6,zIndex:50,boxShadow:'var(--shadow)'}}>
+              <div style={{position:'absolute',top:'calc(100% + 4px)',right:0,left:'auto',background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:7,display:'flex',gap:6,zIndex:500,boxShadow:'var(--shadow)'}}>
                 {TEXT_COLOR_PRESETS.map(c=>(
                   <div key={c} title={c} onMouseDown={ev=>{ev.preventDefault();applyColor(c);setShowColorMenu(false);}}
                     style={{width:18,height:18,borderRadius:'50%',background:c,cursor:'pointer',border:'1px solid var(--border2)'}}/>
@@ -721,7 +720,7 @@ function MdEditor({value,onChange}){
             <button title="Font" style={{padding:'3px 7px',borderRadius:5,fontSize:11,fontWeight:700,cursor:'pointer',color:'var(--text2)',background:showFontMenu?'var(--bg3)':'transparent',border:'none',lineHeight:1.5}}
               onMouseDown={ev=>{ev.preventDefault();setShowFontMenu(v=>!v);setShowColorMenu(false);}}>Aa</button>
             {showFontMenu&&(
-              <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:5,display:'flex',flexDirection:'column',gap:2,zIndex:50,minWidth:90,boxShadow:'var(--shadow)'}}>
+              <div style={{position:'absolute',top:'calc(100% + 4px)',right:0,left:'auto',background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:5,display:'flex',flexDirection:'column',gap:2,zIndex:500,minWidth:90,boxShadow:'var(--shadow)'}}>
                 {Object.entries(FONT_FAMILIES).map(([key,fam])=>(
                   <button key={key} onMouseDown={ev=>{ev.preventDefault();applyFont(key);setShowFontMenu(false);}}
                     style={{fontFamily:fam,fontSize:12,padding:'4px 8px',borderRadius:5,background:'transparent',border:'none',color:'var(--text2)',cursor:'pointer',textAlign:'left'}}>
@@ -817,13 +816,40 @@ function CardModal({card,col,cols,onClose,onSave,onDelete,onMove,now,timers,setT
   const age=fmtAge(card.createdAt,now);
   const timer=timers[card.id]||null;
   const mobile=isMobile();
+  const modalRef=useRef();
+  const dragRef=useRef(null);
+  const [pos,setPos]=useState(null); // {x,y,w,h} — null = centered (default)
 
   function handleImageResize(imgId,w){setImageSizes(s=>{const n={...s,[imgId]:{w}};try{localStorage.setItem('daily_imgsz_'+card.id,JSON.stringify(n));}catch{}return n;});}
-  function saveCard(){onSave({...card,task,priority,content,expiryDays,color});setEditing(false);}
+  function saveCard(){onSave({...card,task,priority,content,expiryDays,color,updatedAt:new Date().toISOString()});setEditing(false);}
   function setTimer(mins){
     const endAt=Date.now()+mins*60*1000;
     setTimers(t=>{const n={...t,[card.id]:{total:mins*60,remaining:mins*60,running:false,endAt}};saveTimers(n);return n;});
     if(window.Notification&&Notification.permission==='default')Notification.requestPermission();
+  }
+
+  function onHdrMouseDown(e){
+    if(e.button!==0)return;if(e.target.closest('button')||e.target.closest('input'))return;
+    const el=modalRef.current;if(!el)return;
+    const r=el.getBoundingClientRect();
+    if(!pos)setPos({x:r.left,y:r.top,w:r.width,h:r.height});
+    dragRef.current={ox:e.clientX-r.left,oy:e.clientY-r.top,w:r.width,h:r.height};
+    const onMove=ev=>{if(!dragRef.current)return;setPos(p=>({...(p||dragRef.current),x:ev.clientX-dragRef.current.ox,y:ev.clientY-dragRef.current.oy}));};
+    const onUp=()=>{dragRef.current=null;window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);};
+    window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);e.preventDefault();
+  }
+
+  // E-resize handle on right edge
+  const eResizeRef=useRef(null);
+  function onEResize(e){
+    e.preventDefault();e.stopPropagation();
+    const el=modalRef.current;if(!el)return;
+    const r=el.getBoundingClientRect();
+    if(!pos)setPos({x:r.left,y:r.top,w:r.width,h:r.height});
+    const startX=e.clientX,startW=r.width,startX0=r.left;
+    const onMove=ev=>{const dw=ev.clientX-startX;setPos(p=>({...(p||{x:startX0,y:r.top,h:r.height}),w:Math.max(380,startW+dw)}));};
+    const onUp=()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);};
+    window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);
   }
 
   useEffect(()=>{
@@ -831,10 +857,16 @@ function CardModal({card,col,cols,onClose,onSave,onDelete,onMove,now,timers,setT
     return()=>{document.body.style.overflow='';};
   },[]);
 
+  const modalStyle=pos
+    ?{position:'fixed',left:pos.x,top:pos.y,width:pos.w,maxHeight:'90vh',margin:0,maxWidth:'none'}
+    :{position:'relative',width:'100%',maxWidth:740,margin:'auto'};
+
   return(
-    <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-hdr">
+    <div className="overlay" style={pos?{alignItems:'flex-start'}:{}} onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div ref={modalRef} className="modal" style={{...modalStyle,overflow:'visible'}} onClick={e=>e.stopPropagation()}>
+        {/* right resize edge */}
+        <div onMouseDown={onEResize} style={{position:'absolute',top:12,right:-4,bottom:12,width:8,cursor:'e-resize',zIndex:10}}/>
+        <div className="modal-hdr" style={{cursor:pos?'move':'default'}} onMouseDown={onHdrMouseDown}>
           <div style={{width:8,height:8,borderRadius:'50%',background:colData.color,flexShrink:0}}/>
           {color&&<div style={{width:8,height:8,borderRadius:'50%',background:color,flexShrink:0}}/>}
           {editing?<input className="finput" style={{fontSize:14,fontWeight:600,flex:1,background:'transparent',border:'none',padding:0,minWidth:0}} value={task} onChange={e=>setTask(e.target.value)} placeholder="Task title…" autoFocus/>:<div className="modal-title">{task}</div>}
@@ -844,10 +876,11 @@ function CardModal({card,col,cols,onClose,onSave,onDelete,onMove,now,timers,setT
             {!editing&&priority!=='None'&&<span className={`priority p${priority[1]}`}>{priority}</span>}
             {!editing&&<button className="ibtn" title="Edit" onClick={()=>setEditing(true)} style={{width:28,height:28,border:'none',fontSize:13}}>✏️</button>}
             <button className="ibtn" title="Delete" onClick={()=>{if(confirm('Delete?'))onDelete(card.id)}} style={{width:28,height:28,border:'none',fontSize:13,color:'var(--red)'}}>🗑️</button>
+            {pos&&<button className="ibtn" title="Reset position" onClick={()=>setPos(null)} style={{width:28,height:28,border:'none',fontSize:12}}>⊡</button>}
             <button className="ibtn" title="Close" onClick={onClose} style={{width:28,height:28,border:'none',fontSize:14}}>✕</button>
           </div>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" style={{overflowY:'auto',maxHeight:pos?'calc(90vh - 100px)':'calc(90vh - 110px)'}}>
           {editing?(
             <>
               <div className="frow" style={mobile?{gridTemplateColumns:'1fr 1fr'}:{}}>
@@ -860,7 +893,7 @@ function CardModal({card,col,cols,onClose,onSave,onDelete,onMove,now,timers,setT
               <div className="fgroup"><label className="flabel">Notes</label><MdEditor value={content} onChange={setContent}/></div>
             </>
           ):(
-            <MdView value={content} onChange={v=>{setContent(v);onSave({...card,task,priority,content:v,expiryDays,color});}} imageSizes={imageSizes} onImageResize={handleImageResize}/>
+            <MdView value={content} onChange={v=>{setContent(v);onSave({...card,task,priority,content:v,expiryDays,color,updatedAt:new Date().toISOString()});}} imageSizes={imageSizes} onImageResize={handleImageResize}/>
           )}
         </div>
         {editing&&<div className="modal-foot"><button className="btn" onClick={()=>{setEditing(false);setTask(card.task);setContent(card.content);setPriority(card.priority);setColor(card.color||'');}}>Cancel</button><button className="btn primary" onClick={saveCard}>Save</button></div>}
@@ -1172,45 +1205,120 @@ function OverflowMenu({items,onClose}){
   );
 }
 
-/* ── SYNC MODAL (NEW) ── */
-function SyncModal({onClose, syncStatus, peersCount, roomId, setRoomId, createRoom, joinRoom}){
-  const qrRef=useRef();
-  useEffect(()=>{
-    if(roomId && qrRef.current && window.QRCode){
-      qrRef.current.innerHTML='';
-      new QRCode(qrRef.current,{text:roomId,width:180,height:180});
+/* ── CONFLICT MODAL ── */
+function ConflictModal({conflicts,onResolve,onResolveAll}){
+  const [idx,setIdx]=useState(0);
+  const c=conflicts[idx];
+  if(!c)return null;
+  function resolve(choice){
+    onResolve(idx,choice);
+    if(idx<conflicts.length-1)setIdx(i=>i+1);
+    else onResolveAll();
+  }
+  function diffLines(a,b){
+    const al=(a||'').split('\n'),bl=(b||'').split('\n');
+    const maxLen=Math.max(al.length,bl.length);
+    const rows=[];
+    for(let i=0;i<maxLen;i++){
+      const la=al[i]??'',lb=bl[i]??'';
+      const same=la===lb;
+      rows.push({la,lb,same});
     }
-  },[roomId]);
+    return rows;
+  }
+  const diffRows=diffLines(c.local.content,c.remote.content);
+  return(
+    <div className="overlay" style={{zIndex:900}} onClick={e=>e.stopPropagation()}>
+      <div className="modal" style={{maxWidth:820}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-hdr" style={{background:'var(--amber-dim)',borderBottom:'1px solid rgba(247,195,90,.25)'}}>
+          <span style={{fontSize:16}}>⚠️</span>
+          <div className="modal-title" style={{color:'var(--amber)'}}>Sync Conflict — "{c.local.task}" &nbsp;<span style={{fontSize:11,fontWeight:400,color:'var(--text3)'}}>({idx+1}/{conflicts.length})</span></div>
+          <button className="ibtn" onClick={onResolveAll} style={{width:28,height:28,border:'none',marginLeft:'auto'}}>✕</button>
+        </div>
+        <div className="modal-body" style={{padding:0}}>
+          <div style={{padding:'10px 16px',fontSize:12,color:'var(--text3)',borderBottom:'1px solid var(--border)'}}>
+            Both devices changed this card at the same time. Choose which version to keep, or merge manually.
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0,flex:1}}>
+            <div style={{borderRight:'1px solid var(--border)',padding:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:8,textTransform:'uppercase'}}>📱 Your version</div>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:6}}>Priority: <b>{c.local.priority||'None'}</b></div>
+              <div style={{background:'var(--bg3)',borderRadius:8,padding:10,fontSize:12,fontFamily:"'DM Mono',monospace",lineHeight:1.7,maxHeight:260,overflowY:'auto'}}>
+                {diffRows.map((r,i)=>(
+                  <div key={i} style={{background:r.same?'transparent':'rgba(79,142,247,.12)',borderRadius:3,padding:'0 2px',color:r.same?'var(--text2)':'var(--blue)',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+                    {r.la||<span style={{opacity:.3}}>{'(empty)'}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{padding:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--green)',letterSpacing:.5,marginBottom:8,textTransform:'uppercase'}}>🌐 Remote version</div>
+              <div style={{fontSize:11,color:'var(--text3)',marginBottom:6}}>Priority: <b>{c.remote.priority||'None'}</b></div>
+              <div style={{background:'var(--bg3)',borderRadius:8,padding:10,fontSize:12,fontFamily:"'DM Mono',monospace",lineHeight:1.7,maxHeight:260,overflowY:'auto'}}>
+                {diffRows.map((r,i)=>(
+                  <div key={i} style={{background:r.same?'transparent':'rgba(62,207,142,.12)',borderRadius:3,padding:'0 2px',color:r.same?'var(--text2)':'var(--green)',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+                    {r.lb||<span style={{opacity:.3}}>{'(empty)'}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="modal-foot" style={{justifyContent:'space-between'}}>
+          <button className="btn" onClick={()=>onResolveAll()} style={{color:'var(--text3)'}}>Skip all</button>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn" style={{borderColor:'var(--blue)',color:'var(--blue)'}} onClick={()=>resolve('local')}>Keep Mine 📱</button>
+            <button className="btn" style={{borderColor:'var(--green)',color:'var(--green)'}} onClick={()=>resolve('remote')}>Keep Theirs 🌐</button>
+            <button className="btn primary" onClick={()=>resolve('merge')}>Merge (append) 🔀</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── SYNC MODAL (Gun.js — no server, works HTTP + HTTPS) ── */
+function SyncModal({onClose,peerStatus,peerCount,roomId,setRoomId,createRoom,joinRoom,disconnectRoom,myPeerId,activeRoom}){
+  const shareUrl=activeRoom?`${location.origin}${location.pathname}?room=${encodeURIComponent(activeRoom)}`:'';
+  const connected=peerStatus==='connected';
+  const connecting=peerStatus==='connecting';
+  function copyText(t){try{navigator.clipboard.writeText(t);}catch{const e=document.createElement('textarea');e.value=t;document.body.appendChild(e);e.select();document.execCommand('copy');document.body.removeChild(e);}}
   return(
     <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="sync-modal">
+      <div className="sync-modal" onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <h3 style={{fontSize:16,fontWeight:600}}>🔁 P2P Sync (WebRTC + CRDT)</h3>
+          <h3 style={{fontSize:15,fontWeight:600}}>Sync Your Work!</h3>
           <button className="ibtn" onClick={onClose} style={{width:28,height:28}}>✕</button>
         </div>
-        <div className="sync-row">
-          <input className="sync-input" placeholder="Room ID" value={roomId} onChange={e=>setRoomId(e.target.value)} />
-          <button className="btn primary" onClick={createRoom}>Create</button>
-          <button className="btn" onClick={joinRoom}>Join</button>
-        </div>
-        {roomId && (
-          <div style={{textAlign:'center'}}>
-            <div className="qr-box" ref={qrRef}></div>
-            <div style={{fontSize:11,marginTop:6,wordBreak:'break-all'}}>Room: <strong>{roomId}</strong></div>
+        {!activeRoom?(
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            <button className="btn primary" style={{padding:'9px',fontSize:13}} onClick={createRoom}>Create new room</button>
+            <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{flex:1,height:1,background:'var(--border)'}}/><span style={{fontSize:11,color:'var(--text3)',flexShrink:0}}>or join existing</span><div style={{flex:1,height:1,background:'var(--border)'}}/></div>
+            <div style={{display:'flex',gap:6}}>
+              <input className="sync-input" style={{flex:1}} placeholder="Paste Room ID…" value={roomId} onChange={e=>setRoomId(e.target.value)} onKeyDown={e=>e.key==='Enter'&&joinRoom()}/>
+              <button className="btn" onClick={joinRoom} disabled={!roomId.trim()}>Join</button>
+            </div>
+          </div>
+        ):(
+          <div style={{background:'var(--green-dim)',border:'1px solid rgba(62,207,142,.2)',borderRadius:8,padding:10,display:'flex',flexDirection:'column',gap:7}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--green)',textTransform:'uppercase',letterSpacing:.5}}>✓ Active room</div>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <code style={{flex:1,fontSize:13,color:'var(--text)',fontWeight:700,wordBreak:'break-all'}}>{activeRoom}</code>
+              <button className="btn" style={{fontSize:11,padding:'3px 9px',flexShrink:0}} onClick={()=>copyText(activeRoom)}>Copy ID</button>
+            </div>
+            {shareUrl&&<div style={{fontSize:10,color:'var(--text3)',wordBreak:'break-all'}}>Share URL: <a href={shareUrl} style={{color:'var(--blue)'}} target="_blank" rel="noopener">{shareUrl}</a></div>}
+            <button className="btn" style={{fontSize:11,padding:'4px',color:'var(--red)'}} onClick={disconnectRoom}>Disconnect</button>
           </div>
         )}
         <div className="peer-list">
-          <span>📡 Status: </span>
-          <span className={`status-badge ${syncStatus==='connected'?'on':'off'}`}>
-            {syncStatus==='connected'?'Connected':syncStatus==='connecting'?'Connecting...':'Disconnected'}
+          <span>📡</span>
+          <span className={`status-badge ${connected?'on':''}`} style={connecting?{background:'var(--amber-dim)',color:'var(--amber)'}:!connected?{background:'var(--red-dim)',color:'var(--red)'}:{}}>
+            {connected?'Syncing ✓':connecting?'Connecting…':'Not connected'}
           </span>
-          {peersCount>0 && <span>👥 {peersCount} peer(s)</span>}
-          <div className={`sync-dot ${syncStatus==='connected'?'connected':syncStatus==='connecting'?'connecting':''}`} />
+          {peerCount>0&&<span style={{fontSize:11,color:'var(--text3)'}}>· {peerCount} peer{peerCount!==1?'s':''}</span>}
+          <div className={`sync-dot${connected?' connected':connecting?' connecting':''}`}/>
         </div>
-        <div style={{fontSize:12,color:'var(--text3)',background:'var(--bg3)',padding:8,borderRadius:8}}>
-          💡 Tip: Both devices must join the same Room ID (or scan QR). Changes will sync automatically.
-        </div>
-        <button className="btn" onClick={onClose} style={{marginTop:4}}>Close</button>
+        <button className="btn" onClick={onClose}>Close</button>
       </div>
     </div>
   );
@@ -1227,82 +1335,161 @@ function App(){
   const [scratch,setScratch]=useState(()=>loadLS('daily_scratch',''));
   useEffect(()=>saveLS('daily_scratch',scratch),[scratch]);
 
-   // WebSocket sync state
-  const [wsStatus, setWsStatus] = useState('disconnected');
-  const [wsPeers, setWsPeers] = useState(0);
-  const [showSyncModal, setShowSyncModal] = useState(false);
-  const [roomId, setRoomId] = useState('');
-  const wsRef = useRef(null);
-  const isLocalUpdate = useRef(false);
-  
-  // Connect to WebSocket server
-  const connectWebSocket = (room) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.close();
+  // ── GUN.JS SYNC ────────────────────────────────────────────────────────────
+  // Gun.js connects to FREE public relay servers via WSS (WebSocket Secure).
+  // Works on HTTP AND HTTPS. Deploy a single index.html to GitHub Pages,
+  // Netlify, Vercel — completely FREE. No server, no account, no setup.
+  const GUN_RELAYS=['https://gun-rs.alwaysdata.net/gun','https://peer.wallie.io/gun','https://gundb-relay-mlmr.onrender.com/gun'];
+  const SESSION_ID=useRef(Math.random().toString(36).slice(2,10));
+  const gunRef=useRef(null);
+  const gunNodeRef=useRef(null);
+  const [peerStatus,setPeerStatus]=useState('disconnected');
+  const [peerCount,setPeerCount]=useState(0);
+  const [showSyncModal,setShowSyncModal]=useState(false);
+  const [roomId,setRoomId]=useState('');
+  const [activeRoom,setActiveRoom]=useState('');
+  const [myPeerId,setMyPeerId]=useState('');
+  const [conflicts,setConflicts]=useState([]);
+  const pendingRemote=useRef(null);
+  const isSyncing=useRef(false);
+  const broadcastTimer=useRef(null);
+  const colsRef=useRef(cols);
+  const cardsRef=useRef(cards);
+  const scratchRef=useRef(scratch);
+  useEffect(()=>{colsRef.current=cols;},[cols]);
+  useEffect(()=>{cardsRef.current=cards;},[cards]);
+  useEffect(()=>{scratchRef.current=scratch;},[scratch]);
+
+  function tryParse(s,fb){try{return JSON.parse(s);}catch{return fb;}}
+
+  function applyRemote(data){
+    isSyncing.current=true;
+    if(data.cols)setCols(data.cols);
+    if(data.cards)setCards(data.cards);
+    if(data.scratch!==undefined)setScratch(data.scratch);
+    setTimeout(()=>{isSyncing.current=false;},150);
+  }
+
+  function detectConflicts(remote){
+    const found=[];const localCards=cardsRef.current;
+    Object.values(remote.cards||{}).flat().forEach(rCard=>{
+      const localCol=Object.keys(localCards).find(k=>(localCards[k]||[]).some(c=>c.id===rCard.id));
+      if(!localCol)return;
+      const lCard=(localCards[localCol]||[]).find(c=>c.id===rCard.id);
+      if(!lCard||lCard.content===rCard.content)return;
+      const lTs=new Date(lCard.updatedAt||lCard.createdAt||0).getTime();
+      const rTs=new Date(rCard.updatedAt||rCard.createdAt||0).getTime();
+      if(Math.abs(lTs-rTs)<3600000&&lTs>0&&rTs>0){
+        found.push({cardId:lCard.id,local:lCard,remote:rCard,colId:localCol});
+      }
+    });
+    return found;
+  }
+
+  function handleIncoming(data){
+    if(!data||!data.cols)return;
+    setPeerStatus('connected');setPeerCount(1);
+    const found=detectConflicts(data);
+    if(found.length>0){pendingRemote.current=data;setConflicts(found);}
+    else applyRemote(data);
+  }
+
+  function resolveConflict(idx,choice){
+    const c=conflicts[idx];if(!c)return;
+    setCards(prev=>{
+      const col=Object.keys(prev).find(k=>(prev[k]||[]).some(x=>x.id===c.cardId));
+      if(!col)return prev;
+      return{...prev,[col]:(prev[col]||[]).map(x=>{
+        if(x.id!==c.cardId)return x;
+        if(choice==='remote')return c.remote;
+        if(choice==='merge')return{...c.local,content:(c.local.content||'').trim()+'\n\n---\n**Merged from remote:**\n'+(c.remote.content||'').trim(),updatedAt:new Date().toISOString()};
+        return x;
+      })};
+    });
+  }
+
+  function resolveAll(){
+    if(pendingRemote.current){
+      const rem=pendingRemote.current;
+      if(rem.cols)setCols(rem.cols);
+      if(rem.scratch!==undefined)setScratch(rem.scratch);
+      pendingRemote.current=null;
     }
-    const wsUrl = `ws://${window.location.hostname}:8081`; // same host as HTTP server
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-    
-    ws.onopen = () => {
-      setWsStatus('connected');
-      setWsPeers(1); // approximate
-      // Send current state on join
-      ws.send(JSON.stringify({ type: 'sync', cols, cards, scratch, room }));
-    };
-    
-    ws.onmessage = (event) => {
-      if (isLocalUpdate.current) return;
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'sync' && data.room === room) {
-          isLocalUpdate.current = true;
-          if (data.cols) setCols(data.cols);
-          if (data.cards) setCards(data.cards);
-          if (data.scratch !== undefined) setScratch(data.scratch);
-          setTimeout(() => { isLocalUpdate.current = false; }, 50);
-        }
-      } catch(e) { console.error(e); }
-    };
-    
-    ws.onclose = () => {
-      setWsStatus('disconnected');
-      setWsPeers(0);
-    };
-    
-    ws.onerror = () => {
-      setWsStatus('error');
-      addToast('WebSocket connection failed – is server running?', 'error');
-    };
-  };
-  
-  // Broadcast local changes
-  const broadcast = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      isLocalUpdate.current = true;
-      wsRef.current.send(JSON.stringify({ type: 'sync', cols, cards, scratch, room: roomId }));
-      setTimeout(() => { isLocalUpdate.current = false; }, 50);
+    setConflicts([]);
+  }
+
+  function broadcastGun(room){
+    const r=room||activeRoom;
+    if(!gunRef.current||!r)return;
+    try{
+      gunRef.current.get('dailydot-v2-'+r).put({
+        _cols:JSON.stringify(colsRef.current),
+        _cards:JSON.stringify(cardsRef.current),
+        _scratch:scratchRef.current||'',
+        _ts:Date.now(),
+        _sid:SESSION_ID.current,
+      });
+    }catch(e){console.warn('Gun broadcast',e);}
+  }
+
+  function joinGunRoom(room){
+    const r=(room||'').trim();if(!r)return;
+    // Init Gun once (connects to multiple public relays)
+    if(!gunRef.current){
+      try{gunRef.current=Gun(GUN_RELAYS);}
+      catch(e){addToast('Sync init failed','error');return;}
     }
-  }, [cols, cards, scratch, roomId]);
-  
-  useEffect(() => {
-    if (wsStatus === 'connected') broadcast();
-    saveData({cols, cards});
-  }, [cols, cards, scratch, wsStatus, broadcast]);
-  
-  const createRoom = () => {
-    if (!roomId.trim()) {
-      const gen = Math.random().toString(36).slice(2,10);
-      setRoomId(gen);
-    }
-    connectWebSocket(roomId);
-    setShowSyncModal(true);
-  };
-  
-  const joinRoom = () => {
-    if (roomId.trim()) connectWebSocket(roomId);
-    setShowSyncModal(true);
-  };
+    // Unsubscribe from previous room
+    if(gunNodeRef.current){try{gunNodeRef.current.off();}catch{}}
+    setPeerStatus('connecting');
+    const node=gunRef.current.get('dailydot-v2-'+r);
+    gunNodeRef.current=node;
+    setActiveRoom(r);setMyPeerId(r);
+    // Subscribe — Gun fires whenever any peer updates the node
+    let firstFire=true;
+    node.on((data)=>{
+      if(!data||!data._ts)return;
+      // Ignore our own broadcasts
+      if(data._sid===SESSION_ID.current)return;
+      if(firstFire){firstFire=false;setPeerStatus('connected');setPeerCount(1);addToast('Sync connected ✓','success');}
+      handleIncoming({
+        cols:tryParse(data._cols,null),
+        cards:tryParse(data._cards,null),
+        scratch:data._scratch||'',
+        ts:data._ts,
+      });
+    });
+    // Send our state immediately so the other device gets it
+    setTimeout(()=>broadcastGun(r),300);
+    addToast('Room "'+r+'" — waiting for peer…');
+  }
+
+  function createRoom(){
+    const r='daily-'+Math.random().toString(36).slice(2,8);
+    setRoomId(r);joinGunRoom(r);
+  }
+  function joinRoom(){joinGunRoom(roomId);}
+  function disconnectRoom(){
+    if(gunNodeRef.current){try{gunNodeRef.current.off();}catch{}}
+    gunNodeRef.current=null;
+    setActiveRoom('');setMyPeerId('');
+    setPeerStatus('disconnected');setPeerCount(0);
+    addToast('Disconnected');
+  }
+
+  // Auto-join if ?room= in URL
+  useEffect(()=>{
+    const r=new URLSearchParams(location.search).get('room');
+    if(r){setRoomId(r);setTimeout(()=>joinGunRoom(r),600);}
+  },[]);
+
+  // Broadcast whenever local state changes (debounced)
+  useEffect(()=>{
+    saveData({cols,cards});
+    if(isSyncing.current||!activeRoom)return;
+    clearTimeout(broadcastTimer.current);
+    broadcastTimer.current=setTimeout(()=>broadcastGun(activeRoom),400);
+  },[cols,cards,scratch]);
 
   useEffect(()=>{
     function onResize(){setWindowW(window.innerWidth);}
@@ -1474,8 +1661,8 @@ const renderDesktopHeader = () => (
       <button className={`ibtn${showEditor?' active':''}`} data-tip="Scratch Pad (E)" onClick={()=>setShowEditor(o=>!o)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       <button className="ibtn" data-tip="Drawing Board (D)" onClick={()=>setShowDraw(true)} style={{color:'var(--blue)',borderColor:'var(--blue-dim)',background:'var(--blue-dim)'}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg></button>
       <button className={`ibtn${showAi?' active':''}`} data-tip="AI Assistants" onClick={()=>setShowAi(o=>!o)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></button>
-      {/* Sync button - now uses wsStatus */}
-      <button className={`ibtn${wsStatus==='connected'?' active':''}`} data-tip="P2P Sync" onClick={()=>setShowSyncModal(true)} style={{position:'relative'}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5L10.5 16M17 7.5L13.5 16M7.5 6h9"/></svg>{wsStatus==='connected'&&<div className="sync-dot connected" style={{position:'absolute',bottom:-2,right:-2,width:8,height:8}}/>}</button>
+      {/* Sync button */}
+      <button className={`ibtn${(peerStatus==='connected'||peerStatus==='hosting')?' active':''}`} data-tip="P2P Sync" onClick={()=>setShowSyncModal(true)} style={{position:'relative'}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5L10.5 16M17 7.5L13.5 16M7.5 6h9"/></svg>{(peerStatus==='connected'||peerStatus==='hosting')&&<div className={`sync-dot ${peerStatus==='connected'?'connected':'connecting'}`} style={{position:'absolute',bottom:-2,right:-2,width:8,height:8}}/>}</button>
       <button className="ibtn" data-tip="Refresh ages" onClick={refreshAge}><svg className={spinning?'spin':''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
       <button className="ibtn" data-tip={light?'Dark mode':'Light mode'} onClick={()=>setLight(l=>!l)}>{light?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>}</button>
       <button className="ibtn" data-tip="Shortcuts" onClick={()=>setShowShortcuts(true)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg></button>
@@ -1496,7 +1683,7 @@ const renderDesktopHeader = () => (
     <div style={{marginLeft:'auto',display:'flex',gap:3,alignItems:'center'}}>
       {searchOpen&&(<div style={{position:'relative',display:'flex',alignItems:'center'}}><span style={{position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',color:'var(--text3)',pointerEvents:'none'}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span><input ref={searchRef} className="search-inp" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" onKeyDown={e=>{if(e.key==='Escape'){setSearch('');setSearchOpen(false);}}} style={{paddingLeft:28}}/></div>)}
       <button className={`ibtn${searchOpen?' active':''}`} onClick={()=>{setSearchOpen(o=>!o);if(!searchOpen)setTimeout(()=>searchRef.current?.focus(),80);}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
-      <button className={`ibtn${wsStatus==='connected'?' active':''}`} onClick={()=>setShowSyncModal(true)} style={{position:'relative'}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5L10.5 16M17 7.5L13.5 16M7.5 6h9"/></svg>{wsStatus==='connected'&&<div className="sync-dot connected" style={{position:'absolute',bottom:-2,right:-2,width:8,height:8}}/>}</button>
+      <button className={`ibtn${(peerStatus==='connected'||peerStatus==='hosting')?' active':''}`} onClick={()=>setShowSyncModal(true)} style={{position:'relative'}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5L10.5 16M17 7.5L13.5 16M7.5 6h9"/></svg>{(peerStatus==='connected'||peerStatus==='hosting')&&<div className={`sync-dot ${peerStatus==='connected'?'connected':'connecting'}`} style={{position:'absolute',bottom:-2,right:-2,width:8,height:8}}/>}</button>
       <div style={{position:'relative'}}><button className={`ibtn${showOverflow?' active':''}`} onClick={()=>setShowOverflow(o=>!o)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/></svg></button>{showOverflow&&<OverflowMenu items={overflowItems} onClose={()=>setShowOverflow(false)}/>}</div>
     </div>
   </>
@@ -1543,7 +1730,8 @@ const renderDesktopHeader = () => (
       {showShortcuts&&<ShortcutsPanel onClose={()=>setShowShortcuts(false)}/>}
       {showEditor&&<ScratchPad content={scratch} onChange={setScratch} onClose={()=>setShowEditor(false)}/>}
       {showAi&&<AiPanel onClose={()=>setShowAi(false)}/>}
-      {showSyncModal&&<SyncModal onClose={()=>setShowSyncModal(false)} syncStatus={wsStatus} peersCount={wsPeers} roomId={roomId} setRoomId={setRoomId} createRoom={createRoom} joinRoom={joinRoom}/>}      
+      {showSyncModal&&<SyncModal onClose={()=>setShowSyncModal(false)} peerStatus={peerStatus} peerCount={peerCount} roomId={roomId} setRoomId={setRoomId} createRoom={createRoom} joinRoom={joinRoom} disconnectRoom={disconnectRoom} myPeerId={myPeerId} activeRoom={activeRoom}/>}
+      {conflicts.length>0&&<ConflictModal conflicts={conflicts} onResolve={resolveConflict} onResolveAll={resolveAll}/>}
       {confetti&&<Confetti key={confettiKey.current}/>}
       <Toast toasts={toasts}/>
       <AlarmOverlay alarms={alarms} onDismiss={dismissAlarms}/>
