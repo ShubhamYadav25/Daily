@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#0e0f11"/>
 <link rel="manifest" href="#" id="manifest-link"/>
 <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23000000"/><path d="M22 14H34C46 14 54 22 54 32C54 42 46 50 34 50H22V14Z" fill="%23ffffff"/></svg>'/>
-<!-- PeerJS: free WebRTC P2P, uses public signaling server — no backend needed -->
-<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+<!-- MQTT.js — sync via HiveMQ public broker (free, reliable, HTTP+HTTPS, no account) -->
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1287,12 +1287,12 @@ function SyncModal({onClose,peerStatus,peerCount,roomId,setRoomId,createRoom,joi
     <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
       <div className="sync-modal" onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <h3 style={{fontSize:15,fontWeight:600}}>Sync Your Work!</h3>
+          <h3 style={{fontSize:15,fontWeight:600}}>Sync You Work!</h3>
           <button className="ibtn" onClick={onClose} style={{width:28,height:28}}>✕</button>
         </div>
         {!activeRoom?(
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            <button className="btn primary" style={{padding:'9px',fontSize:13}} onClick={createRoom}>Create new room</button>
+            <button className="btn primary" style={{padding:'9px',fontSize:13}} onClick={createRoom}>✨ Create new room</button>
             <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{flex:1,height:1,background:'var(--border)'}}/><span style={{fontSize:11,color:'var(--text3)',flexShrink:0}}>or join existing</span><div style={{flex:1,height:1,background:'var(--border)'}}/></div>
             <div style={{display:'flex',gap:6}}>
               <input className="sync-input" style={{flex:1}} placeholder="Paste Room ID…" value={roomId} onChange={e=>setRoomId(e.target.value)} onKeyDown={e=>e.key==='Enter'&&joinRoom()}/>
