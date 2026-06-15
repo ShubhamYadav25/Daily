@@ -10,7 +10,6 @@
 <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23000000"/><path d="M22 14H34C46 14 54 22 54 32C54 42 46 50 34 50H22V14Z" fill="%23ffffff"/></svg>'/>
 <!-- MQTT.js — sync via HiveMQ public broker (free, reliable, HTTP+HTTPS, no account) -->
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/gun@0.2020.1236/gun.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1343,17 +1342,9 @@ function App(){
   useEffect(()=>saveLS('daily_scratch',scratch),[scratch]);
 
   // ── GUN.JS SYNC ────────────────────────────────────────────────────────────
-  const GUN_RELAYS = [
-    'https://gun-us.herokuapp.com/gun',
-    'https://gun-manhattan.herokuapp.com/gun',
-    'https://gun-eu.herokuapp.com/gun',
-    'wss://gun.xyz/socket.io',
-    'https://peer.wallie.io/gun',
-    'https://gundb-relay.peer.uno/gun'
-  ];
-  const SESSION_ID=useRef(Math.random().toString(36).slice(2,10));
-  const gunRef=useRef(null);
-  const gunNodeRef=useRef(null);
+  const SESSION_ID = useRef(Math.random().toString(36).slice(2,10));
+  const mqttClient = useRef(null);
+  const mqttConnected = useRef(false);
   const [peerStatus,setPeerStatus]=useState('disconnected');
   const [peerCount,setPeerCount]=useState(0);
   const [showSyncModal,setShowSyncModal]=useState(false);
@@ -1429,125 +1420,108 @@ function App(){
     setConflicts([]);
   }
 
-  function broadcastGun(room){
-    const r=room||activeRoom;
-    if(!gunRef.current){
-      try {
-        if(typeof Gun === 'undefined') throw new Error('Gun library not loaded');
-        gunRef.current = Gun({ peers: GUN_RELAYS });
-        addToast('Sync engine ready', 'success');
-      } catch(e) {
-        console.warn('Gun init failed', e);
-        addToast('Sync init failed: library not loaded', 'error');
-        setPeerStatus('disconnected');
-        return;
-      }
-    }
-  }
-
-  function joinGunRoom(room, retryCount = 0){
-  if(typeof Gun === 'undefined'){
-    addToast('Sync unavailable – reload page', 'error');
-    return;
-  }
-  const r = (room || '').trim();
-  if(!r) return;
-  
-  // Initialize Gun if not already
-  if(!gunRef.current){
-    try {
-      // Add connection timeout and retry options
-      gunRef.current = Gun({
-        peers: GUN_RELAYS,
-        retry: 5000,        // retry every 5 seconds
-        timeout: 10000,     // connection timeout
-        multicast: false    // reduce traffic
-      });
-      
-      // Monitor connection status
-      gunRef.current.on('out', {ok: () => {
-        setPeerStatus('connected');
-        addToast('Sync connected ✓', 'success');
-      }});
-      
-      gunRef.current.on('out', {err: (err) => {
-        console.warn('Gun connection error', err);
-        setPeerStatus('disconnected');
-        if(retryCount < 3){
-          setTimeout(() => joinGunRoom(r, retryCount + 1), 3000);
-        } else {
-          addToast('Sync unavailable – using local only', 'error');
-        }
-      }});
-      
-    } catch(e) {
-      console.warn('Gun init failed', e);
-      addToast('Sync init failed: ' + e.message, 'error');
-      setPeerStatus('disconnected');
-      return;
-    }
-  }
-  
-  // Unsubscribe from previous room
-  if(gunNodeRef.current){
-    try { gunNodeRef.current.off(); } catch(e) {}
-  }
-  
-  setPeerStatus('connecting');
-  const node = gunRef.current.get('dailydot-v2-' + r);
-  gunNodeRef.current = node;
-  setActiveRoom(r);
-  setMyPeerId(r);
-  
-  let firstFire = true;
-  node.on((data) => {
-    if(!data || !data._ts) return;
-    if(data._sid === SESSION_ID.current) return;
-    if(firstFire){
-      firstFire = false;
-      setPeerStatus('connected');
-      setPeerCount(1);
-      addToast('Sync connected ✓', 'success');
-    }
-    handleIncoming({
-      cols: tryParse(data._cols, null),
-      cards: tryParse(data._cards, null),
-      scratch: data._scratch || '',
-      ts: data._ts,
-    });
+function broadcastMqtt(room) {
+  const r = room || activeRoom;
+  if (!mqttClient.current || !mqttConnected.current || !r) return;
+  const payload = JSON.stringify({
+    _cols: JSON.stringify(colsRef.current),
+    _cards: JSON.stringify(cardsRef.current),
+    _scratch: scratchRef.current || '',
+    _ts: Date.now(),
+    _sid: SESSION_ID.current,
   });
-  
-  // Broadcast initial state after connection
-  setTimeout(() => broadcastGun(r), 500);
-  addToast('Joining room: ' + r);
+  mqttClient.current.publish(`daily/${r}`, payload, { qos: 1, retain: false });
 }
 
-  function createRoom(){
-    const r='daily-'+Math.random().toString(36).slice(2,8);
-    setRoomId(r);joinGunRoom(r);
-  }
-  function joinRoom(){joinGunRoom(roomId);}
-  function disconnectRoom(){
-    if(gunNodeRef.current){try{gunNodeRef.current.off();}catch{}}
-    gunNodeRef.current=null;
-    setActiveRoom('');setMyPeerId('');
-    setPeerStatus('disconnected');setPeerCount(0);
-    addToast('Disconnected');
+ function mqttConnect(room) {
+    const r = (room || '').trim();
+    if (!r) return;
+    if (mqttClient.current) {
+      try { mqttClient.current.end(true); } catch(e) {}
+    }
+    setPeerStatus('connecting');
+    // HiveMQ public WebSocket endpoint
+    const client = mqtt.connect('wss://broker.hivemq.com:8000/mqtt');
+    mqttClient.current = client;
+
+    client.on('connect', () => {
+      mqttConnected.current = true;
+      setPeerStatus('connected');
+      setPeerCount(1);
+      setActiveRoom(r);
+      setMyPeerId(SESSION_ID.current);
+      addToast('MQTT sync connected ✓', 'success');
+      // Subscribe to room topic
+      client.subscribe(`daily/${r}`, { qos: 1 }, (err) => {
+        if (err) addToast('Subscribe failed', 'error');
+      });
+      // Broadcast our current state immediately
+      setTimeout(() => broadcastMqtt(r), 300);
+    });
+
+    client.on('message', (topic, message) => {
+      if (topic !== `daily/${r}`) return;
+      try {
+        const data = JSON.parse(message.toString());
+        if (data._sid === SESSION_ID.current) return; // ignore own messages
+        handleIncoming({
+          cols: data._cols ? JSON.parse(data._cols) : null,
+          cards: data._cards ? JSON.parse(data._cards) : null,
+          scratch: data._scratch,
+          ts: data._ts,
+        });
+      } catch(e) { console.warn('MQTT parse error', e); }
+    });
+
+    client.on('error', (err) => {
+      console.warn('MQTT error', err);
+      setPeerStatus('disconnected');
+      addToast('MQTT connection error', 'error');
+    });
+
+    client.on('close', () => {
+      mqttConnected.current = false;
+      setPeerStatus('disconnected');
+      setPeerCount(0);
+    });
+}
+
+function createRoom() {
+  const r = 'daily-' + Math.random().toString(36).slice(2,8);
+  setRoomId(r);
+  mqttConnect(r);
+}
+
+function joinRoom() {
+  if (!roomId.trim()) return;
+  mqttConnect(roomId);
+}
+  function disconnectRoom() {
+    if (mqttClient.current) {
+      mqttClient.current.end(true);
+      mqttClient.current = null;
+    }
+    mqttConnected.current = false;
+    setActiveRoom('');
+    setMyPeerId('');
+    setPeerStatus('disconnected');
+    setPeerCount(0);
+    addToast('Disconnected from sync');
   }
 
   // Auto-join if ?room= in URL
-  useEffect(()=>{
-    const r=new URLSearchParams(location.search).get('room');
-    if(r){setRoomId(r);setTimeout(()=>joinGunRoom(r),600);}
-  },[]);
+useEffect(() => {
+  const r = new URLSearchParams(location.search).get('room');
+  if (r) { setRoomId(r); setTimeout(() => mqttConnect(r), 600); }
+}, []);
 
   // Broadcast whenever local state changes (debounced)
-  useEffect(()=>{
-    saveData({cols,cards});
-    if(isSyncing.current||!activeRoom)return;
-    clearTimeout(broadcastTimer.current);
-    broadcastTimer.current=setTimeout(()=>broadcastGun(activeRoom),400);
-  },[cols,cards,scratch]);
+useEffect(() => {
+  saveData({cols,cards});
+  if (isSyncing.current || !activeRoom || !mqttConnected.current) return;
+  clearTimeout(broadcastTimer.current);
+  broadcastTimer.current = setTimeout(() => broadcastMqtt(activeRoom), 400);
+}, [cols, cards, scratch]);
 
   useEffect(()=>{
     function onResize(){setWindowW(window.innerWidth);}
