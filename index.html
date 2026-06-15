@@ -1278,7 +1278,7 @@ function ConflictModal({conflicts,onResolve,onResolveAll}){
 }
 
 /* ── SYNC MODAL (Gun.js — no server, works HTTP + HTTPS) ── */
-function SyncModal({onClose,peerStatus,peerCount,roomId,setRoomId,createRoom,joinRoom,disconnectRoom,myPeerId,activeRoom}){
+function SyncModal({onClose,peerStatus,peerCount,roomId,setRoomId,createRoom,joinRoom,disconnectRoom,myPeerId,activeRoom, broadcastMqtt }){
   const shareUrl=activeRoom?`${location.origin}${location.pathname}?room=${encodeURIComponent(activeRoom)}`:'';
   const connected=peerStatus==='connected';
   const connecting=peerStatus==='connecting';
@@ -1395,15 +1395,15 @@ function App(){
     return found;
   }
 
-function handleIncoming(data) {
-  if (!data || !data.cols) return;
+function handleIncoming(data){
+  if(!data || !data.cols) return;
+  // Apply remote state – but don't set isSyncing to block broadcasts
+  if(data.cols) setCols(data.cols);
+  if(data.cards) setCards(data.cards);
+  if(data.scratch !== undefined) setScratch(data.scratch);
   setPeerStatus('connected');
   setPeerCount(1);
-  // Apply the remote data directly
-  if (data.cols) setCols(data.cols);
-  if (data.cards) setCards(data.cards);
-  if (data.scratch !== undefined) setScratch(data.scratch);
-}
+} 
 
   function resolveConflict(idx,choice){
     const c=conflicts[idx];if(!c)return;
@@ -1440,6 +1440,8 @@ function broadcastMqtt(room) {
     _sid: SESSION_ID.current,
   });
   mqttClient.current.publish(`daily/${r}`, payload, { qos: 1, retain: false });
+  console.log('Broadcasting state', { cols: colsRef.current, cards: cardsRef.current });
+
 }
 
  function mqttConnect(room) {
@@ -1457,25 +1459,22 @@ function broadcastMqtt(room) {
   // Use correct secure WebSocket port for HiveMQ
   const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
   mqttClient.current = client;
+
+  client.on('reconnect', () => {
+  console.log('MQTT reconnecting...');
+  setPeerStatus('connecting');
+});
   
-  client.on('connect', () => {
-    mqttConnected.current = true;
-    setPeerStatus('connected');
-    setPeerCount(1);
-    setActiveRoom(r);
-    setMyPeerId(SESSION_ID.current);
-    addToast('MQTT sync connected ✓', 'success');
-    
-    // Subscribe to the room topic
-    client.subscribe(`daily/${r}`, { qos: 1 }, (err) => {
-      if (err) {
-        addToast('Subscribe failed: ' + err.message, 'error');
-      } else {
-        // After subscription, broadcast our current state so others receive it
-        broadcastMqtt(r);
-      }
-    });
+client.on('connect', () => {
+  console.log('Received MQTT message from peer');
+  mqttConnected.current = true;
+  setPeerStatus('connected');
+  setPeerCount(1);
+  setActiveRoom(r);
+  client.subscribe(`daily/${r}`, { qos: 1 }, (err) => {
+    if(!err) broadcastMqtt(r);
   });
+});
   
   client.on('message', (topic, message) => {
     if (topic !== `daily/${r}`) return;
@@ -1564,11 +1563,9 @@ useEffect(() => {
 
   // Broadcast whenever local state changes (debounced)
 useEffect(() => {
-  saveData({cols, cards});
-  // Don't broadcast if we're currently applying remote data
-  if (isSyncing.current) return;
+  saveData({cols,cards});
+  // Removed the isSyncing guard to allow broadcasts after every change
   if (!activeRoom || !mqttConnected.current) return;
-  
   clearTimeout(broadcastTimer.current);
   broadcastTimer.current = setTimeout(() => broadcastMqtt(activeRoom), 400);
 }, [cols, cards, scratch]);
@@ -1663,7 +1660,8 @@ useEffect(() => {
       if(wasDone&&!isDone)updated.doneAt=undefined;
       return{...c,[dragCardFrom]:(c[dragCardFrom]||[]).filter(x=>x.id!==dragCardId),[toCol]:[...(c[toCol]||[]),updated]};
     });
-    setDragCardId(null);setDragCardFrom(null);
+    setDragCardId(null);setDragCardFrom(null);  setTimeout(() => { if (activeRoom && mqttConnected.current) broadcastMqtt(activeRoom); }, 50);
+
   }
   onCardDrop._setDrag=onCardDragStart;
 
@@ -1812,7 +1810,8 @@ const renderDesktopHeader = () => (
       {showShortcuts&&<ShortcutsPanel onClose={()=>setShowShortcuts(false)}/>}
       {showEditor&&<ScratchPad content={scratch} onChange={setScratch} onClose={()=>setShowEditor(false)}/>}
       {showAi&&<AiPanel onClose={()=>setShowAi(false)}/>}
-      {showSyncModal&&<SyncModal onClose={()=>setShowSyncModal(false)} peerStatus={peerStatus} peerCount={peerCount} roomId={roomId} setRoomId={setRoomId} createRoom={createRoom} joinRoom={joinRoom} disconnectRoom={disconnectRoom} myPeerId={myPeerId} activeRoom={activeRoom}/>}
+      {showSyncModal&&<SyncModal 
+        onClose={()=>setShowSyncModal(false)} peerStatus={peerStatus} peerCount={peerCount} roomId={roomId} setRoomId={setRoomId} createRoom={createRoom} joinRoom={joinRoom} disconnectRoom={disconnectRoom} myPeerId={myPeerId} activeRoom={activeRoom} broadcastMqtt={broadcastMqtt}/>}
       {conflicts.length>0&&<ConflictModal conflicts={conflicts} onResolve={resolveConflict} onResolveAll={resolveAll}/>}
       {confetti&&<Confetti key={confettiKey.current}/>}
       <Toast toasts={toasts}/>
