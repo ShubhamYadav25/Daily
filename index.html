@@ -1441,7 +1441,7 @@ function broadcastMqtt(room) {
     }
     setPeerStatus('connecting');
     // HiveMQ public WebSocket endpoint
-    const client = mqtt.connect('wss://broker.hivemq.com:8000/mqtt');
+const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
     mqttClient.current = client;
 
     client.on('connect', () => {
