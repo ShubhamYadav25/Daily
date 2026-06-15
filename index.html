@@ -1318,12 +1318,19 @@ function SyncModal({onClose,peerStatus,peerCount,roomId,setRoomId,createRoom,joi
           {peerCount>0&&<span style={{fontSize:11,color:'var(--text3)'}}>· {peerCount} peer{peerCount!==1?'s':''}</span>}
           <div className={`sync-dot${connected?' connected':connecting?' connecting':''}`}/>
         </div>
+        {/* Force re-sync button - only when connected and in a room */}
+{activeRoom && peerStatus === 'connected' && (
+  <button className="btn" style={{marginTop: 8}} onClick={() => broadcastMqtt(activeRoom)}>
+    🔄 Force re-sync
+  </button>
+)}
         {/* Retry button - only show when disconnected and we have a roomId to try */}
         {peerStatus === 'disconnected' && roomId && !activeRoom && (
           <button className="btn" style={{marginTop: 8}} onClick={() => joinRoom()}>
             Retry
           </button>
         )}
+        
         <button className="btn" onClick={onClose}>Close</button>
       </div>
     </div>
@@ -1388,13 +1395,15 @@ function App(){
     return found;
   }
 
-  function handleIncoming(data){
-    if(!data||!data.cols)return;
-    setPeerStatus('connected');setPeerCount(1);
-    const found=detectConflicts(data);
-    if(found.length>0){pendingRemote.current=data;setConflicts(found);}
-    else applyRemote(data);
-  }
+function handleIncoming(data) {
+  if (!data || !data.cols) return;
+  setPeerStatus('connected');
+  setPeerCount(1);
+  // Apply the remote data directly
+  if (data.cols) setCols(data.cols);
+  if (data.cards) setCards(data.cards);
+  if (data.scratch !== undefined) setScratch(data.scratch);
+}
 
   function resolveConflict(idx,choice){
     const c=conflicts[idx];if(!c)return;
@@ -1434,56 +1443,76 @@ function broadcastMqtt(room) {
 }
 
  function mqttConnect(room) {
-    const r = (room || '').trim();
-    if (!r) return;
-    if (mqttClient.current) {
-      try { mqttClient.current.end(true); } catch(e) {}
-    }
-    setPeerStatus('connecting');
-    // HiveMQ public WebSocket endpoint
-const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
-    mqttClient.current = client;
-
-    client.on('connect', () => {
-      mqttConnected.current = true;
-      setPeerStatus('connected');
-      setPeerCount(1);
-      setActiveRoom(r);
-      setMyPeerId(SESSION_ID.current);
-      addToast('MQTT sync connected ✓', 'success');
-      // Subscribe to room topic
-      client.subscribe(`daily/${r}`, { qos: 1 }, (err) => {
-        if (err) addToast('Subscribe failed', 'error');
+  const r = (room || '').trim();
+  if (!r) return;
+  
+  // Close existing connection if any
+  if (mqttClient.current) {
+    try { mqttClient.current.end(true); } catch(e) {}
+    mqttClient.current = null;
+  }
+  
+  setPeerStatus('connecting');
+  
+  // Use correct secure WebSocket port for HiveMQ
+  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+  mqttClient.current = client;
+  
+  client.on('connect', () => {
+    mqttConnected.current = true;
+    setPeerStatus('connected');
+    setPeerCount(1);
+    setActiveRoom(r);
+    setMyPeerId(SESSION_ID.current);
+    addToast('MQTT sync connected ✓', 'success');
+    
+    // Subscribe to the room topic
+    client.subscribe(`daily/${r}`, { qos: 1 }, (err) => {
+      if (err) {
+        addToast('Subscribe failed: ' + err.message, 'error');
+      } else {
+        // After subscription, broadcast our current state so others receive it
+        broadcastMqtt(r);
+      }
+    });
+  });
+  
+  client.on('message', (topic, message) => {
+    if (topic !== `daily/${r}`) return;
+    try {
+      const data = JSON.parse(message.toString());
+      // Ignore messages from ourselves
+      if (data._sid === SESSION_ID.current) return;
+      
+      // Apply remote data (this updates cols, cards, scratch)
+      handleIncoming({
+        cols: data._cols ? JSON.parse(data._cols) : null,
+        cards: data._cards ? JSON.parse(data._cards) : null,
+        scratch: data._scratch,
+        ts: data._ts,
       });
-      // Broadcast our current state immediately
-      setTimeout(() => broadcastMqtt(r), 300);
-    });
-
-    client.on('message', (topic, message) => {
-      if (topic !== `daily/${r}`) return;
-      try {
-        const data = JSON.parse(message.toString());
-        if (data._sid === SESSION_ID.current) return; // ignore own messages
-        handleIncoming({
-          cols: data._cols ? JSON.parse(data._cols) : null,
-          cards: data._cards ? JSON.parse(data._cards) : null,
-          scratch: data._scratch,
-          ts: data._ts,
-        });
-      } catch(e) { console.warn('MQTT parse error', e); }
-    });
-
-    client.on('error', (err) => {
-      console.warn('MQTT error', err);
-      setPeerStatus('disconnected');
-      addToast('MQTT connection error', 'error');
-    });
-
-    client.on('close', () => {
-      mqttConnected.current = false;
-      setPeerStatus('disconnected');
-      setPeerCount(0);
-    });
+    } catch(e) {
+      console.warn('MQTT parse error', e);
+    }
+  });
+  
+  client.on('error', (err) => {
+    console.warn('MQTT error', err);
+    setPeerStatus('disconnected');
+    addToast('MQTT connection error', 'error');
+  });
+  
+  client.on('close', () => {
+    mqttConnected.current = false;
+    setPeerStatus('disconnected');
+    setPeerCount(0);
+    // Optionally retry after a delay
+    setTimeout(() => {
+      if (!mqttConnected.current && activeRoom) {
+        mqttConnect(activeRoom);
+      }
+    }, 5000);
+  });
 }
 
 function createRoom() {
@@ -1515,10 +1544,31 @@ useEffect(() => {
   if (r) { setRoomId(r); setTimeout(() => mqttConnect(r), 600); }
 }, []);
 
+// Auto-reconnect to last used room on page load
+useEffect(() => {
+  const savedRoom = localStorage.getItem('daily_active_room');
+  if (savedRoom && !activeRoom) {
+    setRoomId(savedRoom);
+    setTimeout(() => mqttConnect(savedRoom), 500);
+  }
+}, []);
+
+// Save active room to localStorage whenever it changes
+useEffect(() => {
+  if (activeRoom) {
+    localStorage.setItem('daily_active_room', activeRoom);
+  } else {
+    localStorage.removeItem('daily_active_room');
+  }
+}, [activeRoom]);
+
   // Broadcast whenever local state changes (debounced)
 useEffect(() => {
-  saveData({cols,cards});
-  if (isSyncing.current || !activeRoom || !mqttConnected.current) return;
+  saveData({cols, cards});
+  // Don't broadcast if we're currently applying remote data
+  if (isSyncing.current) return;
+  if (!activeRoom || !mqttConnected.current) return;
+  
   clearTimeout(broadcastTimer.current);
   broadcastTimer.current = setTimeout(() => broadcastMqtt(activeRoom), 400);
 }, [cols, cards, scratch]);
