@@ -2145,7 +2145,7 @@
 
         function fmtSecs(s) {
             const m = Math.floor(s / 60),
-            sec = s % 60; return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+                sec = s % 60; return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
         }
 
         function isMobile() { return window.innerWidth <= 640; }
@@ -2342,7 +2342,7 @@
                 if (line.startsWith('> ')) {
                     const bq = [line.slice(2)]; while (i + 1 < lines.length && lines[i + 1]
                         .startsWith('> ')) {
-                            i++;
+                        i++;
                         bq.push(lines[i].slice(2));
                     } out.push(
                         `<blockquote>${bq.map(inlineRender).join('<br/>')}</blockquote>`);
@@ -2361,7 +2361,7 @@
                 if (/^\[[ x]\]\s/.test(line)) {
                     const items = []; while (i < lines.length && /^\[[ x]\]\s/.test(lines[
                         i])) {
-                            const done = lines[i][1] === 'x';
+                        const done = lines[i][1] === 'x';
                         const li = i;
                         items.push(
                             `<li class="task-item${done ? ' done' : ''}" data-toggle-line="${li}"><span class="cb">${done ? '☑' : '☐'}</span><span class="task-text">${inlineRender(lines[i].replace(/^\[[ x]\]\s/, ''))}</span></li>`
@@ -2383,7 +2383,7 @@
                 while (i + 1 < lines.length && lines[i + 1].trim() && !/^(#{1,3}\s|[-*+]\s|\d+\.\s|> |\[[ x]\]|```|---|___|\*\*\*|!\[)/
                     .test(lines[i + 1]) && !(lines[i + 1].includes('|') && i + 2 <= lines.length && tableSep.test(lines[
                         i + 2] || ''))) {
-                            i++;
+                    i++;
                     para.push(lines[i]);
                 }
                 out.push(`<p>${para.map(inlineRender).join('<br/>')}</p>`);
@@ -3954,13 +3954,16 @@
         /* ── CONFLICT MODAL ── */
         function ConflictModal({ conflicts, onResolve, onResolveAll }) {
             const [idx, setIdx] = useState(0);
-            const c = conflicts[idx];
+            // Clamp idx if conflicts shrink (e.g. after external resolve)
+            const safeIdx = Math.min(idx, conflicts.length - 1);
+            const c = conflicts[safeIdx];
             if (!c) return null;
 
             function resolve(choice) {
-                onResolve(idx, choice);
-                if (idx < conflicts.length - 1) setIdx(i => i + 1);
-                else onResolveAll();
+                onResolve(safeIdx, choice);
+                // Don't increment — the array shrinks, so safeIdx already points to the next item.
+                // Call resolveAll only when this was the last remaining conflict.
+                if (conflicts.length <= 1) onResolveAll();
             }
 
             function diffLines(a, b) {
@@ -4426,14 +4429,20 @@
             const colsRef = useRef(cols);
             const cardsRef = useRef(cards);
             const scratchRef = useRef(scratch);
+            const activeRoomRef = useRef('');          // ← NEW: stable ref for reconnect
+            const lastSyncedCards = useRef({});
             const [showBase64, setShowBase64] = useState(false);
+
+
 
             useEffect(() => { colsRef.current = cols; }, [cols]);
             useEffect(() => { cardsRef.current = cards; }, [cards]);
             useEffect(() => { scratchRef.current = scratch; }, [scratch]);
+            useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]); // ← NEW
 
             function tryParse(s, fb) { try { return JSON.parse(s); } catch { return fb; } }
 
+            /* ── MERGE LOGIC ── */
             /* ── MERGE LOGIC ── */
             function mergeRemoteState(remoteCols, remoteCards, remoteScratch) {
                 const localCols = colsRef.current;
@@ -4443,9 +4452,7 @@
                 let newCards = { ...localCards };
                 let newScratch = remoteScratch !== undefined ? remoteScratch : scratchRef.current;
 
-                // Merge columns: keep local, add any missing remote columns
-                const remoteColMap = {};
-                remoteCols.forEach(c => { remoteColMap[c.id] = c; });
+                // Merge columns: add any remote columns missing locally
                 const localColIds = new Set(localCols.map(c => c.id));
                 remoteCols.forEach(c => {
                     if (!localColIds.has(c.id)) {
@@ -4454,7 +4461,7 @@
                     }
                 });
 
-                // Merge cards
+                // Build flat remote card map
                 const allRemoteCards = {};
                 Object.entries(remoteCards || {}).forEach(([colId, cardList]) => {
                     (cardList || []).forEach(c => {
@@ -4462,39 +4469,45 @@
                     });
                 });
 
-                // Process each local card
                 const processedRemote = new Set();
                 Object.keys(newCards).forEach(colId => {
                     newCards[colId] = (newCards[colId] || []).map(localCard => {
                         const remoteCard = allRemoteCards[localCard.id];
                         if (!remoteCard) return localCard;
                         processedRemote.add(localCard.id);
-                        const lTs = new Date(localCard.updatedAt || localCard.createdAt || 0)
-                            .getTime();
-                        const rTs = new Date(remoteCard.updatedAt || remoteCard.createdAt || 0)
-                            .getTime();
-                        // If same content, keep local
-                        if (localCard.content === remoteCard.content && localCard.task === remoteCard
-                            .task) return localCard;
-                        // Conflict: both changed within a short window (10s) OR both have content changes
-                        const timeDiff = Math.abs(lTs - rTs);
-                        // If remote is significantly newer ( > 10s ), use remote
-                        if (rTs > lTs + 10000) {
-                            return { ...remoteCard, _merged: true };
-                        }
-                        // If local is significantly newer, keep local
-                        if (lTs > rTs + 10000) {
+
+                        // Identical content — no action needed
+                        if (localCard.content === remoteCard.content && localCard.task === remoteCard.task) {
+                            lastSyncedCards.current[localCard.id] = localCard.updatedAt || localCard.createdAt;
                             return localCard;
                         }
-                        // Close timestamps or both changed: conflict
+
+                        const lTs = new Date(localCard.updatedAt || localCard.createdAt || 0).getTime();
+                        const rTs = new Date(remoteCard.updatedAt || remoteCard.createdAt || 0).getTime();
+                        // Last time we synced this card (0 if never synced = treat as very old)
+                        const syncTs = new Date(lastSyncedCards.current[localCard.id] || 0).getTime();
+
+                        const localChanged = lTs > syncTs + 500;   // this device edited the card
+                        const remoteChanged = rTs > syncTs + 500;   // remote edited the card
+
+                        if (!localChanged) {
+                            // This device hasn't touched it — accept remote silently
+                            lastSyncedCards.current[localCard.id] = remoteCard.updatedAt || remoteCard.createdAt;
+                            return { ...remoteCard, _merged: true };
+                        }
+                        if (!remoteChanged) {
+                            // Remote hasn't changed since last sync — keep local
+                            return localCard;
+                        }
+                        // Both sides changed since last sync → real conflict
                         conflictsFound.push({
                             cardId: localCard.id,
                             local: { ...localCard },
                             remote: { ...remoteCard },
-                            colId: colId,
+                            colId,
                             remoteCol: remoteCard._remoteCol || colId
                         });
-                        return localCard; // keep local until resolved
+                        return localCard; // keep local until user resolves
                     });
                 });
 
@@ -4502,17 +4515,14 @@
                 Object.entries(allRemoteCards).forEach(([id, rCard]) => {
                     if (!processedRemote.has(id)) {
                         const targetCol = rCard._remoteCol || Object.keys(remoteCards || {})[0] || 'TODO';
-                        // Ensure the column exists
                         if (!newCards[targetCol]) {
                             newCards[targetCol] = [];
                             if (!newCols.find(c => c.id === targetCol)) {
-                                newCols.push({
-                                    id: targetCol, label: targetCol, color: '#4f8ef7',
-                                    locked: false
-                                });
+                                newCols.push({ id: targetCol, label: targetCol, color: '#4f8ef7', locked: false });
                             }
                         }
                         newCards[targetCol].push(rCard);
+                        lastSyncedCards.current[id] = rCard.updatedAt || rCard.createdAt;
                     }
                 });
 
@@ -4603,8 +4613,9 @@
             }
 
             /* ── WEBSOCKET ── */
+            /* ── WEBSOCKET ── */
             function broadcastWebSocket(room) {
-                const r = room || activeRoom;
+                const r = room || activeRoomRef.current;
                 if (!wsClient.current || wsClient.current.readyState !== WebSocket.OPEN || !r) return;
                 const payload = JSON.stringify({
                     _cols: JSON.stringify(colsRef.current),
@@ -4614,6 +4625,12 @@
                     _sid: SESSION_ID.current,
                 });
                 wsClient.current.send(payload);
+                // Record what we just broadcast as the sync baseline so incoming echoes don't conflict
+                Object.values(cardsRef.current).forEach(list => {
+                    (list || []).forEach(card => {
+                        lastSyncedCards.current[card.id] = card.updatedAt || card.createdAt;
+                    });
+                });
             }
 
             function wsConnect(room) {
@@ -4633,7 +4650,7 @@
                     setPeerCount(1);
                     setActiveRoom(r);
                     setMyPeerId(SESSION_ID.current);
-                    addToast('WebSocket sync connected ✓', 'success');
+                    addToast('Sync connected ✓', 'success');
                     // Broadcast current state after a short delay to ensure the connection is fully established
                     setTimeout(() => broadcastWebSocket(r), 300);
                 };
@@ -4655,16 +4672,18 @@
                 ws.onerror = (err) => {
                     console.warn('WebSocket error', err);
                     setPeerStatus('disconnected');
-                    addToast('WebSocket error', 'error');
+                    addToast('Sync error', 'error');
                 };
 
                 ws.onclose = () => {
                     wsConnected.current = false;
                     setPeerStatus('disconnected');
                     setPeerCount(0);
-                    // Auto-reconnect with backoff
+                    // Use ref (not stale state closure) for reliable reconnect
                     setTimeout(() => {
-                        if (activeRoom && !wsConnected.current) wsConnect(activeRoom);
+                        if (activeRoomRef.current && !wsConnected.current) {
+                            wsConnect(activeRoomRef.current);
+                        }
                     }, 3000);
                 };
             }
@@ -4720,12 +4739,13 @@
             }, [activeRoom]);
 
             // Debounced broadcast
+            // Debounced broadcast
             useEffect(() => {
                 saveData({ cols, cards });
-                if (!activeRoom || !wsConnected.current || conflicts.length > 0) return;
+                if (!activeRoom || !wsConnected.current || conflicts.length > 0 || isSyncing.current) return;
                 clearTimeout(broadcastTimer.current);
-                broadcastTimer.current = setTimeout(() => broadcastWebSocket(activeRoom), 300);
-            }, [cols, cards, scratch, conflicts]);
+                broadcastTimer.current = setTimeout(() => broadcastWebSocket(activeRoom), 500);
+            }, [cols, cards, scratch, conflicts]);;
 
             useEffect(() => {
                 const handleVisibilityChange = () => {
@@ -4757,7 +4777,7 @@
                         updated[id] = { ...t, remaining, running: remaining > 0 };
                     } else {
                         updated[id] =
-                        t;
+                            t;
                     }
                 });
                 return updated;
@@ -4780,8 +4800,8 @@
                                     changed = true;
                                     next[cardId] = { ...t, remaining: rem }; if (rem <=
                                         0) {
-                                            next[cardId].running = false; let taskName =
-                                                'Task';
+                                        next[cardId].running = false; let taskName =
+                                            'Task';
                                         Object.values(cards).forEach(arr => {
                                             const c =
                                                 arr.find(x => x.id === cardId); if (c)
@@ -4796,8 +4816,8 @@
                             playAlarmSound();
                             setAlarms(a => [...a, ...newAlarms]); if (window.Notification &&
                                 Notification.permission === 'granted') {
-                                    newAlarms.forEach(na =>
-                                        new Notification('⏱ Timer Done!', { body: na.task }));
+                                newAlarms.forEach(na =>
+                                    new Notification('⏱ Timer Done!', { body: na.task }));
                             }
                         }
                         return changed ? next : prev;
@@ -4854,7 +4874,7 @@
                         const f = (nc[k] || []).filter(card => !card.expiryDays || !card
                             .doneAt || daysDiff(card.doneAt) < card.expiryDays); if (f.length !== nc[k]
                                 .length) {
-                                    nc[k] = f;
+                            nc[k] = f;
                             ch = true;
                         }
                     });
@@ -4998,9 +5018,9 @@
                 setColDropTarget(null); if (!dragColId || dragColId === toId) return;
                 setCols(c => {
                     const fi = c.findIndex(x => x.id === dragColId),
-                    ti = c.findIndex(x => x.id === toId); if (fi < 0 || ti < 0) return c; const n = [...c]; const [
-                        m
-                    ] = n.splice(fi, 1);
+                        ti = c.findIndex(x => x.id === toId); if (fi < 0 || ti < 0) return c; const n = [...c]; const [
+                            m
+                        ] = n.splice(fi, 1);
                     n.splice(ti, 0, m); return n;
                 });
                 setDragColId(null);
@@ -5211,7 +5231,7 @@
                                         setSearch(e.target.value)} placeholder="Search…" onKeyDown={e => {
                                             if (
                                                 e.key === 'Escape') {
-                                                    setSearch('');
+                                                setSearch('');
                                                 setSearchOpen(false);
                                             }
                                         }} /></div>)}
@@ -5306,7 +5326,7 @@
                                 setSearch(e.target.value)} placeholder="Search…" onKeyDown={e => {
                                     if (e
                                         .key === 'Escape') {
-                                            setSearch('');
+                                        setSearch('');
                                         setSearchOpen(false);
                                     }
                                 }} style={{ paddingLeft: 28 }} /></div>)}
