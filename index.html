@@ -4401,7 +4401,8 @@
 
         /* ── APP ── */
         function App() {
-            const WS_SERVER_URL = 'https://daily-2.onrender.com';
+            // const WS_SERVER_URL = 'https://daily-2.onrender.com';
+            const WS_SERVER_URL = 'ws://localhost:8080';
 
             const saved = loadData();
             const def = defaultData();
@@ -4430,7 +4431,7 @@
             const cardsRef = useRef(cards);
             const scratchRef = useRef(scratch);
             const activeRoomRef = useRef('');          // ← NEW: stable ref for reconnect
-            const lastSyncedCards = useRef({});
+            const lastSyncedCards = useRef({});  // cardId → updatedAt at last successful sync
             const [showBase64, setShowBase64] = useState(false);
 
 
@@ -4442,133 +4443,89 @@
 
             function tryParse(s, fb) { try { return JSON.parse(s); } catch { return fb; } }
 
-            /* ── MERGE LOGIC ── */
-            /* ── MERGE LOGIC ── */
             function mergeRemoteState(remoteCols, remoteCards, remoteScratch) {
-                const localCols = colsRef.current;
-                const localCards = cardsRef.current;
-                const conflictsFound = [];
-                let newCols = [...localCols];
-                let newCards = { ...localCards };
-                let newScratch = remoteScratch !== undefined ? remoteScratch : scratchRef.current;
+    const localCols  = colsRef.current;
+    const localCards = cardsRef.current;
+    const newScratch = remoteScratch !== undefined ? remoteScratch : scratchRef.current;
 
-                // Merge columns: add any remote columns missing locally
-                const localColIds = new Set(localCols.map(c => c.id));
-                remoteCols.forEach(c => {
-                    if (!localColIds.has(c.id)) {
-                        newCols.push(c);
-                        newCards[c.id] = [];
-                    }
-                });
+    // Merge column list
+    const newCols = [...localCols];
+    const localColIds = new Set(localCols.map(c => c.id));
+    (remoteCols || []).forEach(c => { if (!localColIds.has(c.id)) newCols.push(c); });
 
-                // Build flat remote card map
-                const allRemoteCards = {};
-                Object.entries(remoteCards || {}).forEach(([colId, cardList]) => {
-                    (cardList || []).forEach(c => {
-                        allRemoteCards[c.id] = { ...c, _remoteCol: colId };
-                    });
-                });
+    // Flat maps: cardId → { card, col }
+    const localMap = {};
+    Object.entries(localCards).forEach(([colId, list]) =>
+        (list || []).forEach(c => { localMap[c.id] = { card: c, col: colId }; })
+    );
+    const remoteMap = {};
+    Object.entries(remoteCards || {}).forEach(([colId, list]) =>
+        (list || []).forEach(c => { remoteMap[c.id] = { card: c, col: colId }; })
+    );
 
-                const processedRemote = new Set();
-                Object.keys(newCards).forEach(colId => {
-                    newCards[colId] = (newCards[colId] || []).map(localCard => {
-                        const remoteCard = allRemoteCards[localCard.id];
-                        if (!remoteCard) return localCard;
-                        processedRemote.add(localCard.id);
+    // LWW: for every card decide winner + winner's column
+    const winners = {};
+    new Set([...Object.keys(localMap), ...Object.keys(remoteMap)]).forEach(id => {
+        const L = localMap[id], R = remoteMap[id];
+        if (!L) { winners[id] = R; return; }   // new card on remote
+        if (!R) { winners[id] = L; return; }   // local-only, keep
+        const lTs = new Date(L.card.updatedAt || L.card.createdAt || 0).getTime();
+        const rTs = new Date(R.card.updatedAt || R.card.createdAt || 0).getTime();
+        winners[id] = rTs > lTs ? R : L;
+    });
 
-                        // Identical content — no action needed
-                        if (localCard.content === remoteCard.content && localCard.task === remoteCard.task) {
-                            lastSyncedCards.current[localCard.id] = localCard.updatedAt || localCard.createdAt;
-                            return localCard;
-                        }
+    // Reconstruct columns — use REMOTE ordering so drags are preserved
+    const newCards = {};
+    newCols.forEach(c => { newCards[c.id] = []; });
+    const placed = new Set();
 
-                        const lTs = new Date(localCard.updatedAt || localCard.createdAt || 0).getTime();
-                        const rTs = new Date(remoteCard.updatedAt || remoteCard.createdAt || 0).getTime();
-                        // Last time we synced this card (0 if never synced = treat as very old)
-                        const syncTs = new Date(lastSyncedCards.current[localCard.id] || 0).getTime();
+    // First pass: place cards in remote order
+    Object.entries(remoteCards || {}).forEach(([, list]) =>
+        (list || []).forEach(rc => {
+            const w = winners[rc.id];
+            if (!w || placed.has(rc.id)) return;
+            if (!newCards[w.col]) newCards[w.col] = [];
+            newCards[w.col].push({ ...w.card });
+            placed.add(rc.id);
+        })
+    );
+    // Second pass: place local-only cards (not yet placed)
+    Object.entries(localCards).forEach(([, list]) =>
+        (list || []).forEach(lc => {
+            const w = winners[lc.id];
+            if (!w || placed.has(lc.id)) return;
+            if (!newCards[w.col]) newCards[w.col] = [];
+            newCards[w.col].push({ ...w.card });
+            placed.add(lc.id);
+        })
+    );
 
-                        const localChanged = lTs > syncTs + 500;   // this device edited the card
-                        const remoteChanged = rTs > syncTs + 500;   // remote edited the card
+    return { cols: newCols, cards: newCards, scratch: newScratch, conflicts: [] };
+}
 
-                        if (!localChanged) {
-                            // This device hasn't touched it — accept remote silently
-                            lastSyncedCards.current[localCard.id] = remoteCard.updatedAt || remoteCard.createdAt;
-                            return { ...remoteCard, _merged: true };
-                        }
-                        if (!remoteChanged) {
-                            // Remote hasn't changed since last sync — keep local
-                            return localCard;
-                        }
-                        // Both sides changed since last sync → real conflict
-                        conflictsFound.push({
-                            cardId: localCard.id,
-                            local: { ...localCard },
-                            remote: { ...remoteCard },
-                            colId,
-                            remoteCol: remoteCard._remoteCol || colId
-                        });
-                        return localCard; // keep local until user resolves
-                    });
-                });
 
-                // Add remote cards that don't exist locally
-                Object.entries(allRemoteCards).forEach(([id, rCard]) => {
-                    if (!processedRemote.has(id)) {
-                        const targetCol = rCard._remoteCol || Object.keys(remoteCards || {})[0] || 'TODO';
-                        if (!newCards[targetCol]) {
-                            newCards[targetCol] = [];
-                            if (!newCols.find(c => c.id === targetCol)) {
-                                newCols.push({ id: targetCol, label: targetCol, color: '#4f8ef7', locked: false });
-                            }
-                        }
-                        newCards[targetCol].push(rCard);
-                        lastSyncedCards.current[id] = rCard.updatedAt || rCard.createdAt;
-                    }
-                });
-
-                return { cols: newCols, cards: newCards, scratch: newScratch, conflicts: conflictsFound };
-            }
-
-            /* ── APPLY REMOTE WITH CONFLICT HANDLING ── */
+            //* ── APPLY REMOTE ── */
             function applyRemoteWithConflicts(data) {
-                if (!data || (!data.cols && !data.cards && data.scratch === undefined)) return;
-                isSyncing.current = true;
+    if (!data || (!data.cols && !data.cards && data.scratch === undefined)) return;
+    isSyncing.current = true;   // ← tells debounce "don't broadcast this change"
 
-                const remoteCols = data.cols || colsRef.current;
-                const remoteCards = data.cards || cardsRef.current;
-                const remoteScratch = data.scratch;
+    const result = mergeRemoteState(
+        data.cols   || colsRef.current,
+        data.cards  || cardsRef.current,
+        data.scratch
+    );
 
-                const mergeResult = mergeRemoteState(remoteCols, remoteCards, remoteScratch);
+    setCols(result.cols);
+    setCards(result.cards);
+    if (result.scratch !== undefined) setScratch(result.scratch);
+    setPeerStatus('connected');
 
-                if (mergeResult.conflicts.length > 0) {
-                    // Store the incoming data for later resolution
-                    pendingRemote.current = {
-                        cols: remoteCols,
-                        cards: remoteCards,
-                        scratch: remoteScratch,
-                        _mergeResult: mergeResult
-                    };
-                    setConflicts(mergeResult.conflicts);
-                    // Apply the non-conflicting parts immediately
-                    setCols(mergeResult.cols);
-                    setCards(mergeResult.cards);
-                    if (mergeResult.scratch !== undefined) setScratch(mergeResult.scratch);
-                } else {
-                    // No conflicts, apply everything
-                    setCols(mergeResult.cols);
-                    setCards(mergeResult.cards);
-                    if (mergeResult.scratch !== undefined) setScratch(mergeResult.scratch);
-                }
-
-                setPeerStatus('connected');
-                setPeerCount(1);
-                setTimeout(() => { isSyncing.current = false; }, 150);
-            }
+    setTimeout(() => { isSyncing.current = false; }, 150);
+}
 
             function handleIncoming(data) {
                 if (!data || (!data.cols && !data.cards && data.scratch === undefined)) return;
                 if (data._sid === SESSION_ID.current) return;
-                // Use the new merge logic
                 applyRemoteWithConflicts(data);
             }
 
@@ -4600,37 +4557,28 @@
             }
 
             function resolveAllConflicts() {
-                // Apply any pending remote data that was held back
-                if (pendingRemote.current) {
-                    const pr = pendingRemote.current;
-                    // Apply the merge result (which already has non-conflicting changes)
-                    setCols(pr._mergeResult.cols);
-                    setCards(pr._mergeResult.cards);
-                    if (pr._mergeResult.scratch !== undefined) setScratch(pr._mergeResult.scratch);
-                    pendingRemote.current = null;
-                }
+                pendingRemote.current = null;
                 setConflicts([]);
+                // Trigger a fresh broadcast so the other device gets our resolved state
+                setTimeout(() => broadcastWebSocket(activeRoomRef?.current || activeRoom), 100);
             }
 
-            /* ── WEBSOCKET ── */
-            /* ── WEBSOCKET ── */
             function broadcastWebSocket(room) {
-                const r = room || activeRoomRef.current;
+                const r = room || activeRoom;
                 if (!wsClient.current || wsClient.current.readyState !== WebSocket.OPEN || !r) return;
-                const payload = JSON.stringify({
+                wsClient.current.send(JSON.stringify({
                     _cols: JSON.stringify(colsRef.current),
                     _cards: JSON.stringify(cardsRef.current),
                     _scratch: scratchRef.current || '',
                     _ts: Date.now(),
                     _sid: SESSION_ID.current,
-                });
-                wsClient.current.send(payload);
-                // Record what we just broadcast as the sync baseline so incoming echoes don't conflict
-                Object.values(cardsRef.current).forEach(list => {
+                }));
+                // Mark everything we just sent as the sync baseline
+                Object.values(cardsRef.current).forEach(list =>
                     (list || []).forEach(card => {
                         lastSyncedCards.current[card.id] = card.updatedAt || card.createdAt;
-                    });
-                });
+                    })
+                );
             }
 
             function wsConnect(room) {
@@ -4644,30 +4592,43 @@
                 const ws = new WebSocket(`${WS_SERVER_URL}/?room=${encodeURIComponent(r)}`);
                 wsClient.current = ws;
 
-                ws.onopen = () => {
-                    wsConnected.current = true;
-                    setPeerStatus('connected');
-                    setPeerCount(1);
-                    setActiveRoom(r);
-                    setMyPeerId(SESSION_ID.current);
-                    addToast('Sync connected ✓', 'success');
-                    // Broadcast current state after a short delay to ensure the connection is fully established
-                    setTimeout(() => broadcastWebSocket(r), 300);
-                };
+ws.onopen = () => {
+    wsConnected.current = true;
+    setPeerStatus('connected');
+    setPeerCount(1);
+    setActiveRoom(r);
+    setMyPeerId(SESSION_ID.current);
+    addToast('WebSocket sync connected ✓', 'success');
+    // Tell existing peers to send us their current state
+    ws.send(JSON.stringify({ _type: 'request_state', _sid: SESSION_ID.current }));
+    // Also push our own state after a short delay
+    setTimeout(() => broadcastWebSocket(r), 400);
+};
 
-                ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data._sid === SESSION_ID.current) return;
-                        handleIncoming({
-                            cols: data._cols ? JSON.parse(data._cols) : null,
-                            cards: data._cards ? JSON.parse(data._cards) : null,
-                            scratch: data._scratch,
-                            ts: data._ts,
-                            _sid: data._sid,
-                        });
-                    } catch (e) { console.warn('WS parse error', e); }
-                };
+ws.onmessage = (event) => {
+    try {
+        const msg = JSON.parse(event.data);
+        if (msg._sid === SESSION_ID.current) return;
+
+        if (msg._type === 'request_state') {
+            // A peer just joined — send them our full state immediately
+            setTimeout(() => broadcastWebSocket(r), 100);
+            return;
+        }
+        if (msg._type === 'peers') {
+            setPeerCount(Array.isArray(msg.peers) ? msg.peers.length : 0);
+            return;
+        }
+
+        handleIncoming({
+            cols:    msg._cols   ? JSON.parse(msg._cols)   : null,
+            cards:   msg._cards  ? JSON.parse(msg._cards)  : null,
+            scratch: msg._scratch,
+            ts:      msg._ts,
+            _sid:    msg._sid,
+        });
+    } catch (e) { console.warn('WS parse error', e); }
+};
 
                 ws.onerror = (err) => {
                     console.warn('WebSocket error', err);
@@ -4739,13 +4700,13 @@
             }, [activeRoom]);
 
             // Debounced broadcast
-            // Debounced broadcast
-            useEffect(() => {
-                saveData({ cols, cards });
-                if (!activeRoom || !wsConnected.current || conflicts.length > 0 || isSyncing.current) return;
-                clearTimeout(broadcastTimer.current);
-                broadcastTimer.current = setTimeout(() => broadcastWebSocket(activeRoom), 500);
-            }, [cols, cards, scratch, conflicts]);;
+useEffect(() => {
+    saveData({ cols, cards });
+    if (!activeRoom || !wsConnected.current || conflicts.length > 0) return;
+    if (isSyncing.current) return;   // ← skip echo — this change came from remote
+    clearTimeout(broadcastTimer.current);
+    broadcastTimer.current = setTimeout(() => broadcastWebSocket(activeRoom), 300);
+}, [cols, cards, scratch, conflicts]);
 
             useEffect(() => {
                 const handleVisibilityChange = () => {
@@ -4937,7 +4898,7 @@
                 setCards(c => {
                     const card = (c[dragCardFrom] || []).find(x => x.id === dragCardId);
                     if (!card) return c;
-                    const updated = { ...card };
+                    const updated = { ...card, updatedAt: new Date().toISOString() }; 
                     const isDone = cols.find(cl => cl.id === toCol)?.label?.toLowerCase() === 'done' || toCol ===
                         'DONE';
                     const wasDone = cols.find(cl => cl.id === dragCardFrom)?.label?.toLowerCase() === 'done' ||
@@ -4971,7 +4932,7 @@
                 setCards(c => {
                     let srcCard = (c[srcCol] || []).find(x => x.id === srcId);
                     if (!srcCard) return c;
-                    const updated = { ...srcCard };
+                    const updated = { ...srcCard, updatedAt: new Date().toISOString() };
                     const isDone = cols.find(cl => cl.id === colId)?.label?.toLowerCase() === 'done' || colId ===
                         'DONE';
                     const wasDone = cols.find(cl => cl.id === srcCol)?.label?.toLowerCase() === 'done' ||
@@ -5088,8 +5049,8 @@
             function onMoveCard(id, fromCol, toCol) {
                 if (fromCol === toCol) return;
                 setCards(c => {
-                    const card = (c[fromCol] || []).find(x => x.id === id); if (!card) return c; const
-                        updated = { ...card }; const isDone = cols.find(cl => cl.id === toCol)?.label?.toLowerCase() ===
+                    const card = (c[fromCol] || []).find(x => x.id === id); if (!card) return c; 
+                        const updated = { ...card, updatedAt: new Date().toISOString() }; const isDone = cols.find(cl => cl.id === toCol)?.label?.toLowerCase() ===
                             'done' || toCol === 'DONE'; const wasDone = cols.find(cl => cl.id === fromCol)?.label
                                 ?.toLowerCase() === 'done' || fromCol === 'DONE'; if (isDone && !card.doneAt) updated
                                     .doneAt = new Date().toISOString(); if (wasDone && !isDone) updated.doneAt = undefined;
