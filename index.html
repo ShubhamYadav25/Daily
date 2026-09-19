@@ -2176,25 +2176,10 @@
         function defaultData() {
             const cols = [...DEFAULT_COLS];
             const cards = {
-                TODO: [{
-                    id: uid(), task: 'Set up project structure', priority: 'P1', content: '', color: '',
-                    createdAt: new Date(Date.now() - 4 * 864e5).toISOString(), expiryDays: null
-                }],
-                INPROG: [{
-                    id: uid(), task: 'Design API endpoints', priority: 'P0',
-                    content: '## BLOCKER\nWaiting on auth spec.', color: '#f76f6f',
-                    createdAt: new Date(Date.now() - 50 * 36e5).toISOString(), expiryDays: null
-                }],
-                DISCUSS: [{
-                    id: uid(), task: 'Tech stack decision', priority: 'P2',
-                    content: 'Comparing React vs Next.js.', color: '#a78bfa',
-                    createdAt: new Date(Date.now() - 3 * 36e5).toISOString(), expiryDays: null
-                }],
-                DONE: [{
-                    id: uid(), task: 'Initial repo setup', priority: 'P2', content: '', color: '',
-                    createdAt: new Date(Date.now() - 8 * 864e5).toISOString(), expiryDays: 7,
-                    doneAt: new Date(Date.now() - 864e5).toISOString()
-                }],
+                TODO: [],
+                INPROG: [],
+                DISCUSS: [],
+                DONE: [],
             };
             return { cols, cards };
         }
@@ -4399,6 +4384,221 @@
             );
         }
 
+        /* ── KROKI DIAGRAM PANEL ── */
+        const KROKI_TYPES = [
+            { id: 'plantuml', label: 'PlantUML', example: `@startuml\nAlice -> Bob: Hello\nBob --> Alice: Hi!\n@enduml` },
+            { id: 'mermaid', label: 'Mermaid', example: `graph TD\n  A[Start] --> B{Decision}\n  B -->|Yes| C[Do it]\n  B -->|No| D[Skip]` },
+            { id: 'graphviz', label: 'Graphviz', example: `digraph G {\n  A -> B -> C\n  A -> C\n}` },
+            { id: 'blockdiag', label: 'BlockDiag', example: `blockdiag {\n  A -> B -> C\n  A -> D\n}` },
+            { id: 'seqdiag', label: 'SeqDiag', example: `seqdiag {\n  A -> B -> C\n  B --> A\n}` },
+            { id: 'actdiag', label: 'ActDiag', example: `actdiag {\n  A -> B -> C\n}` },
+            { id: 'nwdiag', label: 'NwDiag', example: `nwdiag {\n  network dmz {\n    web\n    api\n  }\n}` },
+            { id: 'c4plantuml', label: 'C4', example: `@startuml\n!include C4_Context.puml\nPerson(user,"User")\nSystem(sys,"System")\nRel(user,sys,"Uses")\n@enduml` },
+            { id: 'ditaa', label: 'Ditaa', example: `+--------+   +-------+\n|        +---+ Hello |\n|        |   +-------+\n+--------+` },
+            { id: 'erd', label: 'ERD', example: `[Person]\n*id\nname\n\n[Address]\n*id\ncity\n\nPerson *--1 Address` },
+            { id: 'svgbob', label: 'Svgbob', example: `+------+\n| box  |\n+------+\n    |\n    v\n+------+\n| end  |\n+------+` },
+            { id: 'vega', label: 'Vega', example: `{\n  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",\n  "mark": "bar",\n  "data": {"values": [{"x":"A","y":3},{"x":"B","y":7}]},\n  "encoding": {\n    "x": {"field":"x","type":"ordinal"},\n    "y": {"field":"y","type":"quantitative"}\n  }\n}` },
+        ];
+
+
+
+
+        function KrokiPanel({ onClose }) {
+            const [type, setType] = useState('plantuml');
+            const [src, setSrc] = useState(KROKI_TYPES[0].example);
+            const [imgUrl, setImgUrl] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [outputFmt, setOutputFmt] = useState('svg');
+            const [autoRender, setAutoRender] = useState(true);
+            const debounceRef = useRef();
+            const savedRef = useRef({});
+
+            // Save/restore per diagram type
+            useEffect(() => {
+                const saved = loadLS('daily_kroki_' + type, '');
+                setSrc(saved || KROKI_TYPES.find(t => t.id === type)?.example || '');
+                setError(''); setImgUrl('');
+            }, [type]);
+
+            useEffect(() => {
+                if (src) savedRef.current[type] = src;
+                try { localStorage.setItem('daily_kroki_' + type, src); } catch { }
+            }, [src, type]);
+
+            async function render() {
+                if (!src.trim()) { setError('Nothing to render.'); return; }
+                setLoading(true); setError(''); setImgUrl('');
+                try {
+                    const encoded = await encodeKroki(src);
+                    const url = `https://kroki.io/${type}/${outputFmt}/${encoded}`;
+                    // test fetch
+                    const res = await fetch(url);
+                    if (!res.ok) {
+                        const txt = await res.text();
+                        setError(`Kroki error ${res.status}: ${txt.slice(0, 200)}`);
+                        setLoading(false); return;
+                    }
+                    setImgUrl(url);
+                } catch (e) {
+                    setError('Network error: ' + e.message);
+                }
+                setLoading(false);
+            }
+
+            // Auto render debounce
+            useEffect(() => {
+                if (!autoRender) return;
+                clearTimeout(debounceRef.current);
+                debounceRef.current = setTimeout(() => render(), 900);
+                return () => clearTimeout(debounceRef.current);
+            }, [src, type, outputFmt, autoRender]);
+
+            function copyUrl() {
+                if (!imgUrl) return;
+                navigator.clipboard?.writeText(imgUrl);
+            }
+            function downloadImg() {
+                if (!imgUrl) return;
+                const a = document.createElement('a'); a.href = imgUrl; a.download = `diagram.${outputFmt}`; a.target = '_blank'; a.click();
+            }
+            function insertToScratch() {
+                if (!imgUrl) return;
+                const cur = loadLS('daily_scratch', '');
+                saveLS('daily_scratch', cur + `\n\n![diagram](${imgUrl})\n`);
+            }
+
+            const curType = KROKI_TYPES.find(t => t.id === type);
+
+            return (
+                <FloatingPanel title="Diagrams" icon="📊" onClose={onClose} initW={900} initH={580} storageKey="kroki">
+                    {/* Toolbar */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--bg4)', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', flexShrink: 0 }}>
+                        <select value={type} onChange={e => { setType(e.target.value); }} className="fselect" style={{ width: 'auto', padding: '3px 8px', fontSize: 12 }}>
+                            {KROKI_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                        </select>
+                        <select value={outputFmt} onChange={e => setOutputFmt(e.target.value)} className="fselect" style={{ width: 70, padding: '3px 8px', fontSize: 12 }}>
+                            <option value="svg">SVG</option>
+                            <option value="png">PNG</option>
+                        </select>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text2)', cursor: 'pointer', userSelect: 'none' }}>
+                            <input type="checkbox" checked={autoRender} onChange={e => setAutoRender(e.target.checked)} style={{ accentColor: 'var(--blue)' }} />
+                            Auto
+                        </label>
+                        <button className="btn primary" style={{ padding: '4px 14px', fontSize: 12 }} onClick={render} disabled={loading}>
+                            {loading ? '⏳ Rendering…' : '▶ Render'}
+                        </button>
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                            {imgUrl && <>
+                                <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }} onClick={copyUrl} title="Copy URL">🔗 URL</button>
+                                <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }} onClick={downloadImg} title="Download">💾</button>
+                                <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }} onClick={insertToScratch} title="Insert into Scratch Pad">📝 Insert</button>
+                            </>}
+                        </div>
+                    </div>
+                    {/* Split: editor + preview */}
+                    <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+                        {/* Editor */}
+                        <div style={{ flex: '0 0 45%', display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)', minHeight: 0 }}>
+                            <div style={{ padding: '4px 10px', background: 'var(--bg3)', borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                <span style={{ color: 'var(--text2)', fontWeight: 600 }}>Source</span>
+                                <span style={{ marginLeft: 'auto' }}>{src.length}ch · {src.split('\n').length}ln</span>
+                                <button onClick={() => setSrc(curType?.example || '')}
+                                    style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg4)', color: 'var(--text3)', cursor: 'pointer' }}>
+                                    Reset
+                                </button>
+                            </div>
+                            <textarea
+                                value={src}
+                                onChange={e => setSrc(e.target.value)}
+                                style={{
+                                    flex: 1, background: 'var(--bg3)', border: 'none', padding: '10px 12px', fontSize: 12,
+                                    fontFamily: "'DM Mono',monospace", color: 'var(--text)', resize: 'none', outline: 'none', lineHeight: 1.7, overflowY: 'auto'
+                                }}
+                                placeholder={`${curType?.label} diagram source…`}
+                                spellCheck={false}
+                                onKeyDown={e => {
+                                    if (e.key === 'Tab') {
+                                        e.preventDefault(); const s = e.target.selectionStart, v = e.target.value;
+                                        const nv = v.slice(0, s) + '  ' + v.slice(e.target.selectionEnd); setSrc(nv);
+                                        setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0);
+                                    }
+                                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); render(); }
+                                }} />
+                        </div>
+                        {/* Preview */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--bg3)' }}>
+                            <div style={{ padding: '4px 10px', background: 'var(--bg3)', borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                <span style={{ color: 'var(--text2)', fontWeight: 600 }}>Preview</span>
+                                {imgUrl && <a href={imgUrl} target="_blank" rel="noopener" style={{ color: 'var(--blue)', fontSize: 10, marginLeft: 'auto' }}>open ↗</a>}
+                            </div>
+                            <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                                {loading && <div style={{ color: 'var(--text3)', fontSize: 13, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                                    <div style={{ width: 32, height: 32, border: '3px solid var(--border)', borderTopColor: 'var(--blue)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                                    Rendering…
+                                </div>}
+                                {!loading && error && <div style={{ background: 'var(--red-dim)', border: '1px solid rgba(247,111,111,.3)', borderRadius: 10, padding: '12px 16px', color: 'var(--red)', fontSize: 12, maxWidth: 400, lineHeight: 1.6 }}>
+                                    <div style={{ fontWeight: 700, marginBottom: 4 }}>⚠ Error</div>
+                                    <pre style={{ whiteSpace: 'pre-wrap', fontFamily: "'DM Mono',monospace", fontSize: 11 }}>{error}</pre>
+                                </div>}
+                                {!loading && !error && imgUrl && (
+                                    outputFmt === 'svg'
+                                        ? <img src={imgUrl} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8, objectFit: 'contain' }} alt="diagram" />
+                                        : <img src={imgUrl} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8, objectFit: 'contain' }} alt="diagram" />
+                                )}
+                                {!loading && !error && !imgUrl && <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center' }}>
+                                    <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+                                    <div>Write your diagram and hit <strong style={{ color: 'var(--text2)' }}>Render</strong></div>
+                                    <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text3)' }}>Ctrl+Enter to render</div>
+                                </div>}
+                            </div>
+                        </div>
+                    </div>
+                    {/* Footer info */}
+                    <div style={{ padding: '5px 12px', borderTop: '1px solid var(--border)', background: 'var(--bg4)', fontSize: 10, color: 'var(--text3)', display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                        <span>Powered by <a href="https://kroki.io" target="_blank" rel="noopener" style={{ color: 'var(--blue)' }}>kroki.io</a></span>
+                        <span>·</span>
+                        <span>Diagrams are rendered externally</span>
+                        {imgUrl && <><span>·</span><span style={{ color: 'var(--text2)', fontFamily: "'DM Mono',monospace", fontSize: 9, wordBreak: 'break-all', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{imgUrl}</span></>}
+                    </div>
+                </FloatingPanel>
+            );
+        }
+
+        /* Kroki encoding: zlib deflate → base64url */
+        async function encodeKroki(src) {
+            const utf8 = new TextEncoder().encode(src);
+            try {
+                // Kroki needs ZLIB format (deflate with zlib wrapper), not raw deflate
+                const cs = new CompressionStream('deflate');
+                const writer = cs.writable.getWriter();
+                writer.write(utf8);
+                writer.close();
+                const chunks = [];
+                const reader = cs.readable.getReader();
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                }
+                const totalLen = chunks.reduce((a, c) => a + c.length, 0);
+                const compressed = new Uint8Array(totalLen);
+                let offset = 0;
+                chunks.forEach(c => { compressed.set(c, offset); offset += c.length; });
+                // Convert to base64url
+                let binary = '';
+                compressed.forEach(b => binary += String.fromCharCode(b));
+                const b64 = btoa(binary);
+                return b64.replace(/\+/g, '-').replace(/\//g, '_');
+            } catch (e) {
+                console.error('Kroki encode error:', e);
+                // Fallback: try plain base64 of utf8 (some kroki endpoints accept this)
+                let binary = '';
+                utf8.forEach(b => binary += String.fromCharCode(b));
+                return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_');
+            }
+        }
+
         /* ── APP ── */
         function App() {
             const WS_SERVER_URL = 'https://daily-2.onrender.com';
@@ -4444,84 +4644,84 @@
             function tryParse(s, fb) { try { return JSON.parse(s); } catch { return fb; } }
 
             function mergeRemoteState(remoteCols, remoteCards, remoteScratch) {
-    const localCols  = colsRef.current;
-    const localCards = cardsRef.current;
-    const newScratch = remoteScratch !== undefined ? remoteScratch : scratchRef.current;
+                const localCols = colsRef.current;
+                const localCards = cardsRef.current;
+                const newScratch = remoteScratch !== undefined ? remoteScratch : scratchRef.current;
 
-    // Merge column list
-    const newCols = [...localCols];
-    const localColIds = new Set(localCols.map(c => c.id));
-    (remoteCols || []).forEach(c => { if (!localColIds.has(c.id)) newCols.push(c); });
+                // Merge column list
+                const newCols = [...localCols];
+                const localColIds = new Set(localCols.map(c => c.id));
+                (remoteCols || []).forEach(c => { if (!localColIds.has(c.id)) newCols.push(c); });
 
-    // Flat maps: cardId → { card, col }
-    const localMap = {};
-    Object.entries(localCards).forEach(([colId, list]) =>
-        (list || []).forEach(c => { localMap[c.id] = { card: c, col: colId }; })
-    );
-    const remoteMap = {};
-    Object.entries(remoteCards || {}).forEach(([colId, list]) =>
-        (list || []).forEach(c => { remoteMap[c.id] = { card: c, col: colId }; })
-    );
+                // Flat maps: cardId → { card, col }
+                const localMap = {};
+                Object.entries(localCards).forEach(([colId, list]) =>
+                    (list || []).forEach(c => { localMap[c.id] = { card: c, col: colId }; })
+                );
+                const remoteMap = {};
+                Object.entries(remoteCards || {}).forEach(([colId, list]) =>
+                    (list || []).forEach(c => { remoteMap[c.id] = { card: c, col: colId }; })
+                );
 
-    // LWW: for every card decide winner + winner's column
-    const winners = {};
-    new Set([...Object.keys(localMap), ...Object.keys(remoteMap)]).forEach(id => {
-        const L = localMap[id], R = remoteMap[id];
-        if (!L) { winners[id] = R; return; }   // new card on remote
-        if (!R) { winners[id] = L; return; }   // local-only, keep
-        const lTs = new Date(L.card.updatedAt || L.card.createdAt || 0).getTime();
-        const rTs = new Date(R.card.updatedAt || R.card.createdAt || 0).getTime();
-        winners[id] = rTs > lTs ? R : L;
-    });
+                // LWW: for every card decide winner + winner's column
+                const winners = {};
+                new Set([...Object.keys(localMap), ...Object.keys(remoteMap)]).forEach(id => {
+                    const L = localMap[id], R = remoteMap[id];
+                    if (!L) { winners[id] = R; return; }   // new card on remote
+                    if (!R) { winners[id] = L; return; }   // local-only, keep
+                    const lTs = new Date(L.card.updatedAt || L.card.createdAt || 0).getTime();
+                    const rTs = new Date(R.card.updatedAt || R.card.createdAt || 0).getTime();
+                    winners[id] = rTs > lTs ? R : L;
+                });
 
-    // Reconstruct columns — use REMOTE ordering so drags are preserved
-    const newCards = {};
-    newCols.forEach(c => { newCards[c.id] = []; });
-    const placed = new Set();
+                // Reconstruct columns — use REMOTE ordering so drags are preserved
+                const newCards = {};
+                newCols.forEach(c => { newCards[c.id] = []; });
+                const placed = new Set();
 
-    // First pass: place cards in remote order
-    Object.entries(remoteCards || {}).forEach(([, list]) =>
-        (list || []).forEach(rc => {
-            const w = winners[rc.id];
-            if (!w || placed.has(rc.id)) return;
-            if (!newCards[w.col]) newCards[w.col] = [];
-            newCards[w.col].push({ ...w.card });
-            placed.add(rc.id);
-        })
-    );
-    // Second pass: place local-only cards (not yet placed)
-    Object.entries(localCards).forEach(([, list]) =>
-        (list || []).forEach(lc => {
-            const w = winners[lc.id];
-            if (!w || placed.has(lc.id)) return;
-            if (!newCards[w.col]) newCards[w.col] = [];
-            newCards[w.col].push({ ...w.card });
-            placed.add(lc.id);
-        })
-    );
+                // First pass: place cards in remote order
+                Object.entries(remoteCards || {}).forEach(([, list]) =>
+                    (list || []).forEach(rc => {
+                        const w = winners[rc.id];
+                        if (!w || placed.has(rc.id)) return;
+                        if (!newCards[w.col]) newCards[w.col] = [];
+                        newCards[w.col].push({ ...w.card });
+                        placed.add(rc.id);
+                    })
+                );
+                // Second pass: place local-only cards (not yet placed)
+                Object.entries(localCards).forEach(([, list]) =>
+                    (list || []).forEach(lc => {
+                        const w = winners[lc.id];
+                        if (!w || placed.has(lc.id)) return;
+                        if (!newCards[w.col]) newCards[w.col] = [];
+                        newCards[w.col].push({ ...w.card });
+                        placed.add(lc.id);
+                    })
+                );
 
-    return { cols: newCols, cards: newCards, scratch: newScratch, conflicts: [] };
-}
+                return { cols: newCols, cards: newCards, scratch: newScratch, conflicts: [] };
+            }
 
 
             //* ── APPLY REMOTE ── */
             function applyRemoteWithConflicts(data) {
-    if (!data || (!data.cols && !data.cards && data.scratch === undefined)) return;
-    isSyncing.current = true;   // ← tells debounce "don't broadcast this change"
+                if (!data || (!data.cols && !data.cards && data.scratch === undefined)) return;
+                isSyncing.current = true;   // ← tells debounce "don't broadcast this change"
 
-    const result = mergeRemoteState(
-        data.cols   || colsRef.current,
-        data.cards  || cardsRef.current,
-        data.scratch
-    );
+                const result = mergeRemoteState(
+                    data.cols || colsRef.current,
+                    data.cards || cardsRef.current,
+                    data.scratch
+                );
 
-    setCols(result.cols);
-    setCards(result.cards);
-    if (result.scratch !== undefined) setScratch(result.scratch);
-    setPeerStatus('connected');
+                setCols(result.cols);
+                setCards(result.cards);
+                if (result.scratch !== undefined) setScratch(result.scratch);
+                setPeerStatus('connected');
 
-    setTimeout(() => { isSyncing.current = false; }, 150);
-}
+                setTimeout(() => { isSyncing.current = false; }, 150);
+            }
 
             function handleIncoming(data) {
                 if (!data || (!data.cols && !data.cards && data.scratch === undefined)) return;
@@ -4592,43 +4792,43 @@
                 const ws = new WebSocket(`${WS_SERVER_URL}/?room=${encodeURIComponent(r)}`);
                 wsClient.current = ws;
 
-ws.onopen = () => {
-    wsConnected.current = true;
-    setPeerStatus('connected');
-    setPeerCount(1);
-    setActiveRoom(r);
-    setMyPeerId(SESSION_ID.current);
-    addToast('WebSocket sync connected ✓', 'success');
-    // Tell existing peers to send us their current state
-    ws.send(JSON.stringify({ _type: 'request_state', _sid: SESSION_ID.current }));
-    // Also push our own state after a short delay
-    setTimeout(() => broadcastWebSocket(r), 400);
-};
+                ws.onopen = () => {
+                    wsConnected.current = true;
+                    setPeerStatus('connected');
+                    setPeerCount(1);
+                    setActiveRoom(r);
+                    setMyPeerId(SESSION_ID.current);
+                    addToast('WebSocket sync connected ✓', 'success');
+                    // Tell existing peers to send us their current state
+                    ws.send(JSON.stringify({ _type: 'request_state', _sid: SESSION_ID.current }));
+                    // Also push our own state after a short delay
+                    setTimeout(() => broadcastWebSocket(r), 400);
+                };
 
-ws.onmessage = (event) => {
-    try {
-        const msg = JSON.parse(event.data);
-        if (msg._sid === SESSION_ID.current) return;
+                ws.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg._sid === SESSION_ID.current) return;
 
-        if (msg._type === 'request_state') {
-            // A peer just joined — send them our full state immediately
-            setTimeout(() => broadcastWebSocket(r), 100);
-            return;
-        }
-        if (msg._type === 'peers') {
-            setPeerCount(Array.isArray(msg.peers) ? msg.peers.length : 0);
-            return;
-        }
+                        if (msg._type === 'request_state') {
+                            // A peer just joined — send them our full state immediately
+                            setTimeout(() => broadcastWebSocket(r), 100);
+                            return;
+                        }
+                        if (msg._type === 'peers') {
+                            setPeerCount(Array.isArray(msg.peers) ? msg.peers.length : 0);
+                            return;
+                        }
 
-        handleIncoming({
-            cols:    msg._cols   ? JSON.parse(msg._cols)   : null,
-            cards:   msg._cards  ? JSON.parse(msg._cards)  : null,
-            scratch: msg._scratch,
-            ts:      msg._ts,
-            _sid:    msg._sid,
-        });
-    } catch (e) { console.warn('WS parse error', e); }
-};
+                        handleIncoming({
+                            cols: msg._cols ? JSON.parse(msg._cols) : null,
+                            cards: msg._cards ? JSON.parse(msg._cards) : null,
+                            scratch: msg._scratch,
+                            ts: msg._ts,
+                            _sid: msg._sid,
+                        });
+                    } catch (e) { console.warn('WS parse error', e); }
+                };
 
                 ws.onerror = (err) => {
                     console.warn('WebSocket error', err);
@@ -4700,13 +4900,13 @@ ws.onmessage = (event) => {
             }, [activeRoom]);
 
             // Debounced broadcast
-useEffect(() => {
-    saveData({ cols, cards });
-    if (!activeRoom || !wsConnected.current || conflicts.length > 0) return;
-    if (isSyncing.current) return;   // ← skip echo — this change came from remote
-    clearTimeout(broadcastTimer.current);
-    broadcastTimer.current = setTimeout(() => broadcastWebSocket(activeRoom), 300);
-}, [cols, cards, scratch, conflicts]);
+            useEffect(() => {
+                saveData({ cols, cards });
+                if (!activeRoom || !wsConnected.current || conflicts.length > 0) return;
+                if (isSyncing.current) return;   // ← skip echo — this change came from remote
+                clearTimeout(broadcastTimer.current);
+                broadcastTimer.current = setTimeout(() => broadcastWebSocket(activeRoom), 300);
+            }, [cols, cards, scratch, conflicts]);
 
             useEffect(() => {
                 const handleVisibilityChange = () => {
@@ -4799,6 +4999,7 @@ useEffect(() => {
             const [showEditor, setShowEditor] = useState(false);
             const [showDraw, setShowDraw] = useState(false);
             const [showAi, setShowAi] = useState(false);
+            const [showKroki, setShowKroki] = useState(false);
             const [showOverflow, setShowOverflow] = useState(false);
             const [confetti, setConfetti] = useState(false);
             const confettiKey = useRef(0);
@@ -4898,7 +5099,7 @@ useEffect(() => {
                 setCards(c => {
                     const card = (c[dragCardFrom] || []).find(x => x.id === dragCardId);
                     if (!card) return c;
-                    const updated = { ...card, updatedAt: new Date().toISOString() }; 
+                    const updated = { ...card, updatedAt: new Date().toISOString() };
                     const isDone = cols.find(cl => cl.id === toCol)?.label?.toLowerCase() === 'done' || toCol ===
                         'DONE';
                     const wasDone = cols.find(cl => cl.id === dragCardFrom)?.label?.toLowerCase() === 'done' ||
@@ -5049,11 +5250,11 @@ useEffect(() => {
             function onMoveCard(id, fromCol, toCol) {
                 if (fromCol === toCol) return;
                 setCards(c => {
-                    const card = (c[fromCol] || []).find(x => x.id === id); if (!card) return c; 
-                        const updated = { ...card, updatedAt: new Date().toISOString() }; const isDone = cols.find(cl => cl.id === toCol)?.label?.toLowerCase() ===
-                            'done' || toCol === 'DONE'; const wasDone = cols.find(cl => cl.id === fromCol)?.label
-                                ?.toLowerCase() === 'done' || fromCol === 'DONE'; if (isDone && !card.doneAt) updated
-                                    .doneAt = new Date().toISOString(); if (wasDone && !isDone) updated.doneAt = undefined;
+                    const card = (c[fromCol] || []).find(x => x.id === id); if (!card) return c;
+                    const updated = { ...card, updatedAt: new Date().toISOString() }; const isDone = cols.find(cl => cl.id === toCol)?.label?.toLowerCase() ===
+                        'done' || toCol === 'DONE'; const wasDone = cols.find(cl => cl.id === fromCol)?.label
+                            ?.toLowerCase() === 'done' || fromCol === 'DONE'; if (isDone && !card.doneAt) updated
+                                .doneAt = new Date().toISOString(); if (wasDone && !isDone) updated.doneAt = undefined;
                     return {
                         ...c, [fromCol]: (c[fromCol] || []).filter(x => x.id !== id), [toCol]: [...(c[
                             toCol] || []), updated]
@@ -5216,6 +5417,17 @@ useEffect(() => {
                         <button className={`ibtn${showAi ? ' active' : ''}`} data-tip="AI Assistants" onClick={() =>
                             setShowAi(o => !o)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                                 stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" /></svg></button>
+                        <button className={`ibtn${showKroki ? ' active' : ''}`} data-tip="Diagrams" onClick={() => setShowKroki(o => !o)}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <rect x="2" y="2" width="8" height="8" rx="1.5" />
+                                <rect x="14" y="2" width="8" height="8" rx="1.5" />
+                                <rect x="2" y="14" width="8" height="8" rx="1.5" />
+                                <path d="M18 14v2m0 4v.01M18 16a4 4 0 0 1 0 4" />
+                                <line x1="10" y1="6" x2="14" y2="6" />
+                                <line x1="6" y1="10" x2="6" y2="14" />
+                            </svg>
+                        </button>
+
                         {/* Tools dropdown */}
                         <button className="ibtn" data-tip="Base64 Converter" onClick={() => setShowBase64(true)} style={{ color: 'var(--text)', borderColor: 'var(--border2)' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -5374,6 +5586,7 @@ useEffect(() => {
                     {showEditor && <ScratchPad content={scratch} onChange={setScratch} onClose={() => setShowEditor(
                         false)} />}
                     {showAi && <AiPanel onClose={() => setShowAi(false)} />}
+                    {showKroki && <KrokiPanel onClose={() => setShowKroki(false)} />}
                     {showBase64 && <Base64Converter onClose={() => setShowBase64(false)} />}
                     {showSyncModal && <SyncModal
                         onClose={() => setShowSyncModal(false)} peerStatus={peerStatus} peerCount={peerCount}
