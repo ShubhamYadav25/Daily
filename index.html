@@ -4554,7 +4554,7 @@
                             </div>
                         </div>
                     </div>
-                   
+
                 </FloatingPanel>
             );
         }
@@ -5109,8 +5109,8 @@
                             <div style={{
                                 flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center',
                                 justifyContent: 'center', padding: 20,
-                                background:'#f0f0f0'
-                             }}>
+                                background: '#f0f0f0'
+                            }}>
 
                                 {loading && (
                                     <div style={{
@@ -5188,6 +5188,579 @@
             );
         }
 
+        /* ── JSON NORMALIZER (super robust) ── */
+        function normalizeJson(raw) {
+            if (!raw || !raw.trim()) return { ok: false, error: 'Empty input', result: '' };
+
+            let s = raw;
+            const steps = [];
+
+            // Step 1: Decode unicode escapes like \u0022
+            try {
+                const decoded = s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+                if (decoded !== s) { steps.push('Decoded unicode escapes (\\uXXXX)'); s = decoded; }
+            } catch { }
+
+            // Step 2: Unescape double-encoded backslashes \\\\  → \
+            try {
+                const u = s.replace(/\\{2,}/g, '\\');
+                if (u !== s) { steps.push('Collapsed excess backslashes'); s = u; }
+            } catch { }
+
+            // Step 3: Replace literal \n \t \r inside strings with actual whitespace
+            // BUT only outside of already-valid string context — do globally first
+            try {
+                // Replace escaped newlines that are NOT inside proper JSON strings
+                const r = s.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r');
+                if (r !== s) { steps.push('Replaced \\n \\t \\r escape sequences'); s = r; }
+            } catch { }
+
+            // Step 4: Strip non-printable control chars (except real newline/tab)
+            try {
+                const r = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+                if (r !== s) { steps.push('Stripped control characters'); s = r; }
+            } catch { }
+
+            // Step 5: Try parse as-is first
+            try {
+                const parsed = JSON.parse(s);
+                return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+            } catch { }
+
+            // Step 6: If s looks like it was double-JSON-stringified ("\"{}\"")
+            try {
+                const trimmed = s.trim();
+                if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+                    (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+                    const inner = JSON.parse(trimmed);
+                    const parsed = JSON.parse(inner);
+                    steps.push('Unwrapped double-stringified JSON');
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                }
+            } catch { }
+
+            // Step 7: Remove trailing commas before } or ]
+            try {
+                const r = s.replace(/,(\s*[}\]])/g, '$1');
+                try {
+                    const parsed = JSON.parse(r);
+                    steps.push('Removed trailing commas');
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                } catch { }
+                s = r;
+            } catch { }
+
+            // Step 8: Fix single quotes → double quotes (naive but common)
+            try {
+                // Only replace keys/values wrapped in single quotes not inside double-quote strings
+                const r = s.replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, (m, inner) => '"' + inner.replace(/"/g, '\\"') + '"');
+                try {
+                    const parsed = JSON.parse(r);
+                    steps.push("Converted single quotes to double quotes");
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                } catch { }
+            } catch { }
+
+            // Step 9: Fix unquoted keys  {foo: "bar"} → {"foo": "bar"}
+            try {
+                const r = s.replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3');
+                try {
+                    const parsed = JSON.parse(r);
+                    steps.push('Quoted unquoted keys');
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                } catch { }
+                s = r;
+            } catch { }
+
+            // Step 10: Remove JS comments // and /* */
+            try {
+                const r = s
+                    .replace(/\/\/[^\n]*/g, '')
+                    .replace(/\/\*[\s\S]*?\*\//g, '');
+                try {
+                    const parsed = JSON.parse(r);
+                    steps.push('Removed JS-style comments');
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                } catch { }
+                s = r;
+            } catch { }
+
+            // Step 11: Fix = used instead of : for key-value
+            try {
+                const r = s.replace(/"([^"]+)"\s*=\s*/g, '"$1": ');
+                try {
+                    const parsed = JSON.parse(r);
+                    steps.push('Fixed = to : in key-value pairs');
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                } catch { }
+            } catch { }
+
+            // Step 12: Extract JSON from surrounding garbage text
+            try {
+                // Find first { or [ and last } or ]
+                const firstObj = s.indexOf('{');
+                const firstArr = s.indexOf('[');
+                let start = -1; let end = -1; let closing = '';
+                if (firstObj !== -1 && (firstArr === -1 || firstObj < firstArr)) { start = firstObj; closing = '}'; }
+                else if (firstArr !== -1) { start = firstArr; closing = ']'; }
+                if (start !== -1) {
+                    // find matching closing
+                    let depth = 0; let found = -1;
+                    const open = closing === '}' ? '{' : '[';
+                    for (let i = start; i < s.length; i++) {
+                        if (s[i] === open) depth++;
+                        else if (s[i] === closing) { depth--; if (depth === 0) { found = i; break; } }
+                    }
+                    if (found !== -1) {
+                        const extracted = s.slice(start, found + 1);
+                        try {
+                            const parsed = JSON.parse(extracted);
+                            steps.push('Extracted JSON from surrounding text');
+                            return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                        } catch { }
+                        // try with all previous fixes applied to extracted
+                        try {
+                            let ex2 = extracted
+                                .replace(/,(\s*[}\]])/g, '$1')
+                                .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3')
+                                .replace(/\/\/[^\n]*/g, '')
+                                .replace(/\/\*[\s\S]*?\*\//g, '');
+                            const parsed = JSON.parse(ex2);
+                            steps.push('Extracted + normalized JSON from surrounding text');
+                            return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                        } catch { }
+                    }
+                }
+            } catch { }
+
+            // Step 13: Try to fix broken string values containing unescaped quotes
+            try {
+                // Replace unescaped double quotes inside string values
+                const r = s.replace(/:(\s*)"((?:[^"\\]|\\.)*)"/g, (m, sp, val) => {
+                    const fixed = val.replace(/(?<!\\)"/g, '\\"');
+                    return ':' + sp + '"' + fixed + '"';
+                });
+                try {
+                    const parsed = JSON.parse(r);
+                    steps.push('Fixed unescaped quotes in string values');
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                } catch { }
+            } catch { }
+
+            // Step 14: Replace forward slashes that are not escaped (some log formats)
+            try {
+                const r = s.replace(/\\\//g, '/');
+                try {
+                    const parsed = JSON.parse(r);
+                    steps.push('Normalized escaped forward slashes');
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                } catch { }
+            } catch { }
+
+            // Step 15: Last resort — try to evaluate as JS object (safe subset)
+            try {
+                // Replace True/False/None (Python-style)
+                const r = s
+                    .replace(/\bTrue\b/g, 'true')
+                    .replace(/\bFalse\b/g, 'false')
+                    .replace(/\bNone\b/g, 'null')
+                    .replace(/\bundefined\b/g, 'null')
+                    .replace(/\bNaN\b/g, 'null')
+                    .replace(/\bInfinity\b/g, 'null');
+                try {
+                    const parsed = JSON.parse(r);
+                    steps.push('Fixed Python/JS literals (True/False/None)');
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                } catch { }
+                // combine all fixes
+                let combo = r
+                    .replace(/,(\s*[}\]])/g, '$1')
+                    .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3')
+                    .replace(/\/\/[^\n]*/g, '')
+                    .replace(/\/\*[\s\S]*?\*\//g, '');
+                try {
+                    const parsed = JSON.parse(combo);
+                    steps.push('Applied all normalizations combined');
+                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                } catch (e) {
+                    return { ok: false, error: e.message, result: s, steps };
+                }
+            } catch (e) {
+                return { ok: false, error: e.message, result: s, steps };
+            }
+        }
+
+        /* ── JSON PRETTIFIER PANEL ── */
+        function JsonPanel({ onClose }) {
+            const [input, setInput] = useState(() => loadLS('daily_json_input', ''));
+            const [result, setResult] = useState(null);
+            const [copied, setCopied] = useState(false);
+            const [theme, setTheme] = useState('dark');
+            const [searchQ, setSearchQ] = useState('');
+            const [wrapLines, setWrapLines] = useState(true);
+            const [showSteps, setShowSteps] = useState(false);
+            const debounceRef = useRef();
+
+            useEffect(() => saveLS('daily_json_input', input), [input]);
+
+            useEffect(() => {
+                if (!input.trim()) { setResult(null); return; }
+                clearTimeout(debounceRef.current);
+                debounceRef.current = setTimeout(() => {
+                    setResult(normalizeJson(input));
+                }, 400);
+                return () => clearTimeout(debounceRef.current);
+            }, [input]);
+
+            function copy() {
+                if (!result?.ok) return;
+                navigator.clipboard?.writeText(result.result);
+                setCopied(true); setTimeout(() => setCopied(false), 2000);
+            }
+
+            function download() {
+                if (!result?.ok) return;
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([result.result], { type: 'application/json' }));
+                a.download = 'pretty.json'; a.click();
+            }
+
+            function insertToScratch() {
+                if (!result?.ok) return;
+                const cur = loadLS('daily_scratch', '');
+                saveLS('daily_scratch', cur + '\n\n```json\n' + result.result + '\n```\n');
+            }
+
+            // Syntax highlight the JSON output
+            function highlight(json) {
+                if (!json) return '';
+                let h = json
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+                // Apply search highlight first if needed
+                h = h.replace(
+                    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+                    match => {
+                        let cls = 'color:#ce9178'; // string
+                        if (/^"/.test(match)) {
+                            if (/:$/.test(match)) cls = 'color:#9cdcfe;font-weight:600'; // key
+                        } else if (/true|false/.test(match)) cls = 'color:#4ec9b0'; // bool
+                        else if (/null/.test(match)) cls = 'color:#808080'; // null
+                        else cls = 'color:#b5cea8'; // number
+                        return `<span style="${cls}">${match}</span>`;
+                    }
+                );
+
+                // Search highlight
+                if (searchQ.trim()) {
+                    const esc = searchQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const re = new RegExp(`(${esc})(?![^<]*>)`, 'gi');
+                    h = h.replace(re, '<mark style="background:#f7c35a44;color:#f7c35a;border-radius:2px">$1</mark>');
+                }
+
+                return h;
+            }
+
+            const lineCount = result?.result?.split('\n').length || 0;
+            const charCount = result?.result?.length || 0;
+
+            // Count search matches
+            const matchCount = useMemo(() => {
+                if (!searchQ.trim() || !result?.result) return 0;
+                const esc = searchQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                return (result.result.match(new RegExp(esc, 'gi')) || []).length;
+            }, [searchQ, result]);
+
+            const bgColor = theme === 'dark' ? '#1e1e1e' : '#fafafa';
+            const textColor = theme === 'dark' ? '#d4d4d4' : '#333';
+
+            return (
+                <FloatingPanel title="JSON Prettifier" icon="{ }" onClose={onClose}
+                    initW={1000} initH={640} storageKey="jsonp">
+
+                    {/* Toolbar */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                        background: 'var(--bg4)', borderBottom: '1px solid var(--border)',
+                        flexWrap: 'wrap', rowGap: 4, flexShrink: 0
+                    }}>
+
+                        {/* Status */}
+                        {result && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                {result.ok
+                                    ? <span style={{
+                                        fontSize: 11, color: 'var(--green)', fontWeight: 600,
+                                        display: 'flex', alignItems: 'center', gap: 3
+                                    }}>
+                                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
+                                        Valid JSON
+                                    </span>
+                                    : <span style={{
+                                        fontSize: 11, color: 'var(--red)', fontWeight: 600,
+                                        display: 'flex', alignItems: 'center', gap: 3
+                                    }}>
+                                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', display: 'inline-block' }} />
+                                        Invalid
+                                    </span>}
+                                {result.steps?.length > 0 && (
+                                    <button onClick={() => setShowSteps(s => !s)}
+                                        style={{
+                                            fontSize: 10, padding: '1px 7px', borderRadius: 10,
+                                            border: '1px solid var(--amber-dim)', background: showSteps ? 'var(--amber-dim)' : 'transparent',
+                                            color: 'var(--amber)', cursor: 'pointer'
+                                        }}>
+                                        {result.steps.length} fix{result.steps.length > 1 ? 'es' : ''} applied
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Search */}
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                            <span style={{ position: 'absolute', left: 7, color: 'var(--text3)', fontSize: 11, pointerEvents: 'none' }}>🔍</span>
+                            <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
+                                placeholder="Search in output…"
+                                style={{
+                                    paddingLeft: 24, width: 160, background: 'var(--bg3)', border: '1px solid var(--border)',
+                                    borderRadius: 7, padding: '4px 8px 4px 24px', fontSize: 11, color: 'var(--text)', outline: 'none'
+                                }} />
+                            {matchCount > 0 && <span style={{
+                                position: 'absolute', right: 6, fontSize: 9,
+                                color: 'var(--amber)', fontWeight: 700
+                            }}>{matchCount}</span>}
+                        </div>
+
+                        {/* Theme */}
+                        <div style={{
+                            display: 'flex', background: 'var(--bg3)', borderRadius: 6,
+                            border: '1px solid var(--border)', overflow: 'hidden'
+                        }}>
+                            {[['dark', '🌙'], ['light', '☀️']].map(([id, ico]) => (
+                                <button key={id} onClick={() => setTheme(id)}
+                                    style={{
+                                        padding: '3px 9px', fontSize: 11, border: 'none', cursor: 'pointer',
+                                        background: theme === id ? 'var(--blue)' : 'transparent',
+                                        color: theme === id ? '#fff' : 'var(--text3)'
+                                    }}>
+                                    {ico}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Wrap */}
+                        <label style={{
+                            display: 'flex', alignItems: 'center', gap: 4, fontSize: 11,
+                            color: 'var(--text2)', cursor: 'pointer', userSelect: 'none'
+                        }}>
+                            <input type="checkbox" checked={wrapLines} onChange={e => setWrapLines(e.target.checked)}
+                                style={{ accentColor: 'var(--blue)' }} />
+                            Wrap
+                        </label>
+
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
+                            {result?.ok && <>
+                                <button className="btn" style={{ padding: '4px 9px', fontSize: 11 }} onClick={copy}>
+                                    {copied ? '✓ Copied' : 'Copy'}
+                                </button>
+                                <button className="btn" style={{ padding: '4px 9px', fontSize: 11 }} onClick={download}>💾</button>
+                                <button className="btn" style={{ padding: '4px 9px', fontSize: 11 }} onClick={insertToScratch}>📝</button>
+                            </>}
+                            <button className="btn" style={{ padding: '4px 9px', fontSize: 11, color: 'var(--red)' }}
+                                onClick={() => { setInput(''); setResult(null); setSearchQ(''); }}>
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Steps banner */}
+                    {showSteps && result?.steps?.length > 0 && (
+                        <div style={{
+                            padding: '6px 12px', background: 'var(--amber-dim)',
+                            borderBottom: '1px solid rgba(247,195,90,.2)', flexShrink: 0
+                        }}>
+                            <div style={{
+                                fontSize: 10, color: 'var(--amber)', fontWeight: 700,
+                                marginBottom: 3, textTransform: 'uppercase', letterSpacing: .4
+                            }}>
+                                Auto-fixes applied:
+                            </div>
+                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                {result.steps.map((s, i) => (
+                                    <span key={i} style={{
+                                        fontSize: 10, padding: '1px 7px', borderRadius: 10,
+                                        background: 'rgba(247,195,90,.15)', color: 'var(--amber)', border: '1px solid rgba(247,195,90,.2)'
+                                    }}>
+                                        {i + 1}. {s}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Split */}
+                    <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+
+                        {/* Input */}
+                        <div style={{
+                            flex: '0 0 42%', display: 'flex', flexDirection: 'column',
+                            borderRight: '1px solid var(--border)', minHeight: 0
+                        }}>
+                            <div style={{
+                                padding: '4px 10px', background: 'var(--bg3)',
+                                borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)',
+                                display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0
+                            }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Raw Input</span>
+                                <span style={{ marginLeft: 'auto' }}>{input.length}ch</span>
+                                <button onClick={() => {
+                                    // Load example with all kinds of issues
+                                    setInput(`{\\n \\u0022carrierCode\\u0022: \\u0022Maersk\\u0022,\\n \\u0022carrierServiceLevel\\u0022: \\u0022Standard\\u0022,\\n \\u0022expectedShipDate\\u0022: \\u00222026-09-21\\u0022,\\n \\u0022shipmentId\\u0022: \\u0022TEST-MCY-09212026\\u0022,\\n \\u0022labelPreferences\\u0022: {\\n \\u0022preferredFormat\\u0022: \\u0022ZPL\\u0022,\\n \\u0022preferredSize\\u0022: \\u0022Size_4x6\\u0022\\n }\\n}`);
+                                }}
+                                    style={{
+                                        fontSize: 10, padding: '1px 7px', borderRadius: 4,
+                                        border: '1px solid var(--border)', background: 'var(--bg4)',
+                                        color: 'var(--text3)', cursor: 'pointer'
+                                    }}>
+                                    Example
+                                </button>
+                                <button onClick={async () => {
+                                    try { const t = await navigator.clipboard.readText(); setInput(t); }
+                                    catch { alert('Clipboard access denied'); }
+                                }}
+                                    style={{
+                                        fontSize: 10, padding: '1px 7px', borderRadius: 4,
+                                        border: '1px solid var(--border)', background: 'var(--bg4)',
+                                        color: 'var(--text3)', cursor: 'pointer'
+                                    }}>
+                                    📋 Paste
+                                </button>
+                            </div>
+                            <textarea value={input} onChange={e => setInput(e.target.value)}
+                                style={{
+                                    flex: 1, background: 'var(--bg3)', border: 'none', padding: '10px 12px',
+                                    fontSize: 12, fontFamily: "'DM Mono',monospace", color: 'var(--text)',
+                                    resize: 'none', outline: 'none', lineHeight: 1.7, overflowY: 'auto',
+                                    whiteSpace: 'pre-wrap', wordBreak: 'break-all'
+                                }}
+                                placeholder={"Paste any JSON here — even broken ones!\n\nWe handle:\n• \\u0022 unicode escapes\n• Trailing commas\n• Single quotes\n• Unquoted keys\n• Extra backslashes\n• JS comments\n• Double-stringified JSON\n• Python True/False/None\n• JSON buried in log text\n• ...and more"}
+                                spellCheck={false} />
+                        </div>
+
+                        {/* Output */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                            <div style={{
+                                padding: '4px 10px', borderBottom: '1px solid var(--border)',
+                                fontSize: 10, color: 'var(--text3)', display: 'flex', alignItems: 'center',
+                                gap: 5, flexShrink: 0, background: bgColor, transition: 'background .2s'
+                            }}>
+                                <span style={{ fontWeight: 600, color: theme === 'dark' ? '#aaa' : '#555' }}>
+                                    Pretty Output
+                                </span>
+                                {result?.ok && <>
+                                    <span style={{ color: theme === 'dark' ? '#666' : '#aaa' }}>{lineCount} lines</span>
+                                    <span style={{ color: theme === 'dark' ? '#666' : '#aaa' }}>·</span>
+                                    <span style={{ color: theme === 'dark' ? '#666' : '#aaa' }}>{charCount} chars</span>
+                                </>}
+                            </div>
+
+                            <div style={{
+                                flex: 1, overflow: 'auto', background: bgColor, transition: 'background .2s',
+                                position: 'relative'
+                            }}>
+                                {!input.trim() && (
+                                    <div style={{
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                        justifyContent: 'center', height: '100%', color: theme === 'dark' ? '#444' : '#bbb',
+                                        fontSize: 13, textAlign: 'center', gap: 8
+                                    }}>
+                                        <div style={{ fontSize: 40 }}>{ }</div>
+                                        <div>Paste JSON on the left</div>
+                                        <div style={{ fontSize: 11, color: theme === 'dark' ? '#333' : '#ccc' }}>
+                                            Auto-normalizes broken JSON
+                                        </div>
+                                    </div>
+                                )}
+
+                                {input.trim() && result && !result.ok && (
+                                    <div style={{ padding: 16 }}>
+                                        <div style={{
+                                            background: 'rgba(247,111,111,.1)', border: '1px solid rgba(247,111,111,.3)',
+                                            borderRadius: 10, padding: '14px 16px'
+                                        }}>
+                                            <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6, fontSize: 12 }}>
+                                                ✗ Could not parse
+                                            </div>
+                                            <div style={{
+                                                fontFamily: "'DM Mono',monospace", fontSize: 11,
+                                                color: theme === 'dark' ? '#f88' : '#c55', lineHeight: 1.6
+                                            }}>
+                                                {result.error}
+                                            </div>
+                                            {result.steps?.length > 0 && (
+                                                <div style={{ marginTop: 8, fontSize: 11, color: theme === 'dark' ? '#666' : '#aaa' }}>
+                                                    Tried {result.steps.length} fix(es) but could not recover the JSON.
+                                                </div>
+                                            )}
+                                            <div style={{
+                                                marginTop: 10, fontSize: 11,
+                                                color: theme === 'dark' ? '#555' : '#aaa', lineHeight: 1.5
+                                            }}>
+                                                💡 Make sure input contains a valid JSON object {'{'}'...'{'}'} or array [...]
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {result?.ok && (
+                                    <div style={{ display: 'flex', minHeight: '100%' }}>
+                                        {/* Line numbers */}
+                                        <div style={{
+                                            padding: '10px 0', background: theme === 'dark' ? '#161616' : '#f0f0f0',
+                                            borderRight: `1px solid ${theme === 'dark' ? '#333' : '#ddd'}`,
+                                            flexShrink: 0, userSelect: 'none', minWidth: 44, textAlign: 'right'
+                                        }}>
+                                            {result.result.split('\n').map((_, i) => (
+                                                <div key={i} style={{
+                                                    padding: '0 8px', fontSize: 11, lineHeight: 1.7,
+                                                    fontFamily: "'DM Mono',monospace",
+                                                    color: theme === 'dark' ? '#404040' : '#bbb'
+                                                }}>
+                                                    {i + 1}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Code */}
+                                        <pre style={{
+                                            flex: 1, padding: '10px 14px', margin: 0, fontSize: 12,
+                                            fontFamily: "'DM Mono',monospace", lineHeight: 1.7,
+                                            color: textColor, background: 'transparent',
+                                            whiteSpace: wrapLines ? 'pre-wrap' : 'pre',
+                                            wordBreak: wrapLines ? 'break-all' : 'normal',
+                                            overflowX: wrapLines ? 'hidden' : 'auto',
+                                            outline: 'none'
+                                        }}
+                                            dangerouslySetInnerHTML={{ __html: highlight(result.result) }} />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div style={{
+                        padding: '4px 14px', borderTop: '1px solid var(--border)',
+                        background: 'var(--bg4)', fontSize: 10, color: 'var(--text3)',
+                        display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap'
+                    }}>
+                        <span>15-layer normalizer</span>
+                        <span>·</span>
+                        <span>unicode · backslashes · trailing commas · unquoted keys · comments · Python literals · buried JSON</span>
+                    </div>
+                </FloatingPanel>
+            );
+        }
+
         /* ── APP ── */
         function App() {
             const WS_SERVER_URL = 'https://daily-2.onrender.com';
@@ -5223,8 +5796,7 @@
             const lastSyncedCards = useRef({});  // cardId → updatedAt at last successful sync
             const [showBase64, setShowBase64] = useState(false);
             const [showZpl, setShowZpl] = useState(false);
-
-
+            const [showJson, setShowJson] = useState(false);
 
 
             useEffect(() => { colsRef.current = cols; }, [cols]);
@@ -6030,6 +6602,14 @@
                             </svg>
                         </button>
 
+                        <button className={`ibtn${showJson ? ' active' : ''}`} data-tip="JSON Prettifier" onClick={() => setShowJson(o => !o)}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <polyline points="4 7 4 4 20 4 20 7" />
+                                <line x1="9" y1="20" x2="15" y2="20" />
+                                <line x1="12" y1="4" x2="12" y2="20" />
+                            </svg>
+                        </button>
+
                         {/* Tools dropdown */}
                         <button className="ibtn" data-tip="Base64 Converter" onClick={() => setShowBase64(true)} style={{ color: 'var(--text)', borderColor: 'var(--border2)' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -6190,6 +6770,8 @@
                     {showAi && <AiPanel onClose={() => setShowAi(false)} />}
                     {showKroki && <KrokiPanel onClose={() => setShowKroki(false)} />}
                     {showZpl && <ZplPanel onClose={() => setShowZpl(false)} />}
+                    {showJson && <JsonPanel onClose={() => setShowJson(false)} />}
+
                     {showBase64 && <Base64Converter onClose={() => setShowBase64(false)} />}
                     {showSyncModal && <SyncModal
                         onClose={() => setShowSyncModal(false)} peerStatus={peerStatus} peerCount={peerCount}
