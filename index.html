@@ -5195,116 +5195,149 @@
             let s = raw;
             const steps = [];
 
-            // Step 1: Decode unicode escapes like \u0022
+            // Step 0: Trim outer whitespace
+            s = s.trim();
+
+            // Step 0b: If wrapped in outer quotes (copy-pasted as string literal)
+            // e.g. "{\"a\":1}" — the whole thing is a quoted string
+            try {
+                if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+                    const inner = s.slice(1, -1);
+                    // try parse inner directly
+                    try { const p = JSON.parse(inner); steps.push('Unwrapped outer quotes'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
+                    s = inner; steps.push('Stripped outer quotes');
+                }
+            } catch { }
+
+            // Step 1: Decode unicode escapes \u0022 → "  \u005C → \
             try {
                 const decoded = s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-                if (decoded !== s) { steps.push('Decoded unicode escapes (\\uXXXX)'); s = decoded; }
+                if (decoded !== s) { steps.push('Decoded \\uXXXX unicode escapes'); s = decoded; }
             } catch { }
 
-            // Step 2: Unescape double-encoded backslashes \\\\  → \
+            // Step 2: Handle \\\" → " (escaped escaped quotes from serialized JSON)
+            // This is the KEY fix for strings like {\\\"key\\\":\\\"value\\\"}
+            // Pattern: backslash-backslash-quote → just quote
             try {
-                const u = s.replace(/\\{2,}/g, '\\');
-                if (u !== s) { steps.push('Collapsed excess backslashes'); s = u; }
+                // Multiple passes for deeply nested escaping
+                let prev = '';
+                let iters = 0;
+                while (prev !== s && iters < 10) {
+                    prev = s;
+                    // \\\" → " (the most common serialization artifact)
+                    s = s.replace(/\\\\\\"/g, '"');
+                    // \\\\ → \ (collapsed double-backslash)
+                    s = s.replace(/\\\\\\\\/g, '\\\\');
+                    iters++;
+                }
+                if (prev !== s || iters > 1) steps.push('Unescaped double-escaped quotes (\\\\\\")');
             } catch { }
 
-            // Step 3: Replace literal \n \t \r inside strings with actual whitespace
-            // BUT only outside of already-valid string context — do globally first
+            // Step 2b: More aggressive — replace all \" with " when the string looks like escaped JSON
+            // Detect: if we have lots of \" patterns, it's likely a serialized JSON string
             try {
-                // Replace escaped newlines that are NOT inside proper JSON strings
+                const escapedQuoteCount = (s.match(/\\"/g) || []).length;
+                const regularQuoteCount = (s.match(/(?<!\\)"/g) || []).length;
+                // If escaped quotes vastly outnumber regular quotes, unescape all
+                if (escapedQuoteCount > 4 && escapedQuoteCount > regularQuoteCount * 2) {
+                    const r = s.replace(/\\"/g, '"');
+                    try {
+                        const p = JSON.parse(r);
+                        steps.push('Unescaped serialized JSON string (\\")');
+                        return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p };
+                    } catch { }
+                    // Even if full parse fails, use unescaped version for further processing
+                    s = r; steps.push('Unescaped \\\" for further processing');
+                }
+            } catch { }
+
+            // Step 3: Clean excess backslashes
+            // ////////////// or \\\\\\\\ → normalize
+            try {
+                // Replace 3+ consecutive forward slashes that aren't in URLs with single /
+                const r = s.replace(/(?<!https?:)(?<!http:)\/\/\/+/g, '/');
+                if (r !== s) { steps.push('Normalized excess forward slashes (//)'); s = r; }
+            } catch { }
+            try {
+                // Replace 3+ consecutive backslashes with single backslash
+                // But first protect \\ inside JSON strings
+                const r = s.replace(/\\{3,}/g, '\\');
+                if (r !== s) { steps.push('Collapsed excess backslashes (\\\\\\)'); s = r; }
+            } catch { }
+
+            // Step 4: Replace literal \n \t \r text sequences
+            try {
                 const r = s.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r');
-                if (r !== s) { steps.push('Replaced \\n \\t \\r escape sequences'); s = r; }
+                if (r !== s) { steps.push('Replaced \\n \\t \\r sequences'); s = r; }
             } catch { }
 
-            // Step 4: Strip non-printable control chars (except real newline/tab)
+            // Step 4b: Strip non-printable control chars
             try {
                 const r = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
                 if (r !== s) { steps.push('Stripped control characters'); s = r; }
             } catch { }
 
-            // Step 5: Try parse as-is first
+            // Step 5: Try parse as-is
             try {
                 const parsed = JSON.parse(s);
+                if (steps.length) { }// still report steps
                 return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
             } catch { }
 
-            // Step 6: If s looks like it was double-JSON-stringified ("\"{}\"")
+            // Step 6: Double-stringified check
             try {
                 const trimmed = s.trim();
-                if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-                    (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+                if ((trimmed.startsWith('"') && trimmed.endsWith('"'))) {
                     const inner = JSON.parse(trimmed);
-                    const parsed = JSON.parse(inner);
-                    steps.push('Unwrapped double-stringified JSON');
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                    if (typeof inner === 'string') {
+                        const parsed = JSON.parse(inner);
+                        steps.push('Unwrapped double-stringified JSON');
+                        return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                    }
                 }
             } catch { }
 
-            // Step 7: Remove trailing commas before } or ]
+            // Step 7: Remove trailing commas
             try {
                 const r = s.replace(/,(\s*[}\]])/g, '$1');
-                try {
-                    const parsed = JSON.parse(r);
-                    steps.push('Removed trailing commas');
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                } catch { }
+                try { const p = JSON.parse(r); steps.push('Removed trailing commas'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
                 s = r;
             } catch { }
 
-            // Step 8: Fix single quotes → double quotes (naive but common)
+            // Step 8: Single quotes → double quotes
             try {
-                // Only replace keys/values wrapped in single quotes not inside double-quote strings
                 const r = s.replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, (m, inner) => '"' + inner.replace(/"/g, '\\"') + '"');
-                try {
-                    const parsed = JSON.parse(r);
-                    steps.push("Converted single quotes to double quotes");
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                } catch { }
+                try { const p = JSON.parse(r); steps.push('Converted single quotes to double quotes'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
             } catch { }
 
-            // Step 9: Fix unquoted keys  {foo: "bar"} → {"foo": "bar"}
+            // Step 9: Unquoted keys
             try {
                 const r = s.replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3');
-                try {
-                    const parsed = JSON.parse(r);
-                    steps.push('Quoted unquoted keys');
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                } catch { }
+                try { const p = JSON.parse(r); steps.push('Quoted unquoted keys'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
                 s = r;
             } catch { }
 
-            // Step 10: Remove JS comments // and /* */
+            // Step 10: Remove JS comments
             try {
-                const r = s
-                    .replace(/\/\/[^\n]*/g, '')
-                    .replace(/\/\*[\s\S]*?\*\//g, '');
-                try {
-                    const parsed = JSON.parse(r);
-                    steps.push('Removed JS-style comments');
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                } catch { }
+                const r = s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+                try { const p = JSON.parse(r); steps.push('Removed JS comments'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
                 s = r;
             } catch { }
 
-            // Step 11: Fix = used instead of : for key-value
+            // Step 11: Fix = instead of :
             try {
                 const r = s.replace(/"([^"]+)"\s*=\s*/g, '"$1": ');
-                try {
-                    const parsed = JSON.parse(r);
-                    steps.push('Fixed = to : in key-value pairs');
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                } catch { }
+                try { const p = JSON.parse(r); steps.push('Fixed = to :'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
             } catch { }
 
-            // Step 12: Extract JSON from surrounding garbage text
+            // Step 12: Extract JSON from surrounding garbage
             try {
-                // Find first { or [ and last } or ]
                 const firstObj = s.indexOf('{');
                 const firstArr = s.indexOf('[');
-                let start = -1; let end = -1; let closing = '';
+                let start = -1; let closing = '';
                 if (firstObj !== -1 && (firstArr === -1 || firstObj < firstArr)) { start = firstObj; closing = '}'; }
                 else if (firstArr !== -1) { start = firstArr; closing = ']'; }
                 if (start !== -1) {
-                    // find matching closing
                     let depth = 0; let found = -1;
                     const open = closing === '}' ? '{' : '[';
                     for (let i = start; i < s.length; i++) {
@@ -5313,76 +5346,45 @@
                     }
                     if (found !== -1) {
                         const extracted = s.slice(start, found + 1);
+                        try { const p = JSON.parse(extracted); steps.push('Extracted JSON from surrounding text'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
                         try {
-                            const parsed = JSON.parse(extracted);
-                            steps.push('Extracted JSON from surrounding text');
-                            return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                        } catch { }
-                        // try with all previous fixes applied to extracted
-                        try {
-                            let ex2 = extracted
-                                .replace(/,(\s*[}\]])/g, '$1')
-                                .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3')
-                                .replace(/\/\/[^\n]*/g, '')
-                                .replace(/\/\*[\s\S]*?\*\//g, '');
-                            const parsed = JSON.parse(ex2);
-                            steps.push('Extracted + normalized JSON from surrounding text');
-                            return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                            const ex2 = extracted.replace(/,(\s*[}\]])/g, '$1').replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3');
+                            const p = JSON.parse(ex2);
+                            steps.push('Extracted + normalized JSON');
+                            return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p };
                         } catch { }
                     }
                 }
             } catch { }
 
-            // Step 13: Try to fix broken string values containing unescaped quotes
+            // Step 13: Unescaped quotes in values
             try {
-                // Replace unescaped double quotes inside string values
                 const r = s.replace(/:(\s*)"((?:[^"\\]|\\.)*)"/g, (m, sp, val) => {
                     const fixed = val.replace(/(?<!\\)"/g, '\\"');
                     return ':' + sp + '"' + fixed + '"';
                 });
-                try {
-                    const parsed = JSON.parse(r);
-                    steps.push('Fixed unescaped quotes in string values');
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                } catch { }
+                try { const p = JSON.parse(r); steps.push('Fixed unescaped quotes in values'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
             } catch { }
 
-            // Step 14: Replace forward slashes that are not escaped (some log formats)
+            // Step 14: Normalize slashes
             try {
                 const r = s.replace(/\\\//g, '/');
-                try {
-                    const parsed = JSON.parse(r);
-                    steps.push('Normalized escaped forward slashes');
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                } catch { }
+                try { const p = JSON.parse(r); steps.push('Normalized escaped slashes'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
             } catch { }
 
-            // Step 15: Last resort — try to evaluate as JS object (safe subset)
+            // Step 15: Python literals + all fixes combined
             try {
-                // Replace True/False/None (Python-style)
-                const r = s
-                    .replace(/\bTrue\b/g, 'true')
-                    .replace(/\bFalse\b/g, 'false')
-                    .replace(/\bNone\b/g, 'null')
-                    .replace(/\bundefined\b/g, 'null')
-                    .replace(/\bNaN\b/g, 'null')
-                    .replace(/\bInfinity\b/g, 'null');
-                try {
-                    const parsed = JSON.parse(r);
-                    steps.push('Fixed Python/JS literals (True/False/None)');
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                } catch { }
-                // combine all fixes
-                let combo = r
+                let r = s
+                    .replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false')
+                    .replace(/\bNone\b/g, 'null').replace(/\bundefined\b/g, 'null')
+                    .replace(/\bNaN\b/g, 'null').replace(/\bInfinity\b/g, 'null');
+                try { const p = JSON.parse(r); steps.push('Fixed Python/JS literals'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
+                // All combined
+                r = r
                     .replace(/,(\s*[}\]])/g, '$1')
                     .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3')
-                    .replace(/\/\/[^\n]*/g, '')
-                    .replace(/\/\*[\s\S]*?\*\//g, '');
-                try {
-                    const parsed = JSON.parse(combo);
-                    steps.push('Applied all normalizations combined');
-                    return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-                } catch (e) {
+                    .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+                try { const p = JSON.parse(r); steps.push('Applied all normalizations'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch (e) {
                     return { ok: false, error: e.message, result: s, steps };
                 }
             } catch (e) {
@@ -5434,30 +5436,36 @@
             // Syntax highlight the JSON output
             function highlight(json) {
                 if (!json) return '';
-                let h = json
-                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-                // Apply search highlight first if needed
+                const isDark = theme === 'dark';
+                let h = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 h = h.replace(
                     /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
                     match => {
-                        let cls = 'color:#ce9178'; // string
+                        let cls;
                         if (/^"/.test(match)) {
-                            if (/:$/.test(match)) cls = 'color:#9cdcfe;font-weight:600'; // key
-                        } else if (/true|false/.test(match)) cls = 'color:#4ec9b0'; // bool
-                        else if (/null/.test(match)) cls = 'color:#808080'; // null
-                        else cls = 'color:#b5cea8'; // number
+                            if (/:$/.test(match)) {
+                                // key
+                                cls = isDark ? 'color:#9cdcfe;font-weight:600' : 'color:#0550ae;font-weight:700';
+                            } else {
+                                // string value
+                                cls = isDark ? 'color:#ce9178' : 'color:#0a7a0a';
+                            }
+                        } else if (/true|false/.test(match)) {
+                            cls = isDark ? 'color:#4ec9b0' : 'color:#0070c1';
+                        } else if (/null/.test(match)) {
+                            cls = isDark ? 'color:#808080' : 'color:#888888';
+                        } else {
+                            // number
+                            cls = isDark ? 'color:#b5cea8' : 'color:#c7254e';
+                        }
                         return `<span style="${cls}">${match}</span>`;
                     }
                 );
-
-                // Search highlight
                 if (searchQ.trim()) {
                     const esc = searchQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                     const re = new RegExp(`(${esc})(?![^<]*>)`, 'gi');
-                    h = h.replace(re, '<mark style="background:#f7c35a44;color:#f7c35a;border-radius:2px">$1</mark>');
+                    h = h.replace(re, '<mark style="background:#f7c35a55;color:inherit;border-radius:2px;padding:0 1px">$1</mark>');
                 }
-
                 return h;
             }
 
