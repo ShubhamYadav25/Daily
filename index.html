@@ -4599,466 +4599,601 @@
             }
         }
 
-       function ZplPanel({onClose}){
-  const [src,setSrc]=useState(()=>loadLS('daily_zpl_src',
-`^XA
+        function ZplPanel({ onClose }) {
+            const [mode, setMode] = useState('zpl'); // 'zpl' | 'base64'
+            const [src, setSrc] = useState(() => loadLS('daily_zpl_src',
+                `^XA
 ^FO50,50^ADN,36,20^FDHello World^FS
 ^FO50,120^ADN,24,12^FDZPL Label Preview^FS
 ^FO50,180^BY2^BCN,80,Y,N,N^FD123456789^FS
 ^XZ`));
-  const [imgUrl,setImgUrl]=useState('');
-  const [loading,setLoading]=useState(false);
-  const [error,setError]=useState('');
-  const [dpmm,setDpmm]=useState('8');
-  const [width,setWidth]=useState('4');
-  const [height,setHeight]=useState('6');
-  const [labelIdx,setLabelIdx]=useState(0);
-  const [labelCount,setLabelCount]=useState(1);
-  const [autoRender,setAutoRender]=useState(true);
-  const [scale,setScale]=useState(1);
-  const [outputFmt,setOutputFmt]=useState('png');
-  const debounceRef=useRef();
+            const [b64Input, setB64Input] = useState(() => loadLS('daily_zpl_b64', ''));
+            const [imgUrl, setImgUrl] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [dpmm, setDpmm] = useState('8');
+            const [width, setWidth] = useState('4');
+            const [height, setHeight] = useState('6');
+            const [labelIdx, setLabelIdx] = useState(0);
+            const [labelCount, setLabelCount] = useState(1);
+            const [autoRender, setAutoRender] = useState(true);
+            const [scale, setScale] = useState(1);
+            const [outputFmt, setOutputFmt] = useState('png');
+            const [b64Out, setB64Out] = useState('');
+            const debounceRef = useRef();
 
-  useEffect(()=>saveLS('daily_zpl_src',src),[src]);
-  useEffect(()=>()=>{if(imgUrl&&imgUrl.startsWith('blob:'))URL.revokeObjectURL(imgUrl);},[]);
+            useEffect(() => saveLS('daily_zpl_src', src), [src]);
+            useEffect(() => saveLS('daily_zpl_b64', b64Input), [b64Input]);
+            useEffect(() => () => { if (imgUrl && imgUrl.startsWith('blob:')) URL.revokeObjectURL(imgUrl); }, []);
 
-  async function render(){
-    if(!src.trim()){setError('No ZPL source.');return;}
-    if(!src.includes('^XA')||!src.includes('^XZ')){
-      setError('ZPL must start with ^XA and end with ^XZ');return;
-    }
-    setLoading(true);setError('');
+            // Decode base64 → ZPL string
+            function decodeB64ToZpl(b64) {
+                try {
+                    const clean = b64.trim().replace(/\s/g, '');
+                    const decoded = atob(clean);
+                    return decoded;
+                } catch (e) {
+                    throw new Error('Invalid Base64: ' + e.message);
+                }
+            }
 
-    // Per Labelary docs:
-    // POST /v1/printers/{dpmm}dpmm/labels/{width}x{height}/{index}/
-    // Body: raw ZPL string
-    // Content-Type: application/x-www-form-urlencoded
-    // Accept: image/png or application/pdf
+            // Get the ZPL to render based on mode
+            function getZpl() {
+                if (mode === 'zpl') return src;
+                if (mode === 'base64') {
+                    const decoded = decodeB64ToZpl(b64Input);
+                    return decoded;
+                }
+                return src;
+            }
 
-    const labelaryUrl=`https://api.labelary.com/v1/printers/${dpmm}dpmm/labels/${width}x${height}/${labelIdx}/`;
+            async function renderZpl(zplSrc) {
+                const labelaryUrl = `https://api.labelary.com/v1/printers/${dpmm}dpmm/labels/${width}x${height}/${labelIdx}/`;
+                const PROXIES = [
+                    () => fetch(`https://corsproxy.io/?${encodeURIComponent(labelaryUrl)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': outputFmt === 'pdf' ? 'application/pdf' : 'image/png' },
+                        body: zplSrc,
+                    }),
+                    () => fetch(`https://cors-anywhere.herokuapp.com/${labelaryUrl}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': outputFmt === 'pdf' ? 'application/pdf' : 'image/png', 'X-Requested-With': 'XMLHttpRequest' },
+                        body: zplSrc,
+                    }),
+                    () => fetch(labelaryUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': outputFmt === 'pdf' ? 'application/pdf' : 'image/png' },
+                        body: zplSrc,
+                    }),
+                ];
+                let lastErr = '';
+                for (const proxyFn of PROXIES) {
+                    try {
+                        const res = await Promise.race([
+                            proxyFn(),
+                            new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout')), 10000)),
+                        ]);
+                        if (!res.ok) { lastErr = `HTTP ${res.status}: ` + (await res.text().catch(() => '')).slice(0, 150); continue; }
+                        const cnt = res.headers.get('X-Label-Count');
+                        if (cnt) setLabelCount(parseInt(cnt) || 1);
+                        const blob = await res.blob();
+                        if (!blob.type.includes('image') && !blob.type.includes('pdf') && blob.size < 100) {
+                            lastErr = 'Bad response: ' + (await blob.text().catch(() => '')).slice(0, 100); continue;
+                        }
+                        if (imgUrl && imgUrl.startsWith('blob:')) URL.revokeObjectURL(imgUrl);
+                        setImgUrl(URL.createObjectURL(blob));
+                        return true;
+                    } catch (e) { lastErr = e.message; continue; }
+                }
+                throw new Error(lastErr || 'All render attempts failed');
+            }
 
-    // We try multiple CORS proxies — each sends raw ZPL POST body
-    const PROXIES=[
-      // 1. corsproxy.io — wraps the request
-      ()=>fetch(`https://corsproxy.io/?${encodeURIComponent(labelaryUrl)}`,{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/x-www-form-urlencoded',
-          'Accept':outputFmt==='pdf'?'application/pdf':'image/png',
-        },
-        body:src,
-      }),
-      // 2. cors-anywhere (herokuapp)
-      ()=>fetch(`https://cors-anywhere.herokuapp.com/${labelaryUrl}`,{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/x-www-form-urlencoded',
-          'Accept':outputFmt==='pdf'?'application/pdf':'image/png',
-          'X-Requested-With':'XMLHttpRequest',
-        },
-        body:src,
-      }),
-      // 3. allorigins raw (GET only, encode ZPL in URL — limited but worth trying)
-      ()=>fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(labelaryUrl)}`,{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/x-www-form-urlencoded',
-          'Accept':'image/png',
-        },
-        body:src,
-      }),
-      // 4. Direct (works if server adds CORS headers in future or user has extension)
-      ()=>fetch(labelaryUrl,{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/x-www-form-urlencoded',
-          'Accept':outputFmt==='pdf'?'application/pdf':'image/png',
-        },
-        body:src,
-      }),
-    ];
+            async function render() {
+                setLoading(true); setError('');
+                try {
+                    const zpl = getZpl();
+                    if (!zpl.trim()) { setError('Nothing to render.'); setLoading(false); return; }
+                    if (!zpl.includes('^XA') || !zpl.includes('^XZ')) {
+                        setError('ZPL must contain ^XA and ^XZ\n\nDecoded content:\n' + zpl.slice(0, 200));
+                        setLoading(false); return;
+                    }
+                    // If base64 mode, show the decoded ZPL
+                    if (mode === 'base64') setSrc(zpl);
+                    await renderZpl(zpl);
+                } catch (e) {
+                    setError(
+                        e.message + '\n\n' +
+                        'CORS is blocking the request from your browser.\n\n' +
+                        'Options:\n' +
+                        '• Install a CORS browser extension\n' +
+                        '• Try a different network'
+                    );
+                }
+                setLoading(false);
+            }
 
-    let lastErr='';
-    for(const proxyFn of PROXIES){
-      try{
-        const res=await Promise.race([
-          proxyFn(),
-          new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timeout after 10s')),10000)),
-        ]);
+            // Base64 encode current ZPL
+            function encodeZplToB64() {
+                try {
+                    const encoded = btoa(unescape(encodeURIComponent(src)));
+                    setB64Out(encoded);
+                } catch (e) { setB64Out('Error: ' + e.message); }
+            }
 
-        if(!res.ok){
-          const txt=await res.text().catch(()=>'');
-          lastErr=`HTTP ${res.status}: ${txt.slice(0,200)}`;
-          continue;
-        }
+            useEffect(() => {
+                if (!autoRender) return;
+                clearTimeout(debounceRef.current);
+                debounceRef.current = setTimeout(() => render(), 1000);
+                return () => clearTimeout(debounceRef.current);
+            }, [src, b64Input, dpmm, width, height, labelIdx, autoRender, outputFmt, mode]);
 
-        // Check label count header
-        const cnt=res.headers.get('X-Label-Count');
-        if(cnt)setLabelCount(parseInt(cnt)||1);
+            function downloadImg() {
+                if (!imgUrl) return;
+                const a = document.createElement('a'); a.href = imgUrl;
+                a.download = `label.${outputFmt}`; a.click();
+            }
 
-        const blob=await res.blob();
+            function insertToScratch() {
+                if (!imgUrl) return;
+                fetch(imgUrl).then(r => r.blob()).then(blob => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const cur = loadLS('daily_scratch', '');
+                        saveLS('daily_scratch', cur + `\n\n![Label](${reader.result})\n`);
+                    };
+                    reader.readAsDataURL(blob);
+                });
+            }
 
-        // Verify we got an image/pdf back
-        if(!blob.type.includes('image')&&!blob.type.includes('pdf')&&blob.size<100){
-          const txt=await blob.text().catch(()=>'');
-          lastErr='Bad response (not image): '+txt.slice(0,100);
-          continue;
-        }
+            const DPMM_OPTS = [
+                { v: '6', l: '6 dpmm (152 dpi)' },
+                { v: '8', l: '8 dpmm (203 dpi)' },
+                { v: '12', l: '12 dpmm (300 dpi)' },
+                { v: '24', l: '24 dpmm (600 dpi)' },
+            ];
 
-        // Revoke old blob url
-        if(imgUrl&&imgUrl.startsWith('blob:'))URL.revokeObjectURL(imgUrl);
-        const objectUrl=URL.createObjectURL(blob);
-        setImgUrl(objectUrl);
-        setLoading(false);
-        return; // success
-      }catch(e){
-        lastErr=e.message;
-        continue;
-      }
-    }
+            const SNIPPETS = [
+                { label: 'Text', zpl: `^FO50,50^ADN,36,20^FDYour Text^FS` },
+                { label: 'Small', zpl: `^FO50,50^ADN,18,10^FDSmall^FS` },
+                { label: 'Code128', zpl: `^FO50,100^BY2^BCN,80,Y,N,N^FD12345678^FS` },
+                { label: 'QR', zpl: `^FO50,50^BQN,2,5^FDQA,https://example.com^FS` },
+                { label: 'Box', zpl: `^FO30,30^GB400,200,3^FS` },
+                { label: 'Line', zpl: `^FO30,100^GB500,3,3^FS` },
+                { label: 'Circle', zpl: `^FO50,50^GC100,3,B^FS` },
+                { label: 'Reverse', zpl: `^FO50,50^FR^ADN,36,20^FDReverse^FS^FR` },
+            ];
 
-    // All failed
-    setError(
-      `All render attempts failed.\n\nLast error: ${lastErr}\n\n`+
-      `This is usually a CORS issue — browsers block cross-origin requests to Labelary.\n\n`+
-      `Solutions:\n`+
-      `• Install a CORS browser extension (e.g. "CORS Unblock")\n`+
-      `• Or host this app on a server with a backend proxy\n`+
-      `• Or use the Labelary website directly: labelary.com/viewer.html`
-    );
-    setLoading(false);
-  }
+            // Decoded preview for base64 mode
+            const decodedPreview = useMemo(() => {
+                if (mode !== 'base64' || !b64Input.trim()) return '';
+                try { return decodeB64ToZpl(b64Input); } catch { return '[Invalid Base64]'; }
+            }, [b64Input, mode]);
 
-  useEffect(()=>{
-    if(!autoRender)return;
-    clearTimeout(debounceRef.current);
-    debounceRef.current=setTimeout(()=>render(),1000);
-    return()=>clearTimeout(debounceRef.current);
-  },[src,dpmm,width,height,labelIdx,autoRender,outputFmt]);
+            return (
+                <FloatingPanel title="Label Preview" icon="🏷️" onClose={onClose}
+                    initW={960} initH={640} storageKey="zpl">
 
-  function downloadImg(){
-    if(!imgUrl)return;
-    const a=document.createElement('a');
-    a.href=imgUrl;
-    a.download=`label_${width}x${height}_${dpmm}dpmm.${outputFmt}`;
-    a.click();
-  }
+                    {/* ── Toolbar ── */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                        background: 'var(--bg4)', borderBottom: '1px solid var(--border)',
+                        flexWrap: 'wrap', rowGap: 5, flexShrink: 0
+                    }}>
 
-  function insertToScratch(){
-    if(!imgUrl)return;
-    fetch(imgUrl).then(r=>r.blob()).then(blob=>{
-      const reader=new FileReader();
-      reader.onload=()=>{
-        const cur=loadLS('daily_scratch','');
-        saveLS('daily_scratch',cur+`\n\n![ZPL Label](${reader.result})\n`);
-      };
-      reader.readAsDataURL(blob);
-    });
-  }
+                        {/* Mode toggle */}
+                        <div style={{
+                            display: 'flex', background: 'var(--bg3)', borderRadius: 7,
+                            border: '1px solid var(--border)', overflow: 'hidden', flexShrink: 0
+                        }}>
+                            {[['zpl', 'ZPL Code'], ['base64', 'Base64 → Label']].map(([id, lbl]) => (
+                                <button key={id} onClick={() => { setMode(id); setError(''); setImgUrl(''); }}
+                                    style={{
+                                        padding: '4px 12px', fontSize: 11, border: 'none', cursor: 'pointer', fontWeight: 600,
+                                        background: mode === id ? 'var(--blue)' : 'transparent',
+                                        color: mode === id ? '#fff' : 'var(--text3)', whiteSpace: 'nowrap'
+                                    }}>
+                                    {lbl}
+                                </button>
+                            ))}
+                        </div>
 
-  function openLabelary(){
-    window.open('https://labelary.com/viewer.html','_blank');
-  }
+                        {/* DPI */}
+                        <select value={dpmm} onChange={e => setDpmm(e.target.value)}
+                            className="fselect" style={{ width: 130, padding: '3px 7px', fontSize: 11 }}>
+                            {DPMM_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                        </select>
 
-  const DPMM_OPTS=[
-    {v:'6',l:'6 dpmm — 152 dpi'},
-    {v:'8',l:'8 dpmm — 203 dpi'},
-    {v:'12',l:'12 dpmm — 300 dpi'},
-    {v:'24',l:'24 dpmm — 600 dpi'},
-  ];
+                        {/* Size */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <input type="number" value={width} min="1" max="15" step="0.5"
+                                onChange={e => setWidth(e.target.value)} title="Width (inches)"
+                                style={{
+                                    width: 44, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6,
+                                    padding: '3px 5px', fontSize: 11, color: 'var(--text)', outline: 'none'
+                                }} />
+                            <span style={{ fontSize: 11, color: 'var(--text3)' }}>×</span>
+                            <input type="number" value={height} min="1" max="15" step="0.5"
+                                onChange={e => setHeight(e.target.value)} title="Height (inches)"
+                                style={{
+                                    width: 44, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6,
+                                    padding: '3px 5px', fontSize: 11, color: 'var(--text)', outline: 'none'
+                                }} />
+                            <span style={{ fontSize: 10, color: 'var(--text3)' }}>in</span>
+                        </div>
 
-  const SNIPPETS=[
-    {label:'Text',zpl:`^FO50,50^ADN,36,20^FDYour Text^FS`},
-    {label:'Small Text',zpl:`^FO50,50^ADN,18,10^FDSmall Text^FS`},
-    {label:'Code128',zpl:`^FO50,100^BY2^BCN,80,Y,N,N^FD12345678^FS`},
-    {label:'QR Code',zpl:`^FO50,50^BQN,2,5^FDQA,https://example.com^FS`},
-    {label:'Box',zpl:`^FO30,30^GB400,200,3^FS`},
-    {label:'Solid Box',zpl:`^FO30,30^GB400,50,50^FS`},
-    {label:'Circle',zpl:`^FO50,50^GC100,3,B^FS`},
-    {label:'Line',zpl:`^FO30,100^GB500,3,3^FS`},
-    {label:'Reverse Text',zpl:`^FO50,50^FR^ADN,36,20^FDReverse^FS^FR`},
-    {label:'Image Field',zpl:`^FO50,50^GFA,100,100,10,::::::L0FE,::3FFC,:1FFE,`},
-  ];
+                        {/* Output format */}
+                        <div style={{
+                            display: 'flex', background: 'var(--bg3)', borderRadius: 6,
+                            border: '1px solid var(--border)', overflow: 'hidden'
+                        }}>
+                            {['png', 'pdf'].map(f => (
+                                <button key={f} onClick={() => setOutputFmt(f)}
+                                    style={{
+                                        padding: '3px 10px', fontSize: 11, border: 'none', cursor: 'pointer', fontWeight: 600,
+                                        background: outputFmt === f ? 'var(--blue)' : 'transparent',
+                                        color: outputFmt === f ? '#fff' : 'var(--text3)'
+                                    }}>
+                                    {f.toUpperCase()}
+                                </button>
+                            ))}
+                        </div>
 
-  return(
-    <FloatingPanel title="ZPL Label Preview" icon="🏷️" onClose={onClose}
-      initW={960} initH={640} storageKey="zpl">
+                        {/* Label index */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <button onClick={() => setLabelIdx(i => Math.max(0, i - 1))}
+                                style={{
+                                    width: 22, height: 22, borderRadius: 4, border: '1px solid var(--border)',
+                                    background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, padding: 0
+                                }}>‹</button>
+                            <span style={{ fontSize: 11, minWidth: 18, textAlign: 'center' }}>{labelIdx}</span>
+                            <button onClick={() => setLabelIdx(i => Math.min(Math.max(0, labelCount - 1), i + 1))}
+                                style={{
+                                    width: 22, height: 22, borderRadius: 4, border: '1px solid var(--border)',
+                                    background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, padding: 0
+                                }}>›</button>
+                            <span style={{ fontSize: 10, color: 'var(--text3)' }}>/{labelCount}</span>
+                        </div>
 
-      {/* ── Toolbar ── */}
-      <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',
-        background:'var(--bg4)',borderBottom:'1px solid var(--border)',
-        flexWrap:'wrap',rowGap:5,flexShrink:0}}>
+                        {/* Zoom */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <input type="range" min="0.2" max="3" step="0.1" value={scale}
+                                onChange={e => setScale(parseFloat(e.target.value))}
+                                style={{ width: 60, accentColor: 'var(--blue)', cursor: 'pointer' }} />
+                            <span style={{ fontSize: 10, color: 'var(--text3)', minWidth: 30 }}>{Math.round(scale * 100)}%</span>
+                        </div>
 
-        {/* DPI */}
-        <div style={{display:'flex',flexDirection:'column',gap:1}}>
-          <span style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:.4}}>Printer DPI</span>
-          <select value={dpmm} onChange={e=>setDpmm(e.target.value)}
-            className="fselect" style={{width:150,padding:'3px 7px',fontSize:11}}>
-            {DPMM_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
-          </select>
-        </div>
+                        <label style={{
+                            display: 'flex', alignItems: 'center', gap: 4, fontSize: 11,
+                            color: 'var(--text2)', cursor: 'pointer', userSelect: 'none'
+                        }}>
+                            <input type="checkbox" checked={autoRender}
+                                onChange={e => setAutoRender(e.target.checked)}
+                                style={{ accentColor: 'var(--blue)' }} />
+                            Auto
+                        </label>
 
-        {/* Label size */}
-        <div style={{display:'flex',flexDirection:'column',gap:1}}>
-          <span style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:.4}}>Size (inches)</span>
-          <div style={{display:'flex',alignItems:'center',gap:3}}>
-            <input type="number" value={width} min="1" max="15" step="0.5"
-              onChange={e=>setWidth(e.target.value)} title="Width"
-              style={{width:46,background:'var(--bg3)',border:'1px solid var(--border)',
-                borderRadius:6,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}}/>
-            <span style={{fontSize:12,color:'var(--text3)'}}>×</span>
-            <input type="number" value={height} min="1" max="15" step="0.5"
-              onChange={e=>setHeight(e.target.value)} title="Height"
-              style={{width:46,background:'var(--bg3)',border:'1px solid var(--border)',
-                borderRadius:6,padding:'3px 6px',fontSize:11,color:'var(--text)',outline:'none'}}/>
-          </div>
-        </div>
+                        <button className="btn primary" style={{ padding: '5px 14px', fontSize: 12 }}
+                            onClick={render} disabled={loading}>
+                            {loading ? '⏳…' : '▶ Render'}
+                        </button>
 
-        {/* Output format */}
-        <div style={{display:'flex',flexDirection:'column',gap:1}}>
-          <span style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:.4}}>Output</span>
-          <div style={{display:'flex',background:'var(--bg3)',borderRadius:6,
-            border:'1px solid var(--border)',overflow:'hidden'}}>
-            {['png','pdf'].map(f=>(
-              <button key={f} onClick={()=>setOutputFmt(f)}
-                style={{padding:'3px 10px',fontSize:11,border:'none',cursor:'pointer',fontWeight:600,
-                  background:outputFmt===f?'var(--blue)':'transparent',
-                  color:outputFmt===f?'#fff':'var(--text3)'}}>
-                {f.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </div>
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
+                            {imgUrl && <>
+                                <button className="btn" style={{ padding: '4px 9px', fontSize: 11 }} onClick={downloadImg}>💾</button>
+                                <button className="btn" style={{ padding: '4px 9px', fontSize: 11 }} onClick={insertToScratch}>📝</button>
+                            </>}
+                        </div>
+                    </div>
 
-        {/* Label index */}
-        <div style={{display:'flex',flexDirection:'column',gap:1}}>
-          <span style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:.4}}>Label Index</span>
-          <div style={{display:'flex',alignItems:'center',gap:3}}>
-            <button onClick={()=>setLabelIdx(i=>Math.max(0,i-1))}
-              style={{width:22,height:22,borderRadius:4,border:'1px solid var(--border)',
-                background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',fontSize:14,lineHeight:1,padding:0}}>‹</button>
-            <span style={{fontSize:12,minWidth:20,textAlign:'center',color:'var(--text)'}}>{labelIdx}</span>
-            <button onClick={()=>setLabelIdx(i=>Math.min(Math.max(0,labelCount-1),i+1))}
-              style={{width:22,height:22,borderRadius:4,border:'1px solid var(--border)',
-                background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',fontSize:14,lineHeight:1,padding:0}}>›</button>
-            <span style={{fontSize:10,color:'var(--text3)'}}>/ {labelCount}</span>
-          </div>
-        </div>
+                    {/* ── Body: Split editor + preview ── */}
+                    <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
 
-        {/* Zoom */}
-        <div style={{display:'flex',flexDirection:'column',gap:1}}>
-          <span style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:.4}}>Zoom {Math.round(scale*100)}%</span>
-          <input type="range" min="0.2" max="3" step="0.1" value={scale}
-            onChange={e=>setScale(parseFloat(e.target.value))}
-            style={{width:70,accentColor:'var(--blue)',cursor:'pointer'}}/>
-        </div>
+                        {/* Left: Editor */}
+                        <div style={{
+                            flex: '0 0 42%', display: 'flex', flexDirection: 'column',
+                            borderRight: '1px solid var(--border)', minHeight: 0
+                        }}>
 
-        {/* Auto */}
-        <label style={{display:'flex',alignItems:'center',gap:4,fontSize:11,
-          color:'var(--text2)',cursor:'pointer',userSelect:'none',alignSelf:'flex-end',paddingBottom:2}}>
-          <input type="checkbox" checked={autoRender}
-            onChange={e=>setAutoRender(e.target.checked)}
-            style={{accentColor:'var(--blue)'}}/>
-          Auto
-        </label>
-
-        <button className="btn primary" style={{padding:'5px 16px',fontSize:12,alignSelf:'flex-end'}}
-          onClick={render} disabled={loading}>
-          {loading?'⏳ Rendering…':'▶ Render'}
-        </button>
-
-        {/* Right side actions */}
-        <div style={{marginLeft:'auto',display:'flex',gap:4,alignSelf:'flex-end'}}>
-          {imgUrl&&<>
-            <button className="btn" style={{padding:'4px 10px',fontSize:11}}
-              onClick={downloadImg} title="Download">💾</button>
-            <button className="btn" style={{padding:'4px 10px',fontSize:11}}
-              onClick={insertToScratch} title="Insert into Scratch Pad">📝</button>
-          </>}
-          <button className="btn" style={{padding:'4px 10px',fontSize:11}}
-            onClick={openLabelary} title="Open Labelary Viewer">
-            ↗ Labelary
-          </button>
-        </div>
-      </div>
-
-      {/* ── Split: Editor + Preview ── */}
-      <div style={{flex:1,display:'flex',minHeight:0,overflow:'hidden'}}>
-
-        {/* Editor */}
-        <div style={{flex:'0 0 42%',display:'flex',flexDirection:'column',
-          borderRight:'1px solid var(--border)',minHeight:0}}>
-
-          <div style={{padding:'4px 10px',background:'var(--bg3)',
-            borderBottom:'1px solid var(--border)',fontSize:10,color:'var(--text3)',
-            display:'flex',alignItems:'center',gap:5,flexShrink:0}}>
-            <span style={{fontWeight:600,color:'var(--text2)'}}>ZPL Source</span>
-            <span style={{marginLeft:'auto'}}>{src.length}ch · {src.split('\n').length}ln</span>
-            <button onClick={()=>{if(confirm('Reset to example?'))setSrc(
-`^XA
+                            {mode === 'zpl' && (<>
+                                <div style={{
+                                    padding: '4px 10px', background: 'var(--bg3)',
+                                    borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)',
+                                    display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0
+                                }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text2)' }}>ZPL Code</span>
+                                    <span style={{ marginLeft: 'auto' }}>{src.split('\n').length}ln</span>
+                                    <button onClick={() => {
+                                        if (confirm('Reset?')) setSrc(
+                                            `^XA
 ^FO50,50^ADN,36,20^FDHello World^FS
 ^FO50,120^ADN,24,12^FDZPL Label Preview^FS
 ^FO50,180^BY2^BCN,80,Y,N,N^FD123456789^FS
-^XZ`);}}
-              style={{fontSize:10,padding:'1px 7px',borderRadius:4,
-                border:'1px solid var(--border)',background:'var(--bg4)',
-                color:'var(--text3)',cursor:'pointer'}}>
-              Reset
-            </button>
-          </div>
+^XZ`);
+                                    }}
+                                        style={{
+                                            fontSize: 10, padding: '1px 7px', borderRadius: 4,
+                                            border: '1px solid var(--border)', background: 'var(--bg4)',
+                                            color: 'var(--text3)', cursor: 'pointer'
+                                        }}>
+                                        Reset
+                                    </button>
+                                </div>
 
-          <textarea
-            value={src}
-            onChange={e=>setSrc(e.target.value)}
-            style={{flex:1,background:'var(--bg3)',border:'none',padding:'10px 12px',
-              fontSize:12,fontFamily:"'DM Mono',monospace",color:'var(--text)',
-              resize:'none',outline:'none',lineHeight:1.8,overflowY:'auto'}}
-            placeholder={`^XA\n^FO50,50^ADN,36,20^FDYour Text^FS\n^XZ`}
-            spellCheck={false}
-            onKeyDown={e=>{
-              if(e.key==='Tab'){
-                e.preventDefault();
-                const s=e.target.selectionStart;
-                const nv=src.slice(0,s)+'  '+src.slice(e.target.selectionEnd);
-                setSrc(nv);
-                setTimeout(()=>{e.target.selectionStart=e.target.selectionEnd=s+2;},0);
-              }
-              if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
-                e.preventDefault();render();
-              }
-            }}/>
+                                <textarea value={src} onChange={e => setSrc(e.target.value)}
+                                    style={{
+                                        flex: 1, background: 'var(--bg3)', border: 'none', padding: '10px 12px',
+                                        fontSize: 12, fontFamily: "'DM Mono',monospace", color: 'var(--text)',
+                                        resize: 'none', outline: 'none', lineHeight: 1.8, overflowY: 'auto'
+                                    }}
+                                    placeholder={`^XA\n^FO50,50^ADN,36,20^FDText^FS\n^XZ`}
+                                    spellCheck={false}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Tab') {
+                                            e.preventDefault();
+                                            const s = e.target.selectionStart;
+                                            const nv = src.slice(0, s) + '  ' + src.slice(e.target.selectionEnd);
+                                            setSrc(nv);
+                                            setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0);
+                                        }
+                                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); render(); }
+                                    }} />
 
-          {/* Snippets bar */}
-          <div style={{padding:'5px 8px',background:'var(--bg4)',
-            borderTop:'1px solid var(--border)',flexShrink:0}}>
-            <div style={{fontSize:9,color:'var(--text3)',marginBottom:4,
-              textTransform:'uppercase',letterSpacing:.4}}>
-              Insert snippet:
-            </div>
-            <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
-              {SNIPPETS.map(({label,zpl})=>(
-                <button key={label} onClick={()=>{
-                  setSrc(s=>{
-                    const lines=s.split('\n');
-                    const xzIdx=lines.findLastIndex(l=>l.trim().includes('^XZ'));
-                    if(xzIdx===-1)return s+'\n'+zpl;
-                    lines.splice(xzIdx,0,zpl);
-                    return lines.join('\n');
-                  });
-                }}
-                  style={{fontSize:9,padding:'2px 7px',borderRadius:4,
-                    border:'1px solid var(--border)',background:'var(--bg3)',
-                    color:'var(--text2)',cursor:'pointer',whiteSpace:'nowrap'}}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+                                {/* Snippets */}
+                                <div style={{
+                                    padding: '5px 8px', background: 'var(--bg4)',
+                                    borderTop: '1px solid var(--border)', flexShrink: 0
+                                }}>
+                                    <div style={{
+                                        fontSize: 9, color: 'var(--text3)', marginBottom: 3,
+                                        textTransform: 'uppercase', letterSpacing: .4
+                                    }}>Insert:</div>
+                                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                                        {SNIPPETS.map(({ label, zpl }) => (
+                                            <button key={label} onClick={() => {
+                                                setSrc(s => {
+                                                    const lines = s.split('\n');
+                                                    const xzIdx = lines.reduce((acc, l, i) => l.trim().includes('^XZ') ? i : acc, -1);
+                                                    if (xzIdx === -1) return s + '\n' + zpl;
+                                                    lines.splice(xzIdx, 0, zpl);
+                                                    return lines.join('\n');
+                                                });
+                                            }}
+                                                style={{
+                                                    fontSize: 9, padding: '2px 6px', borderRadius: 4,
+                                                    border: '1px solid var(--border)', background: 'var(--bg3)',
+                                                    color: 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap'
+                                                }}>
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
 
-        {/* Preview */}
-        <div style={{flex:1,display:'flex',flexDirection:'column',minHeight:0,background:'var(--bg3)'}}>
-          <div style={{padding:'4px 10px',background:'var(--bg3)',
-            borderBottom:'1px solid var(--border)',fontSize:10,color:'var(--text3)',
-            display:'flex',alignItems:'center',gap:5,flexShrink:0}}>
-            <span style={{fontWeight:600,color:'var(--text2)'}}>Preview</span>
-            {imgUrl&&<span style={{color:'var(--green)'}}>✓ OK</span>}
-            <span style={{marginLeft:'auto',fontSize:9}}>
-              via <a href="https://labelary.com" target="_blank" rel="noopener"
-                style={{color:'var(--blue)'}}>Labelary API</a> (free)
-            </span>
-          </div>
+                                {/* Encode to Base64 helper */}
+                                <div style={{
+                                    padding: '6px 8px', background: 'var(--bg4)',
+                                    borderTop: '1px solid var(--border)', flexShrink: 0
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                        <span style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: .4 }}>
+                                            Export as Base64:
+                                        </span>
+                                        <button onClick={encodeZplToB64}
+                                            style={{
+                                                fontSize: 9, padding: '2px 8px', borderRadius: 4,
+                                                border: '1px solid var(--blue)', background: 'var(--blue-dim)',
+                                                color: 'var(--blue)', cursor: 'pointer'
+                                            }}>
+                                            Encode
+                                        </button>
+                                        {b64Out && (
+                                            <button onClick={() => navigator.clipboard?.writeText(b64Out)}
+                                                style={{
+                                                    fontSize: 9, padding: '2px 8px', borderRadius: 4,
+                                                    border: '1px solid var(--border)', background: 'var(--bg3)',
+                                                    color: 'var(--text2)', cursor: 'pointer'
+                                                }}>
+                                                Copy
+                                            </button>
+                                        )}
+                                    </div>
+                                    {b64Out && (
+                                        <div style={{
+                                            marginTop: 4, fontSize: 9, fontFamily: "'DM Mono',monospace",
+                                            color: 'var(--text3)', wordBreak: 'break-all', maxHeight: 40, overflowY: 'auto',
+                                            background: 'var(--bg3)', padding: '3px 6px', borderRadius: 4, lineHeight: 1.5
+                                        }}>
+                                            {b64Out}
+                                        </div>
+                                    )}
+                                </div>
+                            </>)}
 
-          {/* Checkerboard bg = white label visible */}
-          <div style={{flex:1,overflow:'auto',display:'flex',alignItems:'center',
-            justifyContent:'center',padding:20,
-            background:'repeating-conic-gradient(#aaa 0% 25%,#ddd 0% 50%) 0 0/20px 20px'}}>
+                            {mode === 'base64' && (<>
+                                <div style={{
+                                    padding: '4px 10px', background: 'var(--bg3)',
+                                    borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)',
+                                    display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0
+                                }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Base64 Input</span>
+                                    <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--blue)' }}>
+                                        Base64 → ZPL → Image
+                                    </span>
+                                    <button onClick={() => { setB64Input(''); setImgUrl(''); setError(''); setSrc(''); }}
+                                        style={{
+                                            fontSize: 10, padding: '1px 7px', borderRadius: 4,
+                                            border: '1px solid var(--border)', background: 'var(--bg4)',
+                                            color: 'var(--text3)', cursor: 'pointer'
+                                        }}>
+                                        Clear
+                                    </button>
+                                </div>
 
-            {loading&&(
-              <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,
-                background:'rgba(255,255,255,.92)',padding:'24px 36px',borderRadius:12,
-                boxShadow:'0 2px 16px rgba(0,0,0,.15)'}}>
-                <div style={{width:32,height:32,border:'3px solid #ddd',borderTopColor:'#4f8ef7',
-                  borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-                <span style={{color:'#444',fontSize:13}}>Rendering via Labelary…</span>
-              </div>
-            )}
+                                <textarea value={b64Input} onChange={e => setB64Input(e.target.value)}
+                                    style={{
+                                        flex: '0 0 auto', height: 120, background: 'var(--bg3)', border: 'none',
+                                        borderBottom: '1px solid var(--border)', padding: '10px 12px',
+                                        fontSize: 11, fontFamily: "'DM Mono',monospace", color: 'var(--text)',
+                                        resize: 'none', outline: 'none', lineHeight: 1.6, overflowY: 'auto'
+                                    }}
+                                    placeholder="Paste Base64 encoded ZPL here…"
+                                    spellCheck={false}
+                                    onKeyDown={e => {
+                                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); render(); }
+                                    }} />
 
-            {!loading&&error&&(
-              <div style={{background:'#fffdf0',border:'1px solid #e8c84a',borderRadius:12,
-                padding:'16px 20px',maxWidth:460,boxShadow:'0 2px 12px rgba(0,0,0,.1)'}}>
-                <div style={{fontWeight:700,color:'#b8860b',marginBottom:8,fontSize:13}}>
-                  ⚠ Could not render via Labelary API
-                </div>
-                <pre style={{whiteSpace:'pre-wrap',fontFamily:"'DM Mono',monospace",
-                  fontSize:11,color:'#555',lineHeight:1.6,marginBottom:12}}>{error}</pre>
-                <div style={{display:'flex',gap:6}}>
-                  <button className="btn primary" style={{fontSize:11,padding:'5px 12px'}}
-                    onClick={()=>window.open('https://labelary.com/viewer.html','_blank')}>
-                    Open Labelary Viewer ↗
-                  </button>
-                  <button className="btn" style={{fontSize:11,padding:'5px 12px'}}
-                    onClick={()=>{
-                      navigator.clipboard?.writeText(src);
-                    }}>
-                    Copy ZPL
-                  </button>
-                </div>
-              </div>
-            )}
+                                {/* Decoded ZPL preview */}
+                                <div style={{
+                                    padding: '4px 10px', background: 'var(--bg4)',
+                                    borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)',
+                                    display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0
+                                }}>
+                                    <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Decoded ZPL</span>
+                                    {decodedPreview && decodedPreview !== '[Invalid Base64]' && (
+                                        <span style={{ color: 'var(--green)', fontSize: 9 }}>✓ valid</span>
+                                    )}
+                                    {decodedPreview === '[Invalid Base64]' && (
+                                        <span style={{ color: 'var(--red)', fontSize: 9 }}>✗ invalid</span>
+                                    )}
+                                </div>
+                                <div style={{
+                                    flex: 1, background: 'var(--bg3)', padding: '8px 12px',
+                                    fontSize: 11, fontFamily: "'DM Mono',monospace", color: 'var(--text2)',
+                                    overflowY: 'auto', lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-all'
+                                }}>
+                                    {decodedPreview || <span style={{ color: 'var(--text3)', fontStyle: 'italic' }}>
+                                        Decoded ZPL will appear here…
+                                    </span>}
+                                </div>
 
-            {!loading&&!error&&imgUrl&&(
-              <div style={{
-                transform:`scale(${scale})`,transformOrigin:'center center',
-                transition:'transform .15s',
-                boxShadow:'0 6px 32px rgba(0,0,0,.35)',
-                display:'inline-block',
-              }}>
-                {outputFmt==='pdf'
-                  ?<iframe src={imgUrl} style={{width:400,height:550,border:'none',display:'block'}}
-                      title="PDF Label"/>
-                  :<img src={imgUrl} alt="ZPL Label"
-                      style={{display:'block',maxWidth:'100%'}}/>}
-              </div>
-            )}
+                                {/* Quick paste from clipboard */}
+                                <div style={{
+                                    padding: '6px 8px', background: 'var(--bg4)',
+                                    borderTop: '1px solid var(--border)', flexShrink: 0,
+                                    display: 'flex', gap: 5, alignItems: 'center'
+                                }}>
+                                    <span style={{ fontSize: 9, color: 'var(--text3)' }}>Quick:</span>
+                                    <button onClick={async () => {
+                                        try { const t = await navigator.clipboard.readText(); setB64Input(t); }
+                                        catch { alert('Clipboard access denied'); }
+                                    }}
+                                        style={{
+                                            fontSize: 9, padding: '2px 8px', borderRadius: 4,
+                                            border: '1px solid var(--border)', background: 'var(--bg3)',
+                                            color: 'var(--text2)', cursor: 'pointer'
+                                        }}>
+                                        📋 Paste from clipboard
+                                    </button>
+                                    <button onClick={() => {
+                                        // example base64 of simple ZPL
+                                        const ex = btoa('^XA\n^FO50,50^ADN,36,20^FDBase64 Label^FS\n^FO50,120^BY2^BCN,80,Y,N,N^FD98765^FS\n^XZ');
+                                        setB64Input(ex);
+                                    }}
+                                        style={{
+                                            fontSize: 9, padding: '2px 8px', borderRadius: 4,
+                                            border: '1px solid var(--border)', background: 'var(--bg3)',
+                                            color: 'var(--text2)', cursor: 'pointer'
+                                        }}>
+                                        Load example
+                                    </button>
+                                </div>
+                            </>)}
+                        </div>
 
-            {!loading&&!error&&!imgUrl&&(
-              <div style={{color:'#777',fontSize:13,textAlign:'center',
-                background:'rgba(255,255,255,.88)',padding:'28px 36px',
-                borderRadius:12,boxShadow:'0 2px 12px rgba(0,0,0,.1)'}}>
-                <div style={{fontSize:44,marginBottom:10}}>🏷️</div>
-                <div style={{color:'#333',fontWeight:600,marginBottom:4}}>
-                  Write ZPL and hit Render
-                </div>
-                <div style={{fontSize:11,color:'#888',marginBottom:12}}>
-                  Ctrl+Enter for instant render
-                </div>
-                <div style={{fontSize:10,color:'#aaa',lineHeight:1.6,maxWidth:260,margin:'0 auto'}}>
-                  Renders via <strong style={{color:'#888'}}>Labelary API</strong><br/>
-                  Free · No account · No limits
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+                        {/* Right: Preview */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                            <div style={{
+                                padding: '4px 10px', background: 'var(--bg3)',
+                                borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)',
+                                display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0
+                            }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Preview</span>
+                                {imgUrl && <span style={{ color: 'var(--green)' }}>✓ Rendered</span>}
+                                {loading && <span style={{ color: 'var(--blue)' }}>Rendering…</span>}
+                            </div>
 
-      {/* Footer */}
-      <div style={{padding:'4px 14px',borderTop:'1px solid var(--border)',
-        background:'var(--bg4)',fontSize:10,color:'var(--text3)',
-        display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
-        <span>Powered by <a href="https://labelary.com/service.html" target="_blank"
-          rel="noopener" style={{color:'var(--blue)'}}>Labelary Open API</a></span>
-        <span>·</span>
-        <span>POST raw ZPL → PNG/PDF · Free · No key required</span>
-        {imgUrl&&<>
-          <span>·</span>
-          <span style={{color:'var(--green)'}}>✓ Rendered successfully</span>
-        </>}
-      </div>
-    </FloatingPanel>
-  );
-}
+                            <div style={{
+                                flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center',
+                                justifyContent: 'center', padding: 20,
+                                background: 'repeating-conic-gradient(#aaa 0% 25%,#ddd 0% 50%) 0 0/20px 20px'
+                            }}>
+
+                                {loading && (
+                                    <div style={{
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+                                        background: 'rgba(255,255,255,.92)', padding: '24px 36px',
+                                        borderRadius: 12, boxShadow: '0 2px 16px rgba(0,0,0,.15)'
+                                    }}>
+                                        <div style={{
+                                            width: 30, height: 30, border: '3px solid #ddd',
+                                            borderTopColor: '#4f8ef7', borderRadius: '50%',
+                                            animation: 'spin .7s linear infinite'
+                                        }} />
+                                        <span style={{ color: '#444', fontSize: 12 }}>Rendering…</span>
+                                    </div>
+                                )}
+
+                                {!loading && error && (
+                                    <div style={{
+                                        background: '#fffdf0', border: '1px solid #e8c84a',
+                                        borderRadius: 12, padding: '16px 20px', maxWidth: 420,
+                                        boxShadow: '0 2px 12px rgba(0,0,0,.1)', width: '100%'
+                                    }}>
+                                        <div style={{ fontWeight: 700, color: '#b8860b', marginBottom: 8, fontSize: 13 }}>
+                                            ⚠ Could not render
+                                        </div>
+                                        <pre style={{
+                                            whiteSpace: 'pre-wrap', fontFamily: "'DM Mono',monospace",
+                                            fontSize: 11, color: '#555', lineHeight: 1.6, marginBottom: 10
+                                        }}>{error}</pre>
+                                        <div style={{ display: 'flex', gap: 6 }}>
+                                            <button className="btn" style={{ fontSize: 11, padding: '5px 12px' }}
+                                                onClick={() => { navigator.clipboard?.writeText(getZpl().catch?.(() => '') || src); }}>
+                                                Copy ZPL
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!loading && !error && imgUrl && (
+                                    <div style={{
+                                        transform: `scale(${scale})`, transformOrigin: 'center center',
+                                        transition: 'transform .15s', boxShadow: '0 6px 32px rgba(0,0,0,.35)',
+                                        display: 'inline-block'
+                                    }}>
+                                        {outputFmt === 'pdf'
+                                            ? <iframe src={imgUrl} style={{ width: 400, height: 550, border: 'none', display: 'block' }}
+                                                title="Label PDF" />
+                                            : <img src={imgUrl} alt="Label" style={{ display: 'block', maxWidth: '100%' }} />}
+                                    </div>
+                                )}
+
+                                {!loading && !error && !imgUrl && (
+                                    <div style={{
+                                        color: '#777', fontSize: 13, textAlign: 'center',
+                                        background: 'rgba(255,255,255,.88)', padding: '28px 36px',
+                                        borderRadius: 12, boxShadow: '0 2px 12px rgba(0,0,0,.1)'
+                                    }}>
+                                        <div style={{ fontSize: 44, marginBottom: 10 }}>🏷️</div>
+                                        {mode === 'zpl' && <>
+                                            <div style={{ color: '#333', fontWeight: 600, marginBottom: 4 }}>Write ZPL and hit Render</div>
+                                            <div style={{ fontSize: 11, color: '#888' }}>Ctrl+Enter for instant render</div>
+                                        </>}
+                                        {mode === 'base64' && <>
+                                            <div style={{ color: '#333', fontWeight: 600, marginBottom: 4 }}>Paste Base64 and hit Render</div>
+                                            <div style={{ fontSize: 11, color: '#888', marginTop: 4, lineHeight: 1.5 }}>
+                                                Base64 will be decoded to ZPL<br />then rendered as a label image
+                                            </div>
+                                        </>}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </FloatingPanel>
+            );
+        }
+
         /* ── APP ── */
         function App() {
             const WS_SERVER_URL = 'https://daily-2.onrender.com';
@@ -6060,7 +6195,7 @@
                         false)} />}
                     {showAi && <AiPanel onClose={() => setShowAi(false)} />}
                     {showKroki && <KrokiPanel onClose={() => setShowKroki(false)} />}
-                        {showZpl&&<ZplPanel onClose={()=>setShowZpl(false)}/>}
+                    {showZpl && <ZplPanel onClose={() => setShowZpl(false)} />}
                     {showBase64 && <Base64Converter onClose={() => setShowBase64(false)} />}
                     {showSyncModal && <SyncModal
                         onClose={() => setShowSyncModal(false)} peerStatus={peerStatus} peerCount={peerCount}
