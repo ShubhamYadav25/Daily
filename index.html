@@ -4471,7 +4471,7 @@
             const curType = KROKI_TYPES.find(t => t.id === type);
 
             return (
-                <FloatingPanel title="Diagrams" icon="📊" onClose={onClose} initW={900} initH={580} storageKey="kroki">
+                <FloatingPanel title="Diagrams" onClose={onClose} initW={900} initH={580} storageKey="kroki">
                     {/* Toolbar */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--bg4)', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', flexShrink: 0 }}>
                         <select value={type} onChange={e => { setType(e.target.value); }} className="fselect" style={{ width: 'auto', padding: '3px 8px', fontSize: 12 }}>
@@ -4554,13 +4554,7 @@
                             </div>
                         </div>
                     </div>
-                    {/* Footer info */}
-                    <div style={{ padding: '5px 12px', borderTop: '1px solid var(--border)', background: 'var(--bg4)', fontSize: 10, color: 'var(--text3)', display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                        <span>Powered by <a href="https://kroki.io" target="_blank" rel="noopener" style={{ color: 'var(--blue)' }}>kroki.io</a></span>
-                        <span>·</span>
-                        <span>Diagrams are rendered externally</span>
-                        {imgUrl && <><span>·</span><span style={{ color: 'var(--text2)', fontFamily: "'DM Mono',monospace", fontSize: 9, wordBreak: 'break-all', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{imgUrl}</span></>}
-                    </div>
+                   
                 </FloatingPanel>
             );
         }
@@ -4770,7 +4764,7 @@
             }, [b64Input, mode]);
 
             return (
-                <FloatingPanel title="Label Preview" icon="🏷️" onClose={onClose}
+                <FloatingPanel title="Label Preview" onClose={onClose}
                     initW={960} initH={640} storageKey="zpl">
 
                     {/* ── Toolbar ── */}
@@ -5115,8 +5109,8 @@
                             <div style={{
                                 flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center',
                                 justifyContent: 'center', padding: 20,
-                                background: 'repeating-conic-gradient(#aaa 0% 25%,#ddd 0% 50%) 0 0/20px 20px'
-                            }}>
+                                background:'#f0f0f0'
+                             }}>
 
                                 {loading && (
                                     <div style={{
