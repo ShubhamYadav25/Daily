@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Daily — Kanban</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--bg:#0e0f11;--bg2:#141518;--bg3:#1c1e22;--bg4:#242629;
+--border:#2a2c31;--border2:#363940;
+--text:#e8e9eb;--text2:#9a9da6;--text3:#5a5d66;
+--blue:#4f8ef7;--blue-dim:#1a2d52;
+--green:#3ecf8e;--green-dim:#0d3326;
+--amber:#f7c35a;--amber-dim:#3d2e0a;
+--red:#f76f6f;--red-dim:#3d1010;
+--purple:#a78bfa;--purple-dim:#251d45;
+--col-todo:#4f8ef7;--col-prog:#f7c35a;--col-disc:#a78bfa;--col-done:#3ecf8e;
+--radius:10px;--radius-lg:14px;
+--shadow:0 2px 12px rgba(0,0,0,.4);
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,textarea{font-family:inherit;color:inherit}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+.app{display:flex;flex-direction:column;height:100vh}
+/* HEADER */
+.header{display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0}
+.logo{font-size:20px;font-weight:600;letter-spacing:-.5px;color:var(--text)}
+.logo span{color:var(--blue)}
+.stats-bar{display:flex;gap:8px;margin-left:auto;align-items:center}
+.stat-pill{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:500;border:1px solid var(--border)}
+.stat-pill.red{color:var(--red);border-color:var(--red-dim);background:var(--red-dim)}
+.search-wrap{position:relative}
+.search-wrap input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px 6px 32px;font-size:13px;color:var(--text);width:200px;outline:none;transition:.2s}
+.search-wrap input:focus{border-color:var(--blue);width:260px}
+.search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px;pointer-events:none}
+.hdr-btn{padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;border:1px solid var(--border);background:var(--bg3);color:var(--text2);transition:.15s}
+.hdr-btn:hover{background:var(--bg4);color:var(--text)}
+.hdr-btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.hdr-btn.primary:hover{opacity:.9}
+/* BOARD */
+.board-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px;flex:1;overflow:hidden;min-height:0}
+/* COLUMN */
+.col{display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;min-height:0}
+.col-header{padding:12px 14px 10px;display:flex;align-items:center;gap:8px;flex-shrink:0;border-bottom:1px solid var(--border)}
+.col-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.col-title{font-size:13px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;color:var(--text2)}
+.col-count{margin-left:auto;font-size:11px;font-weight:600;padding:2px 7px;border-radius:10px;background:var(--bg4)}
+.blocker-badge{display:flex;align-items:center;gap:3px;font-size:11px;color:var(--red);margin-left:6px}
+.col-body{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px}
+.col-add{width:100%;padding:8px;border-radius:8px;font-size:12px;color:var(--text3);border:1px dashed var(--border);background:transparent;transition:.15s;text-align:left}
+.col-add:hover{border-color:var(--text3);color:var(--text2);background:var(--bg3)}
+.col.drag-over{outline:2px solid var(--blue);outline-offset:-2px}
+/* CARD */
+.card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;cursor:grab;transition:transform .15s,box-shadow .15s,border-color .15s;position:relative;user-select:none}
+.card:hover{border-color:var(--border2);box-shadow:var(--shadow);transform:translateY(-1px)}
+.card.dragging{opacity:.5;cursor:grabbing}
+.card.aged{border-left:2px solid var(--amber)}
+.card-top{display:flex;align-items:flex-start;gap:8px}
+.card-title{font-size:13px;font-weight:500;flex:1;line-height:1.4;word-break:break-word}
+.card-actions{display:flex;gap:4px;opacity:0;transition:.15s;flex-shrink:0}
+.card:hover .card-actions{opacity:1}
+.card-btn{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text3);transition:.15s}
+.card-btn:hover{background:var(--bg4);color:var(--text)}
+.card-btn.del:hover{color:var(--red);background:var(--red-dim)}
+.card-meta{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap}
+.priority{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.4px}
+.p0{background:var(--red-dim);color:var(--red)}
+.p1{background:var(--amber-dim);color:var(--amber)}
+.p2{background:var(--blue-dim);color:var(--blue)}
+.age-badge{font-size:10px;color:var(--amber);display:flex;align-items:center;gap:3px}
+.expiry-badge{font-size:10px;color:var(--text3);display:flex;align-items:center;gap:3px}
+.card-blocker{margin-top:8px;padding:7px 9px;background:var(--red-dim);border:1px solid rgba(247,111,111,.25);border-radius:7px;font-size:11px;color:var(--red);line-height:1.4}
+.card-blocker-label{font-weight:700;font-size:10px;letter-spacing:.5px;margin-bottom:3px;display:flex;align-items:center;gap:4px}
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;animation:fadein .15s ease}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);width:100%;max-width:660px;max-height:90vh;display:flex;flex-direction:column;animation:slidein .18s ease}
+@keyframes slidein{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.modal-title{font-size:15px;font-weight:600;flex:1}
+.modal-body{flex:1;overflow-y:auto;padding:20px}
+.modal-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
+.form-group{margin-bottom:16px}
+.form-label{font-size:12px;font-weight:600;color:var(--text2);letter-spacing:.3px;text-transform:uppercase;margin-bottom:6px;display:block}
+.form-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;color:var(--text);outline:none;transition:.15s}
+.form-input:focus{border-color:var(--blue)}
+.form-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.form-select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;color:var(--text);outline:none;cursor:pointer;appearance:none}
+.form-select:focus{border-color:var(--blue)}
+/* RENDERED MARKDOWN */
+.md-render{font-size:13px;line-height:1.7;color:var(--text)}
+.md-render h1{font-size:18px;font-weight:600;margin:4px 0 10px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:6px}
+.md-render h2{font-size:15px;font-weight:600;margin:14px 0 6px;color:var(--text)}
+.md-render h3{font-size:13px;font-weight:600;margin:12px 0 4px;color:var(--text2)}
+.md-render p{margin:4px 0 8px;color:var(--text2)}
+.md-render ul,.md-render ol{margin:4px 0 8px 18px;color:var(--text2)}
+.md-render li{margin:3px 0;line-height:1.6}
+.md-render strong{color:var(--text);font-weight:600}
+.md-render em{color:var(--text2);font-style:italic}
+.md-render del{color:var(--text3);text-decoration:line-through}
+.md-render code{background:var(--bg4);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-family:'DM Mono',monospace;font-size:12px;color:var(--blue)}
+.md-render pre{background:var(--bg4);border:1px solid var(--border);border-radius:8px;padding:12px 14px;overflow-x:auto;margin:8px 0}
+.md-render pre code{background:none;border:none;padding:0;font-size:12px;color:var(--text2);display:block;line-height:1.6}
+.md-render blockquote{border-left:3px solid var(--purple);padding:6px 6px 6px 14px;margin:8px 0;color:var(--text3);font-style:italic;background:var(--purple-dim);border-radius:0 6px 6px 0}
+.md-render hr{border:none;border-top:1px solid var(--border);margin:14px 0}
+.md-render .md-spacer{height:6px}
+.md-render .blocker-block{background:var(--red-dim);border:1px solid rgba(247,111,111,.25);border-radius:8px;padding:10px 14px;margin:10px 0}
+.md-render .blocker-label{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--red);display:block;margin-bottom:4px}
+.md-render .blocker-detail{color:var(--red);font-size:13px;line-height:1.5;opacity:.85}
+.md-render ul.task-list{list-style:none;margin-left:4px}
+.md-render .task-item{display:flex;align-items:flex-start;gap:7px;padding:2px 0}
+.md-render .task-item.done{color:var(--text3);text-decoration:line-through}
+.md-render .cb{font-size:14px;flex-shrink:0;margin-top:1px}
+.md-render a{color:var(--blue)}
+.md-render a:hover{text-decoration:underline}
+/* QUICK ADD */
+.quick-add{position:fixed;bottom:24px;right:24px;z-index:50}
+.quick-add-btn{width:48px;height:48px;border-radius:50%;background:var(--blue);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(79,142,247,.4);transition:.2s}
+.quick-add-btn:hover{transform:scale(1.08);box-shadow:0 6px 24px rgba(79,142,247,.5)}
+/* SHORTCUTS PANEL */
+.shortcuts{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:200}
+.shortcuts-box{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:28px;width:360px}
+.shortcuts-title{font-size:16px;font-weight:600;margin-bottom:16px}
+.shortcut-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text2)}
+.shortcut-row:last-child{border-bottom:none}
+.kbd{background:var(--bg4);border:1px solid var(--border2);border-radius:5px;padding:2px 8px;font-family:'DM Mono',monospace;font-size:12px;color:var(--text)}
+/* TOAST */
+.toasts{position:fixed;bottom:80px;right:24px;z-index:300;display:flex;flex-direction:column;gap:6px}
+.toast{padding:10px 16px;border-radius:8px;font-size:13px;font-weight:500;animation:toastin .2s ease;background:var(--bg3);border:1px solid var(--border2);color:var(--text)}
+.toast.success{background:var(--green-dim);border-color:rgba(62,207,142,.3);color:var(--green)}
+.toast.error{background:var(--red-dim);border-color:rgba(247,111,111,.3);color:var(--red)}
+@keyframes toastin{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+/* CONFETTI */
+.confetti-piece{position:fixed;top:-10px;pointer-events:none;z-index:400;border-radius:2px;animation:fall linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg);opacity:0}}
+/* EMPTY STATE */
+.empty{text-align:center;padding:32px 16px;color:var(--text3);font-size:13px}
+.empty svg{opacity:.3;margin-bottom:10px}
+/* DONE EXPIRY */
+.expiry-info{font-size:11px;color:var(--text3);padding:4px 0}
+.expiry-warn{color:var(--amber)}
+.theme-toggle{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);color:var(--text2);transition:.15s}
+.theme-toggle:hover{background:var(--bg3);color:var(--text)}
+/* LIGHT THEME */
+body.light{
+--bg:#f5f5f7;--bg2:#ffffff;--bg3:#f0f0f3;--bg4:#e8e8ec;
+--border:#dddde3;--border2:#c8c8d0;
+--text:#1a1a1f;--text2:#5a5a6e;--text3:#9a9aaa;
+--blue-dim:#e8f0ff;--green-dim:#e6faf3;--amber-dim:#fff8e6;
+--red-dim:#fff0f0;--purple-dim:#f3efff;
+}
+.card-note-preview{margin-top:6px;font-size:11px;color:var(--text3);line-height:1.5;border-left:2px solid var(--border2);padding-left:8px;white-space:pre-wrap;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback}=React;
+
+const COLS=['TODO','INPROGRESS','DISCUSSION','DONE'];
+const COL_LABELS={TODO:'Todo',INPROGRESS:'In Progress',DISCUSSION:'Discussion',DONE:'Done'};
+const COL_COLORS={TODO:'var(--col-todo)',INPROGRESS:'var(--col-prog)',DISCUSSION:'var(--col-disc)',DONE:'var(--col-done)'};
+const PRIORITIES=['P0','P1','P2','None'];
+const EXPIRY_OPTIONS=[{label:'3 days',days:3},{label:'7 days',days:7},{label:'14 days',days:14},{label:'Never',days:null}];
+
+function uid(){return Math.random().toString(36).slice(2,10)}
+
+function daysDiff(date){
+  if(!date)return null;
+  return Math.floor((Date.now()-new Date(date).getTime())/(1000*60*60*24));
+}
+
+function parseBlocker(content){
+  if(!content)return null;
+  const lines=content.split('\n');
+  const bi=lines.findIndex(l=>l.match(/^#+\s*BLOCKER/i)||l.match(/^\*\*BLOCKER\*\*/i)||l.toLowerCase().includes('blocker:'));
+  if(bi===-1)return null;
+  const after=lines.slice(bi+1).filter(l=>l.trim()).slice(0,3).join(' ');
+  return after||lines[bi].replace(/#+/,'').replace(/\*\*/g,'').replace(/blocker:?/i,'').trim()||null;
+}
+
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function inlineRender(s){
+  return escHtml(s)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/__(.+?)__/g,'<strong>$1</strong>')
+    .replace(/_(.+?)_/g,'<em>$1</em>')
+    .replace(/~~(.+?)~~/g,'<del>$1</del>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener" style="color:var(--blue)">$1</a>');
+}
+function renderMd(text){
+  if(!text)return'';
+  const lines=text.split('\n');
+  const out=[];
+  let i=0;
+  while(i<lines.length){
+    const line=lines[i];
+    // fenced code block
+    if(line.startsWith('```')){
+      const lang=line.slice(3).trim();
+      const codeLines=[];
+      i++;
+      while(i<lines.length&&!lines[i].startsWith('```')){codeLines.push(escHtml(lines[i]));i++;}
+      out.push(`<pre><code${lang?` class="lang-${lang}"`:''}>${codeLines.join('\n')}</code></pre>`);
+      i++;continue;
+    }
+    // headings
+    const hm=line.match(/^(#{1,3})\s+(.+)$/);
+    if(hm){const t=hm[1].length;out.push(`<h${t}>${inlineRender(hm[2])}</h${t}>`);i++;continue;}
+    // hr
+    if(/^(---|\*\*\*|___)$/.test(line.trim())){out.push('<hr/>');i++;continue;}
+    // blockquote
+    if(line.startsWith('> ')){
+      const bqLines=[line.slice(2)];
+      while(i+1<lines.length&&lines[i+1].startsWith('> ')){i++;bqLines.push(lines[i].slice(2));}
+      out.push(`<blockquote>${bqLines.map(inlineRender).join('<br/>')}</blockquote>`);
+      i++;continue;
+    }
+    // BLOCKER heading (special)
+    if(/^#{1,3}\s*BLOCKER\s*$/i.test(line)){
+      out.push(`<div class="blocker-block"><span class="blocker-label">🚫 BLOCKER</span>`);
+      i++;
+      const detail=[];
+      while(i<lines.length&&lines[i].trim()&&!lines[i].startsWith('#')){detail.push(inlineRender(lines[i]));i++;}
+      if(detail.length)out.push(`<div class="blocker-detail">${detail.join('<br/>')}</div>`);
+      out.push('</div>');
+      continue;
+    }
+    // unordered list
+    if(/^[-*+]\s/.test(line)){
+      const items=[];
+      while(i<lines.length&&/^[-*+]\s/.test(lines[i])){items.push(`<li>${inlineRender(lines[i].replace(/^[-*+]\s/,''))}</li>`);i++;}
+      out.push(`<ul>${items.join('')}</ul>`);continue;
+    }
+    // ordered list
+    if(/^\d+\.\s/.test(line)){
+      const items=[];
+      while(i<lines.length&&/^\d+\.\s/.test(lines[i])){items.push(`<li>${inlineRender(lines[i].replace(/^\d+\.\s/,''))}</li>`);i++;}
+      out.push(`<ol>${items.join('')}</ol>`);continue;
+    }
+    // checkbox list
+    if(/^\[[ x]\]\s/.test(line)){
+      const items=[];
+      while(i<lines.length&&/^\[[ x]\]\s/.test(lines[i])){
+        const done=lines[i][1]==='x';
+        items.push(`<li class="task-item${done?' done':''}"><span class="cb">${done?'☑':'☐'}</span> ${inlineRender(lines[i].replace(/^\[[ x]\]\s/,''))}</li>`);
+        i++;
+      }
+      out.push(`<ul class="task-list">${items.join('')}</ul>`);continue;
+    }
+    // blank line
+    if(!line.trim()){out.push('<div class="md-spacer"></div>');i++;continue;}
+    // paragraph
+    const paraLines=[line];
+    while(i+1<lines.length&&lines[i+1].trim()&&!/^(#{1,3}\s|[-*+]\s|\d+\.\s|> |\[[ x]\]|```|---)/.test(lines[i+1])){
+      i++;paraLines.push(lines[i]);
+    }
+    out.push(`<p>${paraLines.map(inlineRender).join('<br/>')}</p>`);
+    i++;
+  }
+  return out.join('');
+}
+
+function loadData(){
+  try{const d=localStorage.getItem('daily_v2');return d?JSON.parse(d):null}catch{return null}
+}
+function saveData(data){
+  try{localStorage.setItem('daily_v2',JSON.stringify(data))}catch{}
+}
+
+const DEFAULT_BOARD={
+  TODO:[{id:uid(),task:'Set up project structure',priority:'P1',content:'',createdAt:new Date(Date.now()-4*86400000).toISOString(),expiryDays:null}],
+  INPROGRESS:[{id:uid(),task:'Design API endpoints',priority:'P0',content:'# BLOCKER\nWaiting on auth spec from backend team.',createdAt:new Date(Date.now()-2*86400000).toISOString(),expiryDays:null}],
+  DISCUSSION:[{id:uid(),task:'Tech stack decision',priority:'P2',content:'Discussing React vs Next.js for frontend.',createdAt:new Date().toISOString(),expiryDays:null}],
+  DONE:[{id:uid(),task:'Initial repo setup',priority:'P2',content:'',createdAt:new Date(Date.now()-7*86400000).toISOString(),expiryDays:7,doneAt:new Date(Date.now()-1*86400000).toISOString()}]
+};
+
+function Confetti(){
+  const pieces=useRef([]);
+  const [,setTick]=useState(0);
+  useEffect(()=>{
+    const colors=['#4f8ef7','#3ecf8e','#f7c35a','#a78bfa','#f76f6f'];
+    for(let i=0;i<40;i++){
+      pieces.current.push({
+        id:uid(),left:Math.random()*100,color:colors[Math.floor(Math.random()*colors.length)],
+        size:6+Math.random()*6,delay:Math.random()*0.8,dur:1.5+Math.random()*1
+      });
+    }
+    setTick(t=>t+1);
+    const t=setTimeout(()=>{pieces.current=[];setTick(t=>t+1)},3000);
+    return()=>clearTimeout(t);
+  },[]);
+  return pieces.current.map(p=>(
+    <div key={p.id} className="confetti-piece" style={{
+      left:p.left+'%',width:p.size,height:p.size,background:p.color,
+      animationDelay:p.delay+'s',animationDuration:p.dur+'s'
+    }}/>
+  ));
+}
+
+function Toast({toasts}){
+  return <div className="toasts">{toasts.map(t=><div key={t.id} className={`toast ${t.type||''}`}>{t.msg}</div>)}</div>;
+}
+
+function MdEditor({value,onChange}){
+  const ta=useRef();
+  const [tab,setTab]=useState('write'); // 'write' | 'preview' | 'split'
+
+  function applyFormat(type){
+    const el=ta.current;
+    if(!el)return;
+    const s=el.selectionStart,e=el.selectionEnd;
+    const sel=value.slice(s,e);
+    const before=value.slice(0,s),after=value.slice(e);
+    let newVal,newS,newE;
+    switch(type){
+      case 'bold':     newVal=before+'**'+sel+'**'+after; newS=s+2; newE=e+2; break;
+      case 'italic':   newVal=before+'*'+sel+'*'+after;   newS=s+1; newE=e+1; break;
+      case 'strike':   newVal=before+'~~'+sel+'~~'+after; newS=s+2; newE=e+2; break;
+      case 'code':     newVal=before+'`'+sel+'`'+after;   newS=s+1; newE=e+1; break;
+      case 'codeblock':{
+        const cb='```\n'+(sel||'code here')+'\n```';
+        newVal=before+cb+after; newS=s+4; newE=s+4+(sel||'code here').length; break;
+      }
+      case 'h1': newVal=before+'# '+sel+after;   newS=s+2; newE=e+2; break;
+      case 'h2': newVal=before+'## '+sel+after;  newS=s+3; newE=e+3; break;
+      case 'h3': newVal=before+'### '+sel+after; newS=s+4; newE=e+4; break;
+      case 'quote': newVal=before+'> '+sel+after; newS=s+2; newE=e+2; break;
+      case 'ul':{
+        const lineStart=value.lastIndexOf('\n',s-1)+1;
+        newVal=value.slice(0,lineStart)+'- '+value.slice(lineStart);
+        newS=s+2; newE=e+2; break;
+      }
+      case 'ol':{
+        const lineStart=value.lastIndexOf('\n',s-1)+1;
+        newVal=value.slice(0,lineStart)+'1. '+value.slice(lineStart);
+        newS=s+3; newE=e+3; break;
+      }
+      case 'check':{
+        const lineStart=value.lastIndexOf('\n',s-1)+1;
+        newVal=value.slice(0,lineStart)+'[ ] '+value.slice(lineStart);
+        newS=s+4; newE=e+4; break;
+      }
+      case 'hr':   newVal=before+'\n---\n'+after;  newS=newE=s+5; break;
+      case 'link':{
+        const placeholder=sel||'link text';
+        newVal=before+'['+placeholder+'](url)'+after;
+        newS=s+1; newE=s+1+placeholder.length; break;
+      }
+      case 'blocker':{
+        const insert='## BLOCKER\n'+(sel||'Describe the blocker here')+'\n';
+        newVal=before+insert+after;
+        newS=s+11; newE=s+11+(sel||'Describe the blocker here').length; break;
+      }
+      default: return;
+    }
+    onChange(newVal);
+    setTimeout(()=>{if(el){el.selectionStart=newS;el.selectionEnd=newE;el.focus();}},0);
+  }
+
+  function onKeyDown(e){
+    // Tab → insert 2 spaces instead of focus change
+    if(e.key==='Tab'){
+      e.preventDefault();
+      const el=e.target;
+      const s=el.selectionStart,end=el.selectionEnd;
+      const nv=value.slice(0,s)+'  '+value.slice(end);
+      onChange(nv);
+      setTimeout(()=>{el.selectionStart=el.selectionEnd=s+2;},0);
+      return;
+    }
+    // Enter in a list → continue list
+    if(e.key==='Enter'){
+      const el=e.target;
+      const s=el.selectionStart;
+      const lineStart=value.lastIndexOf('\n',s-1)+1;
+      const line=value.slice(lineStart,s);
+      const ulMatch=line.match(/^([-*+])\s(.+)/);
+      const olMatch=line.match(/^(\d+)\.\s(.+)/);
+      const chMatch=line.match(/^\[[ x]\]\s(.+)/);
+      if(ulMatch){e.preventDefault();const ins='\n'+ulMatch[1]+' ';onChange(value.slice(0,s)+ins+value.slice(s));setTimeout(()=>{el.selectionStart=el.selectionEnd=s+ins.length;},0);}
+      else if(olMatch){e.preventDefault();const n=parseInt(olMatch[1])+1;const ins='\n'+n+'. ';onChange(value.slice(0,s)+ins+value.slice(s));setTimeout(()=>{el.selectionStart=el.selectionEnd=s+ins.length;},0);}
+      else if(chMatch){e.preventDefault();const ins='\n[ ] ';onChange(value.slice(0,s)+ins+value.slice(s));setTimeout(()=>{el.selectionStart=el.selectionEnd=s+ins.length;},0);}
+    }
+  }
+
+  const TOOLS=[
+    {g:'format',items:[
+      {id:'bold',    label:'B',  title:'Bold (select text first)',    style:{fontWeight:700}},
+      {id:'italic',  label:'I',  title:'Italic',   style:{fontStyle:'italic'}},
+      {id:'strike',  label:'S̶',  title:'Strikethrough'},
+      {id:'code',    label:'`',  title:'Inline code'},
+    ]},
+    {g:'heading',items:[
+      {id:'h1',label:'H1',title:'Heading 1'},
+      {id:'h2',label:'H2',title:'Heading 2'},
+      {id:'h3',label:'H3',title:'Heading 3'},
+    ]},
+    {g:'block',items:[
+      {id:'ul',      label:'• List',    title:'Bullet list'},
+      {id:'ol',      label:'1. List',   title:'Numbered list'},
+      {id:'check',   label:'☐ Task',   title:'Task / checkbox'},
+      {id:'quote',   label:'❝ Quote',  title:'Blockquote'},
+      {id:'codeblock',label:'</> Block',title:'Code block'},
+      {id:'hr',      label:'— Rule',   title:'Horizontal rule'},
+      {id:'link',    label:'🔗 Link',  title:'Insert link'},
+    ]},
+    {g:'special',items:[
+      {id:'blocker', label:'🚫 BLOCKER', title:'Insert BLOCKER section', special:true},
+    ]},
+  ];
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+      {/* Toolbar row */}
+      <div style={{display:'flex',alignItems:'center',gap:0,background:'var(--bg4)',borderBottom:'1px solid var(--border)',flexWrap:'wrap',padding:'4px 6px',rowGap:4}}>
+        {TOOLS.map((group,gi)=>(
+          <React.Fragment key={group.g}>
+            {gi>0&&<div style={{width:1,height:18,background:'var(--border2)',margin:'0 6px',flexShrink:0}}/>}
+            {group.items.map(t=>(
+              <button key={t.id} title={t.title}
+                style={{padding:'3px 9px',borderRadius:6,fontSize:12,fontWeight:600,fontFamily:"'DM Mono',monospace",
+                  color:t.special?'var(--red)':'var(--text2)',background:t.special?'var(--red-dim)':'transparent',
+                  border:t.special?'1px solid rgba(247,111,111,.3)':'none',
+                  transition:'all .12s',lineHeight:1.5,...(t.style||{})}}
+                onMouseEnter={e=>{if(!t.special)e.currentTarget.style.background='var(--bg3)';e.currentTarget.style.color='var(--text)'}}
+                onMouseLeave={e=>{e.currentTarget.style.background=t.special?'var(--red-dim)':'transparent';e.currentTarget.style.color=t.special?'var(--red)':'var(--text2)'}}
+                onMouseDown={e=>{e.preventDefault();applyFormat(t.id);}}>
+                {t.label}
+              </button>
+            ))}
+          </React.Fragment>
+        ))}
+        <div style={{marginLeft:'auto',display:'flex',gap:2}}>
+          {[['write','✏️ Write'],['split','⬛ Split'],['preview','👁 Preview']].map(([id,lbl])=>(
+            <button key={id} onMouseDown={e=>{e.preventDefault();setTab(id);}}
+              style={{padding:'3px 10px',borderRadius:6,fontSize:11,fontWeight:600,fontFamily:"'DM Sans',sans-serif",
+                background:tab===id?'var(--blue)':'transparent',color:tab===id?'#fff':'var(--text3)',
+                border:'none',transition:'all .12s',cursor:'pointer'}}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Editor area */}
+      <div style={{display:'flex',minHeight:260,maxHeight:420}}>
+        {(tab==='write'||tab==='split')&&(
+          <textarea ref={ta}
+            style={{flex:1,background:'var(--bg3)',border:'none',
+              borderRight:tab==='split'?'1px solid var(--border)':'none',
+              padding:'14px',fontSize:13,fontFamily:"'DM Mono',monospace",
+              color:'var(--text)',resize:'none',outline:'none',lineHeight:1.7,
+              overflowY:'auto'}}
+            value={value}
+            onChange={e=>onChange(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={"Write notes, steps, blockers...\n\nTip: Select text then click toolbar buttons.\nUse ## BLOCKER to flag blockers on the card.\n[ ] checkbox  |  - bullet  |  1. numbered"}
+            spellCheck={false}/>
+        )}
+        {(tab==='preview'||tab==='split')&&(
+          <div style={{flex:1,background:'var(--bg3)',padding:'14px',overflowY:'auto',fontSize:13,lineHeight:1.7}}
+            className="md-render"
+            dangerouslySetInnerHTML={{__html:value?renderMd(value):'<p style="color:var(--text3);font-style:italic">Nothing to preview yet…</p>'}}/>
+        )}
+      </div>
+
+      {/* Footer hint */}
+      <div style={{padding:'5px 12px',background:'var(--bg4)',borderTop:'1px solid var(--border)',fontSize:11,color:'var(--text3)',display:'flex',gap:16}}>
+        <span>Tab → 2 spaces</span>
+        <span>Enter in list → continues list</span>
+        <span>Select text → click toolbar to wrap</span>
+        <span style={{marginLeft:'auto'}}>{value.length} chars · {value.split('\n').length} lines</span>
+      </div>
+    </div>
+  );
+}
+
+function CardModal({card,col,onClose,onSave,onDelete}){
+  const [editing,setEditing]=useState(!card.content);
+  const [task,setTask]=useState(card.task);
+  const [priority,setPriority]=useState(card.priority||'None');
+  const [content,setContent]=useState(card.content||'');
+  const [expiryDays,setExpiryDays]=useState(card.expiryDays??null);
+
+  function save(){
+    onSave({...card,task,priority,content,expiryDays});
+    setEditing(false);
+  }
+
+  return(
+    <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div className="modal">
+        <div className="modal-header">
+          <div style={{width:10,height:10,borderRadius:'50%',background:COL_COLORS[col],flexShrink:0}}/>
+          {editing
+            ?<input className="form-input" style={{fontSize:15,fontWeight:600,flex:1,background:'transparent',border:'none',padding:'0'}} value={task} onChange={e=>setTask(e.target.value)} placeholder="Task title..." autoFocus/>
+            :<div className="modal-title">{task}</div>}
+          <div style={{display:'flex',gap:6,marginLeft:'auto',alignItems:'center'}}>
+            {!editing&&<span style={{fontSize:12,padding:'2px 8px',borderRadius:4,fontWeight:700,background:priority==='P0'?'var(--red-dim)':priority==='P1'?'var(--amber-dim)':'var(--blue-dim)',color:priority==='P0'?'var(--red)':priority==='P1'?'var(--amber)':'var(--blue)'}}>{priority}</span>}
+            {!editing&&<button className="card-btn" title="Edit" onClick={()=>setEditing(true)}>✏️</button>}
+            <button className="card-btn del" title="Delete" onClick={()=>{if(confirm('Delete this card?'))onDelete(card.id)}}>🗑️</button>
+            <button className="card-btn" onClick={onClose} title="Close">✕</button>
+          </div>
+        </div>
+        <div className="modal-body">
+          {editing?(
+            <>
+              <div className="form-row" style={{marginBottom:16}}>
+                <div className="form-group" style={{margin:0}}>
+                  <label className="form-label">Priority</label>
+                  <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
+                    {PRIORITIES.map(p=><option key={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{margin:0}}>
+                  <label className="form-label">Column</label>
+                  <div style={{padding:'9px 12px',borderRadius:8,background:'var(--bg4)',fontSize:13,color:'var(--text2)'}}>{COL_LABELS[col]}</div>
+                </div>
+                {col==='DONE'&&(
+                  <div className="form-group" style={{margin:0}}>
+                    <label className="form-label">Auto-delete</label>
+                    <select className="form-select" value={expiryDays??''} onChange={e=>setExpiryDays(e.target.value?Number(e.target.value):null)}>
+                      <option value=''>Never</option>
+                      <option value='3'>3 days</option>
+                      <option value='7'>7 days</option>
+                      <option value='14'>14 days</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Notes & Details</label>
+                <MdEditor value={content} onChange={setContent}/>
+              </div>
+            </>
+          ):(
+            content
+              ?<div className="md-render" dangerouslySetInnerHTML={{__html:renderMd(content)}}/>
+              :<div className="empty" style={{padding:'40px 0'}}>
+                <div style={{fontSize:32,marginBottom:8}}>📝</div>
+                <div>No notes yet</div>
+                <button className="hdr-btn" style={{marginTop:12}} onClick={()=>setEditing(true)}>Add notes</button>
+              </div>
+          )}
+        </div>
+        {editing&&(
+          <div className="modal-footer">
+            <button className="hdr-btn" onClick={()=>{setEditing(false);setTask(card.task);setContent(card.content);setPriority(card.priority)}}>Cancel</button>
+            <button className="hdr-btn primary" onClick={save}>Save</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AddCardModal({col,onClose,onAdd}){
+  const [task,setTask]=useState('');
+  const [priority,setPriority]=useState('None');
+  const [content,setContent]=useState('');
+  function add(){
+    if(!task.trim())return;
+    onAdd({id:uid(),task:task.trim(),priority,content,createdAt:new Date().toISOString(),expiryDays:null,doneAt:col==='DONE'?new Date().toISOString():undefined});
+    onClose();
+  }
+  return(
+    <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div className="modal">
+        <div className="modal-header">
+          <div style={{width:10,height:10,borderRadius:'50%',background:COL_COLORS[col],flexShrink:0}}/>
+          <div className="modal-title">New card — {COL_LABELS[col]}</div>
+          <button className="card-btn" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label className="form-label">Task title</label>
+            <input className="form-input" value={task} onChange={e=>setTask(e.target.value)} placeholder="What needs to be done?" autoFocus onKeyDown={e=>e.key==='Enter'&&add()}/>
+          </div>
+          <div className="form-row">
+            <div className="form-group" style={{margin:0}}>
+              <label className="form-label">Priority</label>
+              <select className="form-select" value={priority} onChange={e=>setPriority(e.target.value)}>
+                {PRIORITIES.map(p=><option key={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group" style={{marginTop:16}}>
+            <label className="form-label">Notes (optional)</label>
+            <MdEditor value={content} onChange={setContent}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="hdr-btn" onClick={onClose}>Cancel</button>
+          <button className="hdr-btn primary" onClick={add} disabled={!task.trim()}>Add Card</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Card({card,col,onOpen,onDragStart}){
+  const blocker=parseBlocker(card.content);
+  const age=daysDiff(card.createdAt);
+  const isAged=age>3&&col!=='DONE';
+
+  return(
+    <div className={`card${isAged?' aged':''}`}
+      draggable onDragStart={()=>onDragStart(card.id,col)}
+      onClick={()=>onOpen(card,col)}>
+      <div className="card-top">
+        <div className="card-title">{card.task}</div>
+      </div>
+      <div className="card-meta">
+        {card.priority&&card.priority!=='None'&&<span className={`priority p${card.priority[1]}`}>{card.priority}</span>}
+        {isAged&&<span className="age-badge">⏳ {age}d old</span>}
+        {col==='DONE'&&card.expiryDays&&card.doneAt&&(()=>{
+          const doneAge=daysDiff(card.doneAt);
+          const remaining=card.expiryDays-doneAge;
+          return<span className={`expiry-badge${remaining<=1?' expiry-warn':''}`}>🗑️ {remaining>0?`${remaining}d left`:'Expiring'}</span>;
+        })()}
+        {card.content&&!blocker&&<span style={{fontSize:10,color:'var(--text3)'}}>📝 notes</span>}
+      </div>
+      {blocker&&(
+        <div className="card-blocker">
+          <div className="card-blocker-label">🚫 BLOCKER</div>
+          <div style={{lineHeight:1.4}}>{blocker.slice(0,120)}{blocker.length>120?'…':''}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Column({col,cards,onDrop,onOpen,onAddCard,onDragStart,isDragOver,setDragOver}){
+  const blockerCount=cards.filter(c=>parseBlocker(c.content)).length;
+  return(
+    <div className={`col${isDragOver?' drag-over':''}`}
+      onDragOver={e=>{e.preventDefault();setDragOver(col)}}
+      onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null)}}
+      onDrop={e=>{e.preventDefault();onDrop(col);setDragOver(null)}}>
+      <div className="col-header">
+        <div className="col-dot" style={{background:COL_COLORS[col]}}/>
+        <span className="col-title">{COL_LABELS[col]}</span>
+        <span className="col-count" style={{color:COL_COLORS[col]}}>{cards.length}</span>
+        {blockerCount>0&&<span className="blocker-badge">🚫 {blockerCount}</span>}
+      </div>
+      <div className="col-body">
+        {cards.length===0&&<div className="empty">
+          <div style={{fontSize:24,marginBottom:6}}>✦</div>
+          <div>Nothing here</div>
+        </div>}
+        {cards.map(c=><Card key={c.id} card={c} col={col} onOpen={onOpen} onDragStart={onDragStart}/>)}
+        <button className="col-add" onClick={()=>onAddCard(col)}>＋ Add card</button>
+      </div>
+    </div>
+  );
+}
+
+function ShortcutsPanel({onClose}){
+  const shortcuts=[
+    ['N','New card (Todo)'],['?','Show shortcuts'],['Esc','Close modal'],
+    ['Drag','Move between columns'],['Click card','Open & edit notes'],['✏️','Edit card'],
+  ];
+  return(
+    <div className="shortcuts" onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div className="shortcuts-box">
+        <div className="shortcuts-title">⌨️ Keyboard Shortcuts</div>
+        {shortcuts.map(([k,v])=>(
+          <div key={k} className="shortcut-row"><span>{v}</span><span className="kbd">{k}</span></div>
+        ))}
+        <button className="hdr-btn" style={{marginTop:16,width:'100%'}} onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const saved=loadData();
+  const [board,setBoard]=useState(saved||DEFAULT_BOARD);
+  const [dragCard,setDragCard]=useState(null);
+  const [dragFrom,setDragFrom]=useState(null);
+  const [dragOver,setDragOver]=useState(null);
+  const [openCard,setOpenCard]=useState(null);
+  const [openCol,setOpenCol]=useState(null);
+  const [addCol,setAddCol]=useState(null);
+  const [showShortcuts,setShowShortcuts]=useState(false);
+  const [search,setSearch]=useState('');
+  const [toasts,setToasts]=useState([]);
+  const [confetti,setConfetti]=useState(false);
+  const [light,setLight]=useState(false);
+  const confettiKey=useRef(0);
+
+  useEffect(()=>{
+    document.body.classList.toggle('light',light);
+  },[light]);
+
+  useEffect(()=>{saveData(board)},[board]);
+
+  // Auto-delete expired DONE cards
+  useEffect(()=>{
+    setBoard(b=>{
+      const done=b.DONE.filter(c=>{
+        if(!c.expiryDays||!c.doneAt)return true;
+        return daysDiff(c.doneAt)<c.expiryDays;
+      });
+      if(done.length!==b.DONE.length){
+        addToast(`${b.DONE.length-done.length} expired task(s) removed`,'success');
+        return{...b,DONE:done};
+      }
+      return b;
+    });
+  },[]);
+
+  function addToast(msg,type=''){
+    const id=uid();
+    setToasts(t=>[...t,{id,msg,type}]);
+    setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3000);
+  }
+
+  useEffect(()=>{
+    function onKey(e){
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+      if(e.key==='n'||e.key==='N'){setAddCol('TODO')}
+      if(e.key==='?'){setShowShortcuts(true)}
+      if(e.key==='Escape'){setOpenCard(null);setAddCol(null);setShowShortcuts(false)}
+    }
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  },[]);
+
+  function onDragStart(id,col){setDragCard(id);setDragFrom(col)}
+  function onDrop(toCol){
+    if(!dragCard||dragFrom===toCol)return;
+    setBoard(b=>{
+      const card=b[dragFrom].find(c=>c.id===dragCard);
+      if(!card)return b;
+      const updated={...card};
+      if(toCol==='DONE'){updated.doneAt=new Date().toISOString();confettiKey.current++;setConfetti(true);setTimeout(()=>setConfetti(false),3000);addToast('🎉 Moved to Done!','success')}
+      return{
+        ...b,
+        [dragFrom]:b[dragFrom].filter(c=>c.id!==dragCard),
+        [toCol]:[...b[toCol],updated]
+      };
+    });
+    setDragCard(null);setDragFrom(null);
+  }
+
+  function onSaveCard(updated){
+    setBoard(b=>{
+      const col=COLS.find(c=>b[c].some(x=>x.id===updated.id));
+      if(!col)return b;
+      return{...b,[col]:b[col].map(c=>c.id===updated.id?updated:c)};
+    });
+    addToast('Card saved','success');
+    setOpenCard(updated);
+  }
+
+  function onDeleteCard(id){
+    setBoard(b=>{
+      const col=COLS.find(c=>b[c].some(x=>x.id===id));
+      if(!col)return b;
+      return{...b,[col]:b[col].filter(c=>c.id!==id)};
+    });
+    setOpenCard(null);addToast('Card deleted');
+  }
+
+  function onAddCard(col,card){
+    const c={...card,doneAt:col==='DONE'?new Date().toISOString():undefined};
+    setBoard(b=>({...b,[col]:[...b[col],c]}));
+    addToast('Card added','success');
+  }
+
+  function exportJSON(){
+    const blob=new Blob([JSON.stringify(board,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='daily-backup.json';a.click();
+    addToast('Exported daily-backup.json','success');
+  }
+  function importJSON(){
+    const inp=document.createElement('input');inp.type='file';inp.accept='.json';
+    inp.onchange=e=>{
+      const f=e.target.files[0];if(!f)return;
+      const r=new FileReader();r.onload=ev=>{try{setBoard(JSON.parse(ev.target.result));addToast('Board imported!','success')}catch{addToast('Invalid JSON file','error')}};
+      r.readAsText(f);
+    };inp.click();
+  }
+
+  const q=search.trim().toLowerCase();
+  const filtered=q?COLS.reduce((a,c)=>({...a,[c]:board[c].filter(x=>x.task.toLowerCase().includes(q)||(x.content||'').toLowerCase().includes(q))}),{}):board;
+
+  const totalBlockers=COLS.reduce((a,c)=>a+board[c].filter(x=>parseBlocker(x.content)).length,0);
+  const totalDone=board.DONE.length;
+  const totalAll=COLS.reduce((a,c)=>a+board[c].length,0);
+
+  return(
+    <div className="app">
+      <div className="header">
+        <div className="logo">Daily<span>.</span></div>
+        <div className="stats-bar">
+          <div className="stat-pill">{totalAll} tasks</div>
+          {totalBlockers>0&&<div className="stat-pill red">🚫 {totalBlockers} blocker{totalBlockers>1?'s':''}</div>}
+          <div className="stat-pill" style={{color:'var(--green)',borderColor:'var(--green-dim)',background:'var(--green-dim)'}}>✓ {totalDone} done</div>
+        </div>
+        <div style={{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}}>
+          <div className="search-wrap">
+            <span className="search-icon">🔍</span>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search cards…"/>
+          </div>
+          <button className="hdr-btn" onClick={()=>setShowShortcuts(true)} title="Shortcuts">⌨️</button>
+          <button className="theme-toggle" onClick={()=>setLight(l=>!l)} title="Toggle theme">{light?'🌙':'☀️'}</button>
+          <button className="hdr-btn" onClick={importJSON}>📥 Import</button>
+          <button className="hdr-btn" onClick={exportJSON}>📤 Export</button>
+          <button className="hdr-btn primary" onClick={()=>setAddCol('TODO')}>＋ New</button>
+        </div>
+      </div>
+      <div className="board-wrap">
+        <div className="board">
+          {COLS.map(col=>(
+            <Column key={col} col={col} cards={filtered[col]||[]}
+              onDrop={onDrop} onOpen={(c,col)=>{setOpenCard(c);setOpenCol(col)}}
+              onAddCard={c=>setAddCol(c)}
+              onDragStart={onDragStart}
+              isDragOver={dragOver===col}
+              setDragOver={setDragOver}/>
+          ))}
+        </div>
+      </div>
+      <button className="quick-add-btn" style={{position:'fixed',bottom:24,right:24,width:48,height:48,borderRadius:'50%',background:'var(--blue)',color:'#fff',fontSize:24,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(79,142,247,.4)',border:'none',cursor:'pointer',zIndex:50}} onClick={()=>setAddCol('TODO')} title="Add card (N)">＋</button>
+      {openCard&&openCol&&<CardModal card={openCard} col={openCol} onClose={()=>setOpenCard(null)} onSave={onSaveCard} onDelete={onDeleteCard}/>}
+      {addCol&&<AddCardModal col={addCol} onClose={()=>setAddCol(null)} onAdd={(c)=>onAddCard(addCol,c)}/>}
+      {showShortcuts&&<ShortcutsPanel onClose={()=>setShowShortcuts(false)}/>}
+      {confetti&&<Confetti key={confettiKey.current}/>}
+      <Toast toasts={toasts}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
