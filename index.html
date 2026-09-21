@@ -8,8 +8,17 @@
     <meta name="description" content="Collaborate, organize, secure, and sync your work in real time." />
     <meta name="theme-color" content="#0e0f11" />
     <link rel="manifest" href="#" id="manifest-link" />
-    <link rel="icon" type="image/svg+xml"
-        href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23000000"/><path d="M22 14H34C46 14 54 22 54 32C54 42 46 50 34 50H22V14Z" fill="%23ffffff"/></svg>' />
+    <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+    <rect width="64" height="64" rx="14" fill="%23ffffff"/>
+    <path d="M17 23 C24 12 39 10 43 15 C46 19 41 25 36 31 C31 37 26 43 22 48 C27 44 31 40 34 36"
+      fill="none"
+      stroke="%2317191f"
+      stroke-width="4.2"
+      stroke-linecap="round"
+      stroke-linejoin="round"/>
+    <circle cx="46" cy="39" r="5" fill="%233478F6"/>
+  </svg>' />
     <script src="https://unpkg.com/react@18/umd/react.development.js">
     </script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js">
@@ -2011,15 +2020,19 @@
                 display: 'standalone',
                 background_color: '#0e0f11',
                 theme_color: '#0e0f11',
-                description: 'Your personal kanban board',
+                description: 'Collaborate, organize, secure, and sync your work in real time',
                 icons: [
                     {
-                        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="80" fill="%23000"/><path d="M160 96h96c96 0 160 64 160 160s-64 160-160 160h-96V96z" fill="%23fff"/></svg>',
-                        sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable'
+                        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="%23ffffff"/><path d="M136 184 C192 96 312 80 344 120 C368 150 328 198 288 246 C248 294 208 344 176 392 C216 360 248 328 272 296" fill="none" stroke="%2317191f" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/><circle cx="368" cy="312" r="40" fill="%233478F6"/></svg>',
+                        sizes: '512x512',
+                        type: 'image/svg+xml',
+                        purpose: 'any maskable'
                     },
                     {
-                        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="30" fill="%23000"/><path d="M60 36h36c36 0 60 24 60 60s-24 60-60 60H60V36z" fill="%23fff"/></svg>',
-                        sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable'
+                        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="42" fill="%23ffffff"/><path d="M51 69 C72 36 117 30 129 45 C138 56 123 74 108 92 C93 110 78 129 66 147 C81 135 93 123 102 111" fill="none" stroke="%2317191f" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/><circle cx="138" cy="117" r="15" fill="%233478F6"/></svg>',
+                        sizes: '192x192',
+                        type: 'image/svg+xml',
+                        purpose: 'any maskable'
                     }
                 ]
             };
@@ -6518,6 +6531,10 @@
                 { icon: '🤖', label: 'AI Assistants', action: () => setShowAi(o => !o) },
                 null,
                 { icon: '🔄', label: 'Base64 Converter', action: () => setShowBase64(true) },
+                { icon: '📐', label: 'Diagrams', action: () => setShowKroki(true) },
+                { icon: '✨', label: 'JSON Prettifier', action: () => setShowJson(true) },
+                { icon: '🏷️', label: 'ZPL', action: () => setShowZpl(true) },
+
                 null,
                 { icon: '🔄', label: 'Refresh Ages', action: () => refreshAge() },
                 {
