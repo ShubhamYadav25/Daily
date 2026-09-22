@@ -7,18 +7,9 @@
     <title>Daily.</title>
     <meta name="description" content="Collaborate, organize, secure, and sync your work in real time." />
     <meta name="theme-color" content="#0e0f11" />
-    <link rel="manifest" href="#" id="manifest-link" />
-    <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-    <rect width="64" height="64" rx="14" fill="%23ffffff"/>
-    <path d="M17 23 C24 12 39 10 43 15 C46 19 41 25 36 31 C31 37 26 43 22 48 C27 44 31 40 34 36"
-      fill="none"
-      stroke="%2317191f"
-      stroke-width="4.2"
-      stroke-linecap="round"
-      stroke-linejoin="round"/>
-    <circle cx="46" cy="39" r="5" fill="%233478F6"/>
-  </svg>' />
+        <link rel="manifest" href="#" id="manifest-link" />
+    <link rel="icon" type="image/png" sizes="512x512" href="./daily-icon.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="./daily-icon.png" />
     <script src="https://unpkg.com/react@18/umd/react.development.js">
     </script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js">
@@ -2021,17 +2012,11 @@
                 background_color: '#0e0f11',
                 theme_color: '#0e0f11',
                 description: 'Collaborate, organize, secure, and sync your work in real time',
-                icons: [
+                                icons: [
                     {
-                        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="%23ffffff"/><path d="M136 184 C192 96 312 80 344 120 C368 150 328 198 288 246 C248 294 208 344 176 392 C216 360 248 328 272 296" fill="none" stroke="%2317191f" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/><circle cx="368" cy="312" r="40" fill="%233478F6"/></svg>',
+                        src: new URL('./daily-icon.png', location.href).href,
                         sizes: '512x512',
-                        type: 'image/svg+xml',
-                        purpose: 'any maskable'
-                    },
-                    {
-                        src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="42" fill="%23ffffff"/><path d="M51 69 C72 36 117 30 129 45 C138 56 123 74 108 92 C93 110 78 129 66 147 C81 135 93 123 102 111" fill="none" stroke="%2317191f" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/><circle cx="138" cy="117" r="15" fill="%233478F6"/></svg>',
-                        sizes: '192x192',
-                        type: 'image/svg+xml',
+                        type: 'image/png',
                         purpose: 'any maskable'
                     }
                 ]
@@ -3866,6 +3851,7 @@
                 ['Esc', 'Close'],
                 ['Drag card', 'Move / reorder'],
                 ['Drag grip', 'Reorder column'],
+                ['C','Time Machine']
                 ['☐ checkbox', 'Click in preview to toggle'],
                 ['Swipe', 'Scroll between columns (mobile)']
             ];
@@ -5782,6 +5768,689 @@
             );
         }
 
+        /* ── SNAPSHOT STORAGE ── */
+function loadSnapshots(){
+  try{
+    const d=localStorage.getItem('daily_snapshots');
+    if(!d)return[];
+    return JSON.parse(d);
+  }catch{return[]}
+}
+function saveSnapshots(snaps){
+  try{
+    // Keep only last 30 days
+    const cutoff=Date.now()-30*864e5;
+    const filtered=snaps.filter(s=>s.ts>cutoff);
+    // Keep max 1 per hour per day (reduces size)
+    const slotMap={};
+    const deduped=[];
+    // Iterate oldest first so newest overwrites
+    filtered.sort((a,b)=>a.ts-b.ts);
+    for(const s of filtered){
+      const key=s.date+'_'+new Date(s.ts).getHours();
+      slotMap[key]=s;
+    }
+    Object.values(slotMap).forEach(s=>deduped.push(s));
+    // Also keep the very last snapshot of each day regardless of hour
+    const lastByDay={};
+    for(const s of deduped){
+      lastByDay[s.date]=s;
+    }
+    for(const s of deduped){
+      if(lastByDay[s.date]===s||slotMap[s.date+'_'+new Date(s.ts).getHours()]===s){
+        // already in
+      }
+    }
+    // Final: all deduped + last of each day
+    const final=Object.values(slotMap);
+    Object.values(lastByDay).forEach(last=>{
+      if(!final.includes(last))final.push(last);
+    });
+    final.sort((a,b)=>b.ts-a.ts);
+    localStorage.setItem('daily_snapshots',JSON.stringify(final));
+    return final;
+  }catch{
+    // Storage full — trigger save prompt
+    try{
+      localStorage.setItem('daily_snapshots',JSON.stringify(snaps.slice(0,100)));
+    }catch{}
+    return snaps;
+  }
+}
+function getSnapshotsForDate(dateStr){
+  const all=loadSnapshots();
+  return all.filter(s=>s.date===dateStr).sort((a,b)=>a.ts-b.ts);
+}
+function hasSnapshotsOn(dateStr){
+  const all=loadSnapshots();
+  return all.some(s=>s.date===dateStr);
+}
+function getAllSnapshotDates(){
+  const all=loadSnapshots();
+  return [...new Set(all.map(s=>s.date))];
+}
+function createSnapshot(cols,cards,trigger){
+  const now=Date.now();
+  const d=new Date(now);
+  const dateStr=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const snap={
+    id:'snap_'+Math.random().toString(36).slice(2,10),
+    ts:now,
+    date:dateStr,
+    hour:d.getHours(),
+    trigger:trigger||'manual',
+    cols:JSON.parse(JSON.stringify(cols)),
+    cards:JSON.parse(JSON.stringify(cards)),
+  };
+  const all=loadSnapshots();
+  // Dedup: same date+hour = replace
+  const filtered=all.filter(s=>!(s.date===snap.date&&s.hour===snap.hour));
+  filtered.push(snap);
+  saveSnapshots(filtered);
+  return snap;
+}
+function exportSnapshots(){
+  const snaps=loadSnapshots();
+  if(!snaps.length)return false;
+  const a=document.createElement('a');
+  const blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),snapshots:snaps},null,2)],{type:'application/json'});
+  a.href=URL.createObjectURL(blob);
+  a.download='daily-snapshots-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+  return true;
+}
+function importSnapshots(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=ev=>{
+      try{
+        const d=JSON.parse(ev.target.result);
+        if(!d.snapshots||!Array.isArray(d.snapshots))throw new Error('Invalid format');
+        const existing=loadSnapshots();
+        const merged=[...existing,...d.snapshots];
+        const ids=new Set();
+        const deduped=merged.filter(s=>{if(ids.has(s.id))return false;ids.add(s.id);return true;});
+        deduped.sort((a,b)=>b.ts-a.ts);
+        saveSnapshots(deduped);
+        resolve(deduped.length);
+      }catch(e){reject(e);}
+    };
+    r.onerror=reject;
+    r.readAsText(file);
+  });
+}
+function getStorageUsage(){
+  try{
+    const snaps=loadSnapshots();
+    const str=JSON.stringify(snaps);
+    return{count:snaps.length,bytes:str.length,kb:Math.round(str.length/1024),mb:Math.round(str.length/1048576*10)/10};
+  }catch{return{count:0,bytes:0,kb:0,mb:0}};
+}
+
+/* ── SNAPSHOT READ-ONLY BOARD VIEWER ── */
+function SnapshotBoard({snap,onClose}){
+  const time=new Date(snap.ts);
+  const timeStr=time.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const dateStr=time.toLocaleDateString([],{year:'numeric',month:'long',day:'numeric',weekday:'long'});
+  const triggerLabel={
+    'manual':'手动',
+    'card_added':'Card added',
+    'card_deleted':'Card deleted',
+    'card_moved':'Card moved',
+    'card_edited':'Card edited',
+    'col_added':'Column added',
+    'col_deleted':'Column deleted',
+    'col_renamed':'Column renamed',
+    'auto':'Auto',
+  };
+
+  return(
+    <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}} style={{zIndex:350}}>
+      <div className="modal" style={{maxWidth:'96vw',maxHeight:'94vh',width:'100%'}}>
+        {/* Header */}
+        <div className="modal-hdr" style={{background:'var(--bg3)',borderBottom:'1px solid var(--border)',flexWrap:'wrap',gap:8}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <span style={{fontSize:20}}>📸</span>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:'var(--text)'}}>{dateStr}</div>
+              <div style={{fontSize:11,color:'var(--text3)'}}>
+                {timeStr} · {triggerLabel[snap.trigger]||snap.trigger} · 
+                {' '}{Object.keys(snap.cards||{}).reduce((a,k)=>a+((snap.cards[k]||[]).length),0)} cards
+              </div>
+            </div>
+          </div>
+          <div style={{marginLeft:'auto',display:'flex',gap:5,alignItems:'center',flexShrink:0}}>
+            <span style={{fontSize:10,padding:'2px 8px',borderRadius:12,background:'var(--blue-dim)',color:'var(--blue)',border:'1px solid rgba(79,142,247,.3)',fontWeight:600,whiteSpace:'nowrap'}}>
+              READ-ONLY VIEW
+            </span>
+            <button className="ibtn" onClick={onClose} style={{width:30,height:30,border:'none',fontSize:14}}>✕</button>
+          </div>
+        </div>
+
+        {/* Board */}
+        <div style={{flex:1,overflow:'auto',padding:'10px',background:'var(--bg)',minHeight:0}}>
+          <div style={{display:'flex',gap:8,alignItems:'flex-start',flexWrap:'wrap'}}>
+            {(snap.cols||[]).map(col=>{
+              const cardsInCol=(snap.cards||{})[col.id]||[];
+              return(
+                <div key={col.id} style={{
+                  background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:12,
+                  minWidth:200,maxWidth:300,flex:'1 1 220px',overflow:'hidden'
+                }}>
+                  {/* Col header */}
+                  <div style={{padding:'8px 10px',display:'flex',alignItems:'center',gap:6,borderBottom:'1px solid var(--border)'}}>
+                    <div style={{width:7,height:7,borderRadius:'50%',background:col.color||'var(--blue)',flexShrink:0}}/>
+                    <span style={{fontSize:11,fontWeight:700,letterSpacing:.5,textTransform:'uppercase',color:'var(--text2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      {col.label}
+                    </span>
+                    <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:10,background:'var(--bg4)',color:'var(--text3)'}}>
+                      {cardsInCol.length}
+                    </span>
+                  </div>
+                  {/* Cards */}
+                  <div style={{padding:'6px',display:'flex',flexDirection:'column',gap:5,minHeight:40}}>
+                    {cardsInCol.length===0&&(
+                      <div style={{textAlign:'center',padding:'16px 8px',color:'var(--text3)',fontSize:11,opacity:.5}}>Empty</div>
+                    )}
+                    {cardsInCol.map(card=>(
+                      <div key={card.id} style={{
+                        background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,
+                        padding:'8px 10px',
+                        borderLeft:card.color?`3px solid ${card.color}`:undefined
+                      }}>
+                        <div style={{fontSize:13,fontWeight:500,lineHeight:1.4,wordBreak:'break-word',color:'var(--text)',marginBottom:5}}>
+                          {card.task}
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:5,flexWrap:'wrap'}}>
+                          {card.priority&&card.priority!=='None'&&(
+                            <span style={{fontSize:10,fontWeight:700,padding:'1px 5px',borderRadius:4,
+                              background:card.priority==='P0'?'var(--red-dim)':card.priority==='P1'?'var(--amber-dim)':'var(--blue-dim)',
+                              color:card.priority==='P0'?'var(--red)':card.priority==='P1'?'var(--amber)':'var(--blue)'}}>
+                              {card.priority}
+                            </span>
+                          )}
+                          {card.doneAt&&(
+                            <span style={{fontSize:10,color:'var(--green)',fontWeight:600}}>✓ Done</span>
+                          )}
+                          {card.expiryDays&&(
+                            <span style={{fontSize:10,color:'var(--text3)'}}>🗑 {card.expiryDays}d</span>
+                          )}
+                          <span style={{fontSize:10,color:'var(--text3)',marginLeft:'auto'}}>
+                            {new Date(card.createdAt).toLocaleDateString([],{month:'short',day:'numeric'})}
+                          </span>
+                        </div>
+                        {/* Content preview */}
+                        {card.content&&(
+                          <div style={{marginTop:6,padding:'5px 7px',background:'var(--bg4)',borderRadius:5,fontSize:11,color:'var(--text3)',maxHeight:80,overflow:'hidden',lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+                            {card.content.slice(0,300)}{card.content.length>300?'…':''}
+                          </div>
+                        )}
+                        {/* Blocker */}
+                        {parseBlocker(card.content)&&(
+                          <div style={{marginTop:5,padding:'4px 7px',background:'var(--red-dim)',border:'1px solid rgba(247,111,111,.2)',borderRadius:5,fontSize:10,color:'var(--red)'}}>
+                            🚫 {parseBlocker(card.content).slice(0,80)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{padding:'8px 16px',borderTop:'1px solid var(--border)',display:'flex',gap:8,justifyContent:'flex-end',flexShrink:0,background:'var(--bg2)'}}>
+          <span style={{fontSize:11,color:'var(--text3)',marginRight:'auto',alignSelf:'center'}}>
+            Snapshot ID: <code style={{fontFamily:"'DM Mono',monospace",background:'var(--bg4)',padding:'1px 5px',borderRadius:3,fontSize:10}}>{snap.id}</code>
+          </span>
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── MONTH GRID (reusable calendar) ── */
+function MonthGrid({year,month,onPrev,onNext,onDateClick,selectedDate,hasDots,getDotColor}){
+  const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const dayNames=['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+  const firstDay=new Date(year,month,1).getDay();
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const today=new Date();
+  const isCurrentMonth=today.getFullYear()===year&&today.getMonth()===month;
+  const todayStr=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+
+  const cells=[];
+  for(let i=0;i<firstDay;i++)cells.push(null);
+  for(let d=1;d<=daysInMonth;d++)cells.push(d);
+
+  return(
+    <div style={{flexShrink:0}}>
+      {/* Month header */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'8px 0 10px'}}>
+        <button onClick={onPrev} style={{width:28,height:28,borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,padding:0}}>‹</button>
+        <span style={{fontSize:14,fontWeight:700,color:'var(--text)',minWidth:150,textAlign:'center'}}>
+          {monthNames[month]} {year}
+        </span>
+        <button onClick={onNext} style={{width:28,height:28,borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text2)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,padding:0}}>›</button>
+      </div>
+      {/* Day names */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:3}}>
+        {dayNames.map(d=>(
+          <div key={d} style={{textAlign:'center',fontSize:10,fontWeight:700,color:'var(--text3)',padding:'3px 0',letterSpacing:.5}}>
+            {d}
+          </div>
+        ))}
+      </div>
+      {/* Days */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+        {cells.map((day,i)=>{
+          if(day===null)return<div key={'e'+i}/>;
+          const ds=year+'-'+String(month+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+          const isToday=ds===todayStr;
+          const isSelected=ds===selectedDate;
+          const hasDot=hasDots?hasDots(ds):false;
+          const dotColor=getDotColor?getDotColor(ds):null;
+          const isFuture=new Date(ds+'T23:59')>new Date();
+          return(
+            <button key={ds} onClick={()=>onDateClick(ds)}
+              style={{
+                width:'100%',aspectRatio:'1',borderRadius:8,display:'flex',flexDirection:'column',
+                alignItems:'center',justifyContent:'center',gap:2,position:'relative',
+                border:isSelected?'2px solid var(--blue)':'1px solid transparent',
+                background:isSelected?'var(--blue-dim)':isToday?'var(--bg4)':'transparent',
+                color:isSelected?'var(--blue)':isToday?'var(--text)':'var(--text2)',
+                fontSize:12,fontWeight:isToday||isSelected?700:500,
+                cursor:'pointer',transition:'all .1s',outline:'none',
+                opacity:isFuture?0.6:1,
+              }}
+              onMouseEnter={e=>{if(!isSelected)e.currentTarget.style.background='var(--bg4)';}}
+              onMouseLeave={e=>{if(!isSelected)e.currentTarget.style.background=isToday?'var(--bg4)':'transparent';}}>
+              {day}
+              {hasDot&&(
+                <span style={{width:6,height:6,borderRadius:'50%',background:dotColor||'var(--blue)',display:'block'}}/>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── CALENDAR PANEL (Time Machine) ── */
+function CalendarPanel({onClose}){
+  const now=new Date();
+  const [calYear,setCalYear]=useState(now.getFullYear());
+  const [calMonth,setCalMonth]=useState(now.getMonth());
+  const [selectedDate,setSelectedDate]=useState(()=>{
+    const d=new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  });
+  const [viewingSnap,setViewingSnap]=useState(null);
+  const [snapshots,setSnapshots]=useState(()=>loadSnapshots());
+  const [showStorage,setShowStorage]=useState(false);
+  const [refreshKey,setRefreshKey]=useState(0);
+
+  // Find dates that have snapshots
+  const dateSet=useMemo(()=>{
+    return new Set(snapshots.map(s=>s.date));
+  },[snapshots]);
+
+  function hasDots(ds){return dateSet.has(ds);}
+  function getDotColor(ds){
+    const count=snapshots.filter(s=>s.date===ds).length;
+    if(count>4)return'var(--green)';
+    if(count>1)return'var(--blue)';
+    return'var(--blue)';
+  }
+
+  // Get snapshots for selected date
+  const daySnaps=useMemo(()=>{
+    return snapshots.filter(s=>s.date===selectedDate).sort((a,b)=>a.ts-b.ts);
+  },[snapshots,selectedDate]);
+
+  // Navigate months
+  function prevMonth(){
+    if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}
+    else setCalMonth(m=>m-1);
+  }
+  function nextMonth(){
+    if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}
+    else setCalMonth(m=>m+1);
+  }
+
+  // Storage info
+  const usage=useMemo(()=>getStorageUsage(),[snapshots,refreshKey]);
+  const oldest=useMemo(()=>{
+    if(!snapshots.length)return null;
+    return snapshots[snapshots.length-1];
+  },[snapshots]);
+
+  // Check if storage is getting full
+  useEffect(()=>{
+    const usage=getStorageUsage();
+    if(usage.kb>4000)setShowStorage(true);
+  },[]);
+
+  function handleExport(){
+    const ok=exportSnapshots();
+    if(ok)addToast('History exported ✓','success');
+  }
+
+  async function handleImport(){
+    const inp=document.createElement('input');
+    inp.type='file';inp.accept='.json';
+    inp.onchange=async e=>{
+      const f=e.target.files[0];if(!f)return;
+      try{
+        const count=await importSnapshots(f);
+        setSnapshots(loadSnapshots());
+        setRefreshKey(k=>k+1);
+        addToast(`Imported ${count} snapshots ✓`,'success');
+      }catch(err){
+        addToast('Import failed: '+err.message,'error');
+      }
+    };
+    inp.click();
+  }
+
+  function handleClearOld(){
+    if(!confirm('Delete snapshots older than 30 days?'))return;
+    const cutoff=Date.now()-30*864e5;
+    const filtered=snapshots.filter(s=>s.ts>cutoff);
+    saveSnapshots(filtered);
+    setSnapshots(loadSnapshots());
+    setRefreshKey(k=>k+1);
+    addToast('Old snapshots cleared','success');
+  }
+
+  // Format date nicely
+  function fmtDate(ds){
+    const d=new Date(ds+'T00:00');
+    const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return days[d.getDay()]+', '+months[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
+  }
+
+  // Quick jump to today
+  function goToday(){
+    const d=new Date();
+    const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    setCalYear(d.getFullYear());setCalMonth(d.getMonth());setSelectedDate(ds);
+  }
+
+  // List of all dates with snapshots (for "jump to date" dropdown)
+  const sortedDates=useMemo(()=>{
+    return [...dateSet].sort((a,b)=>b.localeCompare(a));
+  },[dateSet]);
+
+  if(viewingSnap){
+    return<SnapshotBoard snap={viewingSnap} onClose={()=>setViewingSnap(null)}/>;
+  }
+
+  return(
+    <FloatingPanel title="Time Machine" icon="📸" onClose={onClose}
+      initW={860} initH={600} storageKey="cal">
+      <div style={{flex:1,display:'flex',minHeight:0,overflow:'hidden'}}>
+
+        {/* LEFT: Calendar */}
+        <div style={{flex:'0 0 320px',borderRight:'1px solid var(--border)',
+          display:'flex',flexDirection:'column',minHeight:0,overflowY:'auto'}}>
+          <div style={{padding:'12px 14px 8px'}}>
+            <MonthGrid
+              year={calYear} month={calMonth}
+              onPrev={prevMonth} onNext={nextMonth}
+              onDateClick={setSelectedDate}
+              selectedDate={selectedDate}
+              hasDots={hasDots}
+              getDotColor={getDotColor}
+            />
+            {/* Quick actions */}
+            <div style={{display:'flex',gap:5,marginTop:10,flexWrap:'wrap'}}>
+              <button className="btn" style={{fontSize:11,padding:'4px 10px'}} onClick={goToday}>
+                Today
+              </button>
+              <button className="btn" style={{fontSize:11,padding:'4px 10px'}} onClick={handleExport}>
+                💾 Export History
+              </button>
+              <button className="btn" style={{fontSize:11,padding:'4px 10px'}} onClick={handleImport}>
+                📂 Import
+              </button>
+            </div>
+            {/* Storage info */}
+            <div style={{marginTop:8,padding:'6px 8px',background:'var(--bg3)',borderRadius:8,border:'1px solid var(--border)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--text3)',marginBottom:3}}>
+                <span>Storage: {usage.kb} KB / ~5 MB</span>
+                <span>{usage.count} snapshots</span>
+              </div>
+              <div style={{height:4,background:'var(--bg4)',borderRadius:2,overflow:'hidden'}}>
+                <div style={{
+                  height:'100%',
+                  width:Math.min(100,(usage.kb/5120)*100)+'%',
+                  background:usage.kb>4000?'var(--red)':usage.kb>2500?'var(--amber)':'var(--green)',
+                  borderRadius:2,transition:'width .3s'
+                }}/>
+              </div>
+              {oldest&&(
+                <div style={{fontSize:9,color:'var(--text3)',marginTop:4}}>
+                  Oldest: {fmtDate(oldest.date)}
+                </div>
+              )}
+            </div>
+            {/* Prompt to save if needed */}
+            {(showStorage||usage.kb>4000)&&(
+              <div style={{marginTop:8,padding:'8px 10px',background:'var(--amber-dim)',
+                border:'1px solid rgba(247,195,90,.3)',borderRadius:8}}>
+                <div style={{fontSize:11,fontWeight:600,color:'var(--amber)',marginBottom:4}}>
+                  ⚠ History storage is getting full
+                </div>
+                <div style={{fontSize:10,color:'var(--text3)',lineHeight:1.5,marginBottom:6}}>
+                  Export your history to a file, then clear old snapshots to free space.
+                </div>
+                <div style={{display:'flex',gap:5}}>
+                  <button className="btn" style={{fontSize:10,padding:'3px 8px',background:'var(--amber)',color:'#000',border:'none',fontWeight:600}} onClick={handleExport}>
+                    Export Now
+                  </button>
+                  <button className="btn" style={{fontSize:10,padding:'3px 8px'}} onClick={()=>{setShowStorage(false);handleClearOld();}}>
+                    Clear Old
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Jump to date dropdown */}
+            {sortedDates.length>0&&(
+              <div style={{marginTop:8}}>
+                <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:.4,marginBottom:4}}>
+                  All dates with history ({sortedDates.length})
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:3,maxHeight:100,overflowY:'auto'}}>
+                  {sortedDates.slice(0,60).map(ds=>(
+                    <button key={ds} onClick={()=>{setSelectedDate(ds);
+                      const d=new Date(ds+'T00:00');
+                      setCalYear(d.getFullYear());setCalMonth(d.getMonth());
+                    }}
+                      style={{fontSize:9,padding:'2px 7px',borderRadius:10,
+                        border:selectedDate===ds?'1px solid var(--blue)':'1px solid var(--border)',
+                        background:selectedDate===ds?'var(--blue-dim)':'var(--bg3)',
+                        color:selectedDate===ds?'var(--blue)':'var(--text2)',
+                        cursor:'pointer',whiteSpace:'nowrap'}}>
+                      {ds.slice(5).replace('-','/')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT: Day detail */}
+        <div style={{flex:1,display:'flex',flexDirection:'column',minHeight:0,overflow:'hidden'}}>
+          {/* Selected date header */}
+          <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',background:'var(--bg3)',flexShrink:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <span style={{fontSize:18}}>📅</span>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:'var(--text)'}}>
+                  {fmtDate(selectedDate)}
+                </div>
+                <div style={{fontSize:11,color:'var(--text3)'}}>
+                  {daySnaps.length} snapshot{daySnaps.length!==1?'s':''} saved
+                  {daySnaps.length>0&&(
+                    <> · {new Date(daySnaps[0].ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} → {new Date(daySnaps[daySnaps.length-1].ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Snapshots list */}
+          <div style={{flex:1,overflowY:'auto',padding:'10px 14px'}}>
+            {daySnaps.length===0&&(
+              <div style={{textAlign:'center',padding:'48px 20px',color:'var(--text3)'}}>
+                <div style={{fontSize:48,marginBottom:12,opacity:.3}}>📭</div>
+                <div style={{fontSize:15,fontWeight:600,marginBottom:6,color:'var(--text2)'}}>
+                  No snapshots for this date
+                </div>
+                <div style={{fontSize:12,lineHeight:1.6,maxWidth:320,margin:'0 auto'}}>
+                  Snapshots are automatically saved when you make changes to the board.<br/><br/>
+                  Select a date with a <span style={{color:'var(--blue)',fontWeight:700}}>● dot</span> on the calendar to see history.
+                </div>
+                <button className="btn" style={{marginTop:16,fontSize:12}} onClick={goToday}>
+                  Go to Today
+                </button>
+              </div>
+            )}
+
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {daySnaps.map((snap,idx)=>{
+                const t=new Date(snap.ts);
+                const timeStr=t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+                const cardCount=Object.keys(snap.cards||{}).reduce((a,k)=>a+((snap.cards[k]||[]).length),0);
+                const colCount=(snap.cols||[]).length;
+                const isLast=idx===daySnaps.length-1;
+                const isPrev=idx===0;
+                const prevSnap=daySnaps[idx-1];
+                const diff=prevSnap?getSnapshotDiff(prevSnap,snap):null;
+                const triggerLabel={
+                  'manual':'Manual','card_added':'Card added','card_deleted':'Card deleted',
+                  'card_moved':'Card moved','card_edited':'Card edited','col_added':'Column added',
+                  'col_deleted':'Column deleted','col_renamed':'Column renamed','auto':'Auto',
+                };
+
+                return(
+                  <div key={snap.id} style={{
+                    background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,
+                    padding:'10px 12px',cursor:'pointer',transition:'all .12s',
+                    position:'relative',
+                  }}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--blue)';e.currentTarget.style.background='var(--bg4)';}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border)';e.currentTarget.style.background='var(--bg3)';}}
+                    onClick={()=>setViewingSnap(snap)}>
+
+                    {/* Timeline line */}
+                    {idx<daySnaps.length-1&&(
+                      <div style={{position:'absolute',left:20,top:'100%',width:2,height:6,background:'var(--border2)',transform:'translateX(-50%)',zIndex:1}}/>
+                    )}
+
+                    <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                      {/* Time badge */}
+                      <div style={{
+                        background:isPrev?'var(--green-dim)':isLast?'var(--blue-dim)':'var(--bg4)',
+                        color:isPrev?'var(--green)':isLast?'var(--blue)':'var(--text2)',
+                        border:`1px solid ${isPrev?'rgba(62,207,142,.3)':isLast?'rgba(79,142,247,.3)':'var(--border)'}`,
+                        borderRadius:8,padding:'3px 10px',fontSize:12,fontWeight:700,
+                        fontFamily:"'DM Mono',monospace",flexShrink:0
+                      }}>
+                        {timeStr}
+                      </div>
+
+                      {/* Info */}
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                          <span style={{fontSize:12,color:'var(--text2)',fontWeight:500}}>
+                            {colCount} columns · {cardCount} cards
+                          </span>
+                          <span style={{
+                            fontSize:9,padding:'1px 6px',borderRadius:8,fontWeight:600,
+                            background:'var(--bg4)',color:'var(--text3)',
+                            textTransform:'uppercase',letterSpacing:.3
+                          }}>
+                            {triggerLabel[snap.trigger]||snap.trigger}
+                          </span>
+                          {isPrev&&(
+                            <span style={{fontSize:9,padding:'1px 6px',borderRadius:8,fontWeight:700,background:'var(--green-dim)',color:'var(--green)'}}>
+                              Earliest
+                            </span>
+                          )}
+                          {isLast&&(
+                            <span style={{fontSize:9,padding:'1px 6px',borderRadius:8,fontWeight:700,background:'var(--blue-dim)',color:'var(--blue)'}}>
+                              Latest
+                            </span>
+                          )}
+                        </div>
+                        {/* Diff summary */}
+                        {diff&&(
+                          <div style={{display:'flex',gap:5,marginTop:4,flexWrap:'wrap'}}>
+                            {diff.added>0&&(
+                              <span style={{fontSize:10,color:'var(--green)',display:'flex',alignItems:'center',gap:2}}>
+                                +{diff.added} new
+                              </span>
+                            )}
+                            {diff.removed>0&&(
+                              <span style={{fontSize:10,color:'var(--red)',display:'flex',alignItems:'center',gap:2}}>
+                                −{diff.removed} removed
+                              </span>
+                            )}
+                            {diff.moved>0&&(
+                              <span style={{fontSize:10,color:'var(--amber)',display:'flex',alignItems:'center',gap:2}}>
+                                → {diff.moved} moved
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* View button */}
+                      <span style={{fontSize:11,color:'var(--blue)',fontWeight:600,whiteSpace:'nowrap',flexShrink:0}}>
+                        View →
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </FloatingPanel>
+  );
+}
+
+/* ── SNAPSHOT DIFF CALCULATOR ── */
+function getSnapshotDiff(prev,current){
+  const prevIds=new Set();
+  const currIds=new Set();
+  const prevMap={};
+  const currMap={};
+  Object.entries(prev.cards||{}).forEach(([col,arr])=>{
+    (arr||[]).forEach(c=>{prevIds.add(c.id);prevMap[c.id]=col;});
+  });
+  Object.entries(current.cards||{}).forEach(([col,arr])=>{
+    (arr||[]).forEach(c=>{currIds.add(c.id);currMap[c.id]=col;});
+  });
+  let added=0,removed=0,moved=0;
+  currIds.forEach(id=>{if(!prevIds.has(id))added++;});
+  prevIds.forEach(id=>{if(!currIds.has(id))removed++;});
+  currIds.forEach(id=>{
+    if(prevIds.has(id)&&prevMap[id]!==currMap[id])moved++;
+  });
+  return{added,removed,moved};
+}
+
         /* ── APP ── */
         function App() {
             const WS_SERVER_URL = 'https://daily-2.onrender.com';
@@ -5796,6 +6465,7 @@
             const [windowW, setWindowW] = useState(window.innerWidth);
             const [scratch, setScratch] = useState(() => loadLS('daily_scratch', ''));
             useEffect(() => saveLS('daily_scratch', scratch), [scratch]);
+            
 
             const SESSION_ID = useRef(Math.random().toString(36).slice(2, 10));
             const wsClient = useRef(null);
@@ -5818,6 +6488,7 @@
             const [showBase64, setShowBase64] = useState(false);
             const [showZpl, setShowZpl] = useState(false);
             const [showJson, setShowJson] = useState(false);
+const [showCalendar,setShowCalendar]=useState(false);
 
 
             useEffect(() => { colsRef.current = cols; }, [cols]);
@@ -6212,6 +6883,45 @@
                 } catch { }
             }, [light]);
 
+            // Snapshot engine — auto-save board state on changes
+const lastSnapshot=useRef({cols:null,cards:null});
+useEffect(()=>{
+  // Skip first render
+  if(!lastSnapshot.current.cols){
+    lastSnapshot.current={cols:JSON.stringify(cols),cards:JSON.stringify(cards)};
+    // Create initial snapshot for today
+    createSnapshot(cols,cards,'auto');
+    return;
+  }
+  const colsStr=JSON.stringify(cols);
+  const cardsStr=JSON.stringify(cards);
+  const colsChanged=colsStr!==lastSnapshot.current.cols;
+  const cardsChanged=cardsStr!==lastSnapshot.current.cards;
+
+  if(colsChanged||cardsChanged){
+    // Debounce: only snapshot if 5+ seconds since last one
+    const lastSnap=loadSnapshots();
+    const mostRecent=lastSnap[0];
+    const wait=5000;
+    if(!mostRecent||(Date.now()-mostRecent.ts)>wait){
+      let trigger='auto';
+      if(colsChanged&&!cardsChanged)trigger='col_added';
+      else if(cardsChanged){
+        // Detect what kind of card change
+        const prevCards=JSON.parse(lastSnapshot.current.cards);
+        const currCards=JSON.parse(cardsStr);
+        const prevCount=Object.values(prevCards).reduce((a,v)=>a+((v||[]).length),0);
+        const currCount=Object.values(currCards).reduce((a,v)=>a+((v||[]).length),0);
+        if(currCount>prevCount)trigger='card_added';
+        else if(currCount<prevCount)trigger='card_deleted';
+        else trigger='card_moved';
+      }
+      createSnapshot(cols,cards,trigger);
+    }
+    lastSnapshot.current={cols:colsStr,cards:cardsStr};
+  }
+},[cols,cards]);
+
             useEffect(() => {
                 setCards(c => {
                     const nc = { ...c };
@@ -6235,6 +6945,7 @@
                     if (e.key === 'n' || e.key === 'N') setAddCardCol(cols[0]?.id);
                     if (e.key === 'e' || e.key === 'E') setShowEditor(o => !o);
                     if (e.key === 'd' || e.key === 'D') setShowDraw(o => !o);
+                    if(e.key==='c'||e.key==='C')setShowCalendar(o=>!o);
                     if (e.key === '?') setShowShortcuts(true);
                     if (e.key === 'Escape') {
                         setOpenCard(null);
@@ -6635,6 +7346,16 @@
                             </svg>
                         </button>
 
+                        <button className={`ibtn${showCalendar?' active':''}`} data-tip="Time Machine (C)" onClick={()=>setShowCalendar(o=>!o)}>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+    <rect x="3" y="4" width="18" height="18" rx="2"/>
+    <line x1="16" y1="2" x2="16" y2="6"/>
+    <line x1="8" y1="2" x2="8" y2="6"/>
+    <line x1="3" y1="10" x2="21" y2="10"/>
+    <rect x="7" y="14" width="4" height="4" rx="1" fill="currentColor" stroke="none"/>
+  </svg>
+</button>   
+
                         {/* Tools dropdown */}
                         <button className="ibtn" data-tip="Base64 Converter" onClick={() => setShowBase64(true)} style={{ color: 'var(--text)', borderColor: 'var(--border2)' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -6796,6 +7517,7 @@
                     {showKroki && <KrokiPanel onClose={() => setShowKroki(false)} />}
                     {showZpl && <ZplPanel onClose={() => setShowZpl(false)} />}
                     {showJson && <JsonPanel onClose={() => setShowJson(false)} />}
+{showCalendar&&<CalendarPanel onClose={()=>setShowCalendar(false)}/>}
 
                     {showBase64 && <Base64Converter onClose={() => setShowBase64(false)} />}
                     {showSyncModal && <SyncModal
