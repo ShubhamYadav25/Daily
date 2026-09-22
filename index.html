@@ -1561,7 +1561,7 @@
             flex-shrink: 0
         }
 
-/* .ibtn i {
+        /* .ibtn i {
      width: 14px;
       font-size: 13px;
       line-height: 1;
@@ -1864,148 +1864,165 @@
                 flex-shrink: 0
             }
 
-            .fab {
-                bottom: calc(16px + var(--safe-bottom));
-                right: 16px;
-                width: 44px;
-                height: 44px;
-                font-size: 20px
+            .cal-layout {
+                position: relative
             }
 
-            .toasts {
-                right: 8px;
-                bottom: calc(72px + var(--safe-bottom))
+            .cal-left.m-hide,
+            .cal-right.m-hide {
+                display: none !important
             }
 
-            .fp {
-                bottom: calc(8px + var(--safe-bottom)) !important;
-                right: 8px !important;
-                left: 8px !important;
-                top: auto !important;
-                width: auto !important;
-                min-width: 0;
-                max-height: 70vh;
-                border-radius: var(--radius-lg)
+            .cal-drawer {
+                position: absolute;
+                inset: 0;
+                z-index: 20;
+                background: var(--bg2);
+                overflow-y: auto;
+                animation: slideL .18s ease reverse;
+
+                .fab {
+                    bottom: calc(16px + var(--safe-bottom));
+                    right: 16px;
+                    width: 44px;
+                    height: 44px;
+                    font-size: 20px
+                }
+
+                .toasts {
+                    right: 8px;
+                    bottom: calc(72px + var(--safe-bottom))
+                }
+
+                .fp {
+                    bottom: calc(8px + var(--safe-bottom)) !important;
+                    right: 8px !important;
+                    left: 8px !important;
+                    top: auto !important;
+                    width: auto !important;
+                    min-width: 0;
+                    max-height: 70vh;
+                    border-radius: var(--radius-lg)
+                }
+
+                .ai-panel {
+                    width: 100vw
+                }
+
+                [data-tip]:hover::after,
+                [data-tip]:hover::before {
+                    display: none
+                }
+
+                .alarm-overlay {
+                    z-index: 9999;
+                    padding: 16px
+                }
+
+                .alarm-box {
+                    padding: 24px 20px
+                }
+
+                .alarm-box h2 {
+                    font-size: 18px
+                }
+
+                .draw-panel-hdr {
+                    padding: 0 10px;
+                    gap: 7px;
+                    overflow: hidden
+                }
+
+                .draw-panel-badge {
+                    display: none
+                }
+
+                .sc-box {
+                    width: calc(100vw - 32px);
+                    max-height: 85vh
+                }
+
+                .overflow-menu {
+                    right: 0;
+                    min-width: 200px
+                }
+
+                .card {
+                    padding: 10px 11px 9px
+                }
+
+                .card-title {
+                    font-size: 13px
+                }
             }
 
-            .ai-panel {
-                width: 100vw
+            .pwa-banner {
+                position: fixed;
+                bottom: calc(18px + var(--safe-bottom));
+                left: 18px;
+                background: var(--bg2);
+                border: 1px solid var(--border2);
+                border-radius: 12px;
+                padding: 12px 16px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, .5);
+                z-index: 100;
+                animation: slidein .2s ease
             }
 
-            [data-tip]:hover::after,
-            [data-tip]:hover::before {
-                display: none
+            .pwa-banner button.pwa-install {
+                padding: 6px 14px;
+                border-radius: 8px;
+                background: var(--blue);
+                color: #fff;
+                border: none;
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer
             }
 
-            .alarm-overlay {
-                z-index: 9999;
-                padding: 16px
+            .pwa-banner button.pwa-dismiss {
+                background: none;
+                border: none;
+                color: var(--text3);
+                cursor: pointer;
+                font-size: 14px;
+                padding: 4px
             }
 
-            .alarm-box {
-                padding: 24px 20px
+            /* ── BASE64 CONVERTER ── */
+            .b64-preview {
+                max-width: 100%;
+                max-height: 400px;
+                object-fit: contain;
+                border-radius: 8px;
+                background: var(--bg3);
+                border: 1px solid var(--border);
+                padding: 4px
             }
 
-            .alarm-box h2 {
-                font-size: 18px
+            .b64-preview.pdf-preview {
+                min-height: 200px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-direction: column;
+                gap: 8px;
+                color: var(--text3)
             }
 
-            .draw-panel-hdr {
-                padding: 0 10px;
-                gap: 7px;
-                overflow: hidden
+            .b64-preview.pdf-preview svg {
+                opacity: .4
             }
 
-            .draw-panel-badge {
-                display: none
+            .b64-output-actions {
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+                margin-top: 6px
             }
-
-            .sc-box {
-                width: calc(100vw - 32px);
-                max-height: 85vh
-            }
-
-            .overflow-menu {
-                right: 0;
-                min-width: 200px
-            }
-
-            .card {
-                padding: 10px 11px 9px
-            }
-
-            .card-title {
-                font-size: 13px
-            }
-        }
-
-        .pwa-banner {
-            position: fixed;
-            bottom: calc(18px + var(--safe-bottom));
-            left: 18px;
-            background: var(--bg2);
-            border: 1px solid var(--border2);
-            border-radius: 12px;
-            padding: 12px 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, .5);
-            z-index: 100;
-            animation: slidein .2s ease
-        }
-
-        .pwa-banner button.pwa-install {
-            padding: 6px 14px;
-            border-radius: 8px;
-            background: var(--blue);
-            color: #fff;
-            border: none;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer
-        }
-
-        .pwa-banner button.pwa-dismiss {
-            background: none;
-            border: none;
-            color: var(--text3);
-            cursor: pointer;
-            font-size: 14px;
-            padding: 4px
-        }
-
-        /* ── BASE64 CONVERTER ── */
-        .b64-preview {
-            max-width: 100%;
-            max-height: 400px;
-            object-fit: contain;
-            border-radius: 8px;
-            background: var(--bg3);
-            border: 1px solid var(--border);
-            padding: 4px
-        }
-
-        .b64-preview.pdf-preview {
-            min-height: 200px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-            gap: 8px;
-            color: var(--text3)
-        }
-
-        .b64-preview.pdf-preview svg {
-            opacity: .4
-        }
-
-        .b64-output-actions {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-            margin-top: 6px
-        }
     </style>
 </head>
 
@@ -5158,7 +5175,7 @@
                         </div>
 
                         {/* Right: Preview */}
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                        <div className={`cal-right${isMobile && mobileView === 'cal' ? ' m-hide' : ''}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                             <div style={{
                                 padding: '4px 10px', background: 'var(--bg3)',
                                 borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)',
@@ -6220,7 +6237,7 @@
                             </div>
 
                             {/* Date + Time */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: window.innerWidth <= 640 ? '1fr' : '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
                                 <div>
                                     <label className="flabel">Date</label>
                                     <input type="date" className="finput" value={date}
@@ -6310,6 +6327,7 @@
                 const d = new Date();
                 return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
             });
+
             const [viewingSnap, setViewingSnap] = useState(null);
             const [snapshots, setSnapshots] = useState(() => loadSnapshots());
             const [showStorage, setShowStorage] = useState(false);
@@ -6426,7 +6444,11 @@
                                 <MonthGrid
                                     year={calYear} month={calMonth}
                                     onPrev={prevMonth} onNext={nextMonth}
-                                    onDateClick={setSelectedDate}
+                                    onDateClick={ds => {
+                                        setSelectedDate(ds);
+                                        setShowDrawer(false);
+                                        if (isMobile) setMobileView('day');
+                                    }}
                                     selectedDate={selectedDate}
                                     hasDots={hasDots}
                                     getDotColor={getDotColor}
@@ -6668,6 +6690,9 @@
                 const d = new Date();
                 return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
             });
+            const [mobileView, setMobileView] = useState('cal'); // 'cal' | 'day'
+            const [showDrawer, setShowDrawer] = useState(false);
+            const isMobile = typeof window !== 'undefined' && window.innerWidth <= 640;
             // Time machine state
             const [viewingSnap, setViewingSnap] = useState(null);
             const [snapshots, setSnapshots] = useState(() => loadSnapshots());
@@ -6823,7 +6848,7 @@
                         <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
 
                             {/* LEFT: Calendar + quick lists */}
-                            <div style={{
+                            <div className={`cal-left${isMobile && mobileView === 'day' ? ' m-hide' : ''}`} style={{
                                 flex: '0 0 300px', borderRight: '1px solid var(--border)',
                                 display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto',
                                 background: 'var(--bg2)'
@@ -6952,36 +6977,77 @@
                                 {/* Day header */}
                                 <div style={{
                                     padding: '10px 14px', borderBottom: '1px solid var(--border)',
-                                    background: 'var(--bg3)', flexShrink: 0
+                                    background: 'var(--bg3)', flexShrink: 0, position: 'relative'
                                 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-                                        <div>
-                                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
-                                                {fmtDate(selectedDate)}
-                                            </div>
-                                            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
-                                                {tab === 'events'
-                                                    ? `${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''}`
-                                                    : `${daySnaps.length} snapshot${daySnaps.length !== 1 ? 's' : ''}`}
-                                                {selectedDate === todayStr() && (
-                                                    <span style={{
-                                                        marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 8,
-                                                        background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700
-                                                    }}>
-                                                        TODAY
-                                                    </span>
-                                                )}
+
+                                    {/* Step 7 — Drawer */}
+                                    {isMobile && showDrawer && (
+                                        <div className="cal-drawer" onClick={() => setShowDrawer(false)}>
+                                            <div onClick={e => e.stopPropagation()} style={{ padding: '12px 14px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                                                    <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>Pick a date</span>
+                                                    <button className="ibtn" onClick={() => setShowDrawer(false)}
+                                                        style={{ width: 28, height: 28, border: 'none' }}>✕</button>
+                                                </div>
+                                                <MonthGrid
+                                                    year={calYear} month={calMonth}
+                                                    onPrev={prevMonth} onNext={nextMonth}
+                                                    onDateClick={ds => {
+                                                        setSelectedDate(ds);
+                                                        setShowDrawer(false);
+                                                        setMobileView('day');
+                                                    }}
+                                                    selectedDate={selectedDate}
+                                                    hasDots={hasDots}
+                                                    getDotColor={getDotColor} />
                                             </div>
                                         </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+
+                                            {/* Step 6 — Back + drawer buttons */}
+                                            {isMobile && (
+                                                <div style={{ display: 'flex', gap: 4, marginRight: 4, flexShrink: 0 }}>
+                                                    <button className="ibtn" title="Back" onClick={() => setMobileView('cal')}
+                                                        style={{ width: 32, height: 32, border: 'none', fontSize: 18 }}>‹</button>
+                                                    <button className="ibtn" title="Calendar" onClick={() => setShowDrawer(d => !d)}
+                                                        style={{ width: 32, height: 32, border: 'none', fontSize: 14 }}>📅</button>
+                                                </div>
+                                            )}
+
+                                            <div style={{ minWidth: 0, flex: 1 }}>
+                                                <div style={{
+                                                    fontSize: 14, fontWeight: 700, color: 'var(--text)',
+                                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                                }}>
+                                                    {fmtDate(selectedDate)}
+                                                </div>
+                                                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
+                                                    {tab === 'events'
+                                                        ? `${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''}`
+                                                        : `${daySnaps.length} snapshot${daySnaps.length !== 1 ? 's' : ''}`}
+                                                    {selectedDate === todayStr() && (
+                                                        <span style={{
+                                                            marginLeft: 6, fontSize: 9, padding: '1px 6px', borderRadius: 8,
+                                                            background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700
+                                                        }}>
+                                                            TODAY
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         {tab === 'events' && (
-                                            <button className="btn primary" style={{ fontSize: 11, padding: '5px 14px' }}
+                                            <button className="btn primary" style={{ fontSize: 11, padding: '5px 14px', flexShrink: 0 }}
                                                 onClick={() => { setEditingEvt({ date: selectedDate }); setShowEvtModal(true); }}>
-                                                + Add Event
+                                                + Add
                                             </button>
                                         )}
                                     </div>
                                 </div>
-
                                 {/* Content */}
                                 <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
 
@@ -8246,7 +8312,7 @@
 
                         <button
                             className={`ibtn${showCalendar ? ' active' : ''}`}
-                            data-tip="Time Machine (C)"
+                            data-tip="Calendar"
                             onClick={() => setShowCalendar(o => !o)}
                         >
                             <i className="fa-regular fa-calendar-days"></i>
@@ -8258,8 +8324,8 @@
                         </button>
                         <button className={`ibtn${(peerStatus === 'connected' || peerStatus === 'hosting') ? ' active' : ''}`}
                             data-tip="Sync" onClick={() => setShowSyncModal(true)} style={{ position: 'relative' }}><i className="fa-solid fa-network-wired"></i>{(peerStatus ===
-                                        'connected' || peerStatus === 'hosting') && <div className={`sync-dot ${peerStatus === 'connected' ? 'connected' : 'connecting'}`}
-                                            style={{ position: 'absolute', bottom: -2, right: -2, width: 8, height: 8 }} />}</button>
+                                'connected' || peerStatus === 'hosting') && <div className={`sync-dot ${peerStatus === 'connected' ? 'connected' : 'connecting'}`}
+                                    style={{ position: 'absolute', bottom: -2, right: -2, width: 8, height: 8 }} />}</button>
                         <button className="ibtn" data-tip="Refresh ages" onClick={refreshAge}><i className={`fa-solid fa-arrows-rotate ${spinning ? 'spin' : ''}`}></i></button>
                         <button className="ibtn" data-tip={light ? 'Dark mode' : 'Light mode'} onClick={() => setLight(
                             l => !l)}>{light
