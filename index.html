@@ -18,6 +18,8 @@
     <link
         href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap"
         rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <style>
         *,
         *::before,
@@ -148,6 +150,42 @@
             border: 1px solid var(--border);
             white-space: nowrap;
             flex-shrink: 0
+        }
+
+
+        /* ── MATH (KaTeX) ── */
+        .md-render .katex-display {
+            margin: 10px 0;
+            padding: 6px 4px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            border-radius: 6px;
+            background: var(--bg4);
+            border: 1px solid var(--border)
+        }
+
+        .md-render .katex-display::-webkit-scrollbar {
+            height: 4px
+        }
+
+        .md-render .katex {
+            font-size: 1.05em;
+            color: var(--text)
+        }
+
+        .md-render .katex-display>.katex {
+            color: var(--text)
+        }
+
+        .md-render .katex-error,
+        .md-render .math-error {
+            color: var(--red) !important;
+            background: var(--red-dim);
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-family: 'DM Mono', monospace;
+            font-size: 11px;
+            border: 1px solid rgba(247, 111, 111, .3)
         }
 
         .stat-pill.red {
@@ -2384,6 +2422,107 @@
 
         function escH(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
 
+        /* ── KATEX MATH RENDERER ── */
+        const KATEX_MACROS = {
+            '\\RR': '\\mathbb{R}',
+            '\\NN': '\\mathbb{N}',
+            '\\ZZ': '\\mathbb{Z}',
+            '\\QQ': '\\mathbb{Q}',
+            '\\CC': '\\mathbb{C}',
+            '\\dd': '\\mathrm{d}',
+            '\\abs': '\\left|#1\\right|',
+            '\\norm': '\\left\\|#1\\right\\|'
+        };
+
+        function renderMathHTML(expr, display) {
+            const kx = window.katex;
+            if (!kx) {
+                return display
+                    ? '<div class="math-error" title="KaTeX not loaded">' + escH(expr) + '</div>'
+                    : '<code class="math-error">' + escH(expr) + '</code>';
+            }
+            try {
+                return kx.renderToString(expr, {
+                    displayMode: !!display,
+                    throwOnError: false,
+                    output: 'html',
+                    strict: false,
+                    trust: true,
+                    macros: KATEX_MACROS
+                });
+            } catch (e) {
+                return display
+                    ? '<div class="math-error">' + escH(expr) + '</div>'
+                    : '<code class="math-error">' + escH(expr) + '</code>';
+            }
+        }
+
+        function extractMathBlocks(text) {
+            const mathBlocks = [];
+            const PH = '\uE000';
+            const PH_END = '\uE001';
+
+            const segments = [];
+            let lastIndex = 0;
+            const codeRegex = /```[\s\S]*?```|`[^`\n]+`/g;
+            let match;
+            while ((match = codeRegex.exec(text)) !== null) {
+                if (match.index > lastIndex) {
+                    segments.push({ isCode: false, content: text.slice(lastIndex, match.index) });
+                }
+                segments.push({ isCode: true, content: match[0] });
+                lastIndex = match.index + match[0].length;
+            }
+            if (lastIndex < text.length) {
+                segments.push({ isCode: false, content: text.slice(lastIndex) });
+            }
+            if (segments.length === 0) {
+                segments.push({ isCode: false, content: text });
+            }
+
+            const processedText = segments.map(seg => {
+                if (seg.isCode) return seg.content;
+                let s = seg.content;
+                // block math $$...$$
+                s = s.replace(/\$\$([\s\S]+?)\$\$/g, (m, inner) => {
+                    const i = mathBlocks.length;
+                    mathBlocks.push({ display: true, expr: inner.trim() });
+                    return PH + 'M' + i + PH_END;
+                });
+                // display \[...\]
+                s = s.replace(/\\\[([\s\S]+?)\\\]/g, (m, inner) => {
+                    const i = mathBlocks.length;
+                    mathBlocks.push({ display: true, expr: inner.trim() });
+                    return PH + 'M' + i + PH_END;
+                });
+                // inline $...$
+                s = s.replace(/(?<!\\)\$(?!\s)([^\$\n]*?)(?<!\s)(?<!\\)\$/g, (m, inner) => {
+                    const i = mathBlocks.length;
+                    mathBlocks.push({ display: false, expr: inner.trim() });
+                    return PH + 'M' + i + PH_END;
+                });
+                // inline \(...\)
+                s = s.replace(/\\\(([\s\S]+?)\\\)/g, (m, inner) => {
+                    const i = mathBlocks.length;
+                    mathBlocks.push({ display: false, expr: inner.trim() });
+                    return PH + 'M' + i + PH_END;
+                });
+                return s;
+            }).join('');
+
+            return { text: processedText, mathBlocks, PH, PH_END };
+        }
+
+        function restoreMath(html, mathBlocks, PH, PH_END) {
+            if (!mathBlocks.length) return html;
+            const phRegex = new RegExp(PH + 'M(\\d+)' + PH_END, 'g');
+            return html.replace(phRegex, (m, i) => {
+                const block = mathBlocks[+i];
+                if (!block) return '';
+                return renderMathHTML(block.expr, block.display);
+            });
+        }
+
         function inlineRender(s) {
             return escH(s)
                 .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -2423,6 +2562,10 @@
 
         function renderMd(text, onToggle, imageSizes) {
             if (!text) return '';
+
+            const { text: processedText, mathBlocks, PH, PH_END } = extractMathBlocks(text);
+            text = processedText;
+
             const lines = text.split('\n');
             const out = [];
             let i = 0;
@@ -2534,7 +2677,9 @@
                 out.push(`<p>${para.map(inlineRender).join('<br/>')}</p>`);
                 i++;
             }
-            return out.join('');
+            let result = out.join('');
+            result = restoreMath(result, mathBlocks, PH, PH_END);
+            return result;
         }
 
         function useResize(initW, initH, initX, initY) {
@@ -2714,6 +2859,21 @@
                             onChange('```json\n' + res.result + '\n```');
                         else onChange(value.slice(0, res.start) + res.result + value.slice(res.end)); return;
                     }
+                    case 'inline_math': {
+                        const m = sel || 'E = mc^2';
+                        nv = pre + '$' + m + '$' + post;
+                        ns = s + 1;
+                        ne = s + 1 + m.length;
+                        break;
+                    }
+                    case 'block_math': {
+                        const m = sel || '\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}';
+                        const wrapped = '\n$$\n' + m + '\n$$\n';
+                        nv = pre + wrapped + post;
+                        ns = s + 4;
+                        ne = s + 4 + m.length;
+                        break;
+                    }
                     case 'image': {
                         const inp = document.createElement('input');
                         inp.type = 'file';
@@ -2814,6 +2974,11 @@
                         applyFmt('link'); return;
                     }
                 }
+                if (k === 'm') {
+                    e.preventDefault();
+                    applyFmt(e.shiftKey ? 'block_math' : 'inline_math');
+                    return;
+                }
                 if (e.key === 'Tab') {
                     e.preventDefault();
                     const nv = value.slice(0, s) + '  ' + value.slice(el.selectionEnd);
@@ -2903,11 +3068,18 @@
                     }, { id: 'code', l: '`', tip: 'Code' }]
                 },
                 {
+                    g: 'math', items: [
+                        { id: 'inline_math', l: '∑', tip: 'Inline math ($...$)', math: true },
+                        { id: 'block_math', l: '∫', tip: 'Block math ($$...$$)', math: true }
+                    ]
+                },
+                {
                     g: 'hd', items: [{ id: 'h1', l: 'H1', tip: 'H1' }, { id: 'h2', l: 'H2', tip: 'H2' }, {
                         id: 'h3',
                         l: 'H3', tip: 'H3'
                     }]
                 },
+
                 {
                     g: 'blk', items: [{ id: 'ul', l: '•', tip: 'Bullet' }, { id: 'ol', l: '1.', tip: 'List' },
                     { id: 'check', l: '☐', tip: 'Task' }, { id: 'quote', l: '❝', tip: 'Quote' },
@@ -2931,6 +3103,12 @@
                         id: 'code', l: '`',
                         tip: 'Code'
                     }]
+                },
+                {
+                    g: 'math', items: [
+                        { id: 'inline_math', l: '∑', tip: 'Inline math ($...$)', math: true },
+                        { id: 'block_math', l: '∫', tip: 'Block math ($$...$$)', math: true }
+                    ]
                 },
                 {
                     g: 'blk', items: [{ id: 'ul', l: '•', tip: 'Bullet' }, { id: 'check', l: '☐', tip: 'Task' },
@@ -3110,7 +3288,7 @@
                                     historyTimer.current = setTimeout(() => pushHistory(v),
                                         400);
                                 }}
-                                placeholder={"Notes, steps, blockers...\nPaste/🖼 images · 🚫 blocker · ☐ tasks"}
+                                placeholder={"Notes, steps, blockers...\nPaste/🖼 images · 🚫 blocker · ☐ tasks · ∑ math ($...$)"}
                                 spellCheck={false} />
                         )}
                         {(mode === 'preview' || mode === 'split') && (
@@ -4013,6 +4191,10 @@
                 ['Drag card', 'Move / reorder'],
                 ['Drag grip', 'Reorder column'],
                 ['C', 'Time Machine'],
+                ['$x^2$', 'Inline math'],
+                ['$$…$$', 'Block math'],
+                ['Ctrl+M', 'Insert inline math'],
+                ['Ctrl+Shift+M', 'Insert block math'],
                 ['☐ checkbox', 'Click in preview to toggle'],
                 ['Swipe', 'Scroll between columns (mobile)']
             ];
