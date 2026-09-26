@@ -2320,6 +2320,26 @@
         /* ── UTILS ── */
         function uid() { return Math.random().toString(36).slice(2, 10) }
 
+        /* ── NOTIFICATION PERMISSION ── */
+        function ensureNotificationPermission(force) {
+            if (typeof window === 'undefined' || !window.Notification) return;
+            if (Notification.permission === 'granted' || Notification.permission === 'denied') return;
+
+            let alreadyAsked = false;
+            try { alreadyAsked = localStorage.getItem('daily_notif_asked') === '1'; } catch { }
+
+            // Auto-ask only once, unless explicitly forced by user action
+            if (!force && alreadyAsked) return;
+
+            try { localStorage.setItem('daily_notif_asked', '1'); } catch { }
+            try { Notification.requestPermission(); } catch { }
+        }
+
+        function getNotificationPermission() {
+            if (typeof window === 'undefined' || !window.Notification) return 'unsupported';
+            return Notification.permission; // 'default' | 'granted' | 'denied'
+        }
+
         function daysDiff(iso) { if (!iso) return 0; return Math.floor((Date.now() - new Date(iso).getTime()) / 864e5); }
 
         function fmtAge(iso, now) {
@@ -3527,7 +3547,7 @@
                     };
                     saveTimers(n); return n;
                 });
-                if (window.Notification && Notification.permission === 'default') Notification.requestPermission();
+                ensureNotificationPermission();
             }
 
             function onHdrMouseDown(e) {
@@ -7014,9 +7034,7 @@
                 setShowEvtModal(false);
                 setEditingEvt(null);
                 addToast(idx !== -1 ? 'Event updated ✓' : 'Event created ✓', 'success');
-                if (window.Notification && Notification.permission === 'default') {
-                    Notification.requestPermission();
-                }
+                ensureNotificationPermission();
             }
             function deleteEvent(id) {
                 const updated = loadEvents().filter(e => e.id !== id);
@@ -7929,9 +7947,7 @@
             const [snoozed, setSnoozed] = useState([]);
 
             useEffect(() => {
-                if (window.Notification && Notification.permission === 'default') {
-                    Notification.requestPermission();
-                }
+                ensureNotificationPermission();
 
                 const now = Date.now();
                 const missed = [];
@@ -8384,6 +8400,34 @@
                     icon: light ? '🌙' : '☀️', label: light ? 'Dark Mode' : 'Light Mode', action: () => setLight(l =>
                         !l)
                 },
+                {
+                    icon: getNotificationPermission() === 'granted' ? '🔔' : '🔕',
+                    label: getNotificationPermission() === 'granted'
+                        ? 'Notifications: On'
+                        : getNotificationPermission() === 'denied'
+                            ? 'Notifications: Blocked'
+                            : 'Enable Notifications',
+                    action: () => {
+                        const perm = getNotificationPermission();
+                        if (perm === 'unsupported') { addToast('Notifications not supported', 'error'); return; }
+                        if (perm === 'granted') {
+                            addToast('Notifications already enabled ✓');
+                            return;
+                        }
+                        if (perm === 'denied') {
+                            addToast('Blocked in browser settings — unblock to enable', 'error');
+                            return;
+                        }
+                        ensureNotificationPermission(true); // force = true, because user clicked
+                        addToast('Permission requested');
+                    },
+                    badge: getNotificationPermission() === 'granted'
+                        ? { text: 'ON', bg: 'var(--green-dim)', color: 'var(--green)' }
+                        : getNotificationPermission() === 'denied'
+                            ? { text: 'OFF', bg: 'var(--red-dim)', color: 'var(--red)' }
+                            : null,
+                },
+                null,
                 { icon: '⌨️', label: 'Shortcuts', action: () => setShowShortcuts(true) },
                 null,
                 { icon: '⬇️', label: 'Import JSON', action: () => importJSON() },
@@ -8482,6 +8526,7 @@
                         <button className="ibtn" data-tip="Shortcuts" onClick={() => setShowShortcuts(true)}><i className="fa-solid fa-keyboard"></i></button>
                         <button className="ibtn" data-tip="Import JSON" onClick={importJSON}><i className="fa-solid fa-file-import"></i></button>
                         <button className="ibtn" data-tip="Export JSON" onClick={exportJSON}><i className="fa-solid fa-file-export"></i></button>
+                       
                         <button className="ibtn" data-tip="Install App" onClick={installPwa} style={{
                             color: 'var(--blue)',
                             borderColor: 'var(--blue-dim)', background: 'var(--blue-dim)'
