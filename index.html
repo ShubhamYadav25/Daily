@@ -2092,6 +2092,24 @@
                 flex-shrink: 0
             }
 
+            .fp .fselect,
+            .fp .btn,
+            .fp input[type="number"] {
+                font-size: 11px;
+            }
+
+            .fp-hdr {
+                gap: 6px;
+                flex-wrap: nowrap;
+            }
+
+            .fp-hdr .fp-title {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                min-width: 0;
+            }
+
             /* Full-width bottom sheet for floating panels */
             .fp {
                 top: auto !important;
@@ -2179,6 +2197,16 @@
 
             .card-title {
                 font-size: 13px
+            }
+
+            .logo {
+                font-size: 18px;
+                font-weight: 600;
+                letter-spacing: -.5px;
+                color: var(--text);
+                flex-shrink: 0;
+                margin-right: 0;
+                cursor: default
             }
         }
     </style>
@@ -3971,22 +3999,44 @@
             const { sz, setSz, startResize } = useResize(initW, initH, defX, defY);
             const drag = useRef(null);
             const ref = useRef();
+            const [maximized, setMaximized] = useState(false);
+            const prevSzRef = useRef(null);
+
+            // Clamp loaded position to viewport on mount
+            useEffect(() => {
+                if (!storageKey) return;
+                try {
+                    const saved = JSON.parse(localStorage.getItem(storageKey + '_pos') || 'null');
+                    if (saved) {
+                        const nx = Math.max(0, Math.min(saved.x, Math.max(0, window.innerWidth - 100)));
+                        const ny = Math.max(0, Math.min(saved.y, Math.max(0, window.innerHeight - 60)));
+                        setSz({ ...saved, x: nx, y: ny });
+                    }
+                } catch { }
+                // eslint-disable-next-line
+            }, []);
+
+            // Re-clamp on window resize
+            useEffect(() => {
+                function clamp() {
+                    setSz(s => {
+                        const nx = Math.max(0, Math.min(s.x, Math.max(0, window.innerWidth - 100)));
+                        const ny = Math.max(0, Math.min(s.y, Math.max(0, window.innerHeight - 60)));
+                        if (nx !== s.x || ny !== s.y) return { ...s, x: nx, y: ny };
+                        return s;
+                    });
+                }
+                window.addEventListener('resize', clamp);
+                return () => window.removeEventListener('resize', clamp);
+            }, [setSz]);
 
             useEffect(() => {
-                if (!storageKey) return; try {
-                    const saved = JSON.parse(localStorage.getItem(
-                        storageKey + '_pos') || 'null'); if (saved) setSz(saved);
-                } catch { }
-            }, []);
-            useEffect(() => {
-                if (!storageKey) return; try {
-                    localStorage.setItem(storageKey + '_pos', JSON.stringify(
-                        sz));
-                } catch { }
-            }, [sz]);
+                if (!storageKey) return;
+                try { localStorage.setItem(storageKey + '_pos', JSON.stringify(sz)); } catch { }
+            }, [sz, storageKey]);
 
             function onHdrMouseDown(e) {
-                if (e.button !== 0) return;
+                if (e.button !== 0 || maximized) return;
                 if (e.target.closest('button') || e.target.closest('input')) return;
                 const el = ref.current;
                 if (!el) return;
@@ -3994,7 +4044,11 @@
                 drag.current = { ox: e.clientX - r.left, oy: e.clientY - r.top };
                 const onMove = ev => {
                     if (!drag.current) return;
-                    setSz(s => ({ ...s, x: ev.clientX - drag.current.ox, y: ev.clientY - drag.current.oy }));
+                    let nx = ev.clientX - drag.current.ox;
+                    let ny = ev.clientY - drag.current.oy;
+                    nx = Math.max(-100, Math.min(nx, window.innerWidth - 100));
+                    ny = Math.max(0, Math.min(ny, window.innerHeight - 40));
+                    setSz(s => ({ ...s, x: nx, y: ny }));
                 };
                 const onUp = () => {
                     drag.current = null;
@@ -4006,6 +4060,17 @@
                 e.preventDefault();
             }
 
+            function toggleMaximize() {
+                if (maximized) {
+                    if (prevSzRef.current) setSz(prevSzRef.current);
+                    setMaximized(false);
+                } else {
+                    prevSzRef.current = { ...sz };
+                    setSz({ x: 10, y: 60, w: window.innerWidth - 20, h: window.innerHeight - 80 });
+                    setMaximized(true);
+                }
+            }
+
             if (mobile) return (
                 <div ref={ref} className="fp">
                     <div className="fp-hdr">
@@ -4013,8 +4078,8 @@
                         {extraHeaderContent}
                         <button onClick={onClose} style={{
                             fontSize: 14, color: 'var(--text3)', background: 'none',
-                            border: 'none', cursor: 'pointer', padding: '2px 6px', marginLeft: extraHeaderContent ?
-                                0 : 'auto'
+                            border: 'none', cursor: 'pointer', padding: '2px 6px',
+                            marginLeft: extraHeaderContent ? 0 : 'auto'
                         }}>✕</button>
                     </div>
                     <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -4027,15 +4092,33 @@
                     left: sz.x, top: sz.y, width: sz.w, height: sz.h,
                     position: 'fixed'
                 }}>
-                    {['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se'].map(d => (<div key={d} className={`fp-resize ${d}`}
-                        onMouseDown={e => startResize(d, e)} />))}
-                    <div className="fp-hdr" onMouseDown={onHdrMouseDown}>
+                    {!maximized && ['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se'].map(d => (
+                        <div key={d} className={`fp-resize ${d}`} onMouseDown={e => startResize(d, e)} />
+                    ))}
+                    <div className="fp-hdr" onMouseDown={onHdrMouseDown}
+                        style={{ cursor: maximized ? 'default' : 'move' }}>
                         <span style={{ fontSize: 14 }}>{icon}</span><span className="fp-title">{title}</span>
                         {extraHeaderContent}
+                        <button onClick={toggleMaximize} title={maximized ? 'Restore' : 'Maximize'}
+                            style={{
+                                fontSize: 13, color: 'var(--text3)', background: 'none',
+                                border: 'none', cursor: 'pointer', padding: '2px 8px',
+                                marginLeft: extraHeaderContent ? 0 : 'auto',
+                                display: 'flex', alignItems: 'center'
+                            }}>
+                            {maximized ? (
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+                                </svg>
+                            ) : (
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                </svg>
+                            )}
+                        </button>
                         <button onClick={onClose} style={{
                             fontSize: 14, color: 'var(--text3)', background: 'none',
-                            border: 'none', cursor: 'pointer', padding: '2px 6px', marginLeft: extraHeaderContent ?
-                                0 : 'auto'
+                            border: 'none', cursor: 'pointer', padding: '2px 6px'
                         }}>✕</button>
                     </div>
                     <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -4043,22 +4126,10 @@
                 </div>
             );
         }
-
         /* ── SCRATCH PAD ── */
         function ScratchPad({ content, onChange, onClose }) {
-            const ref = useRef();
-            useEffect(() => {
-                if (isMobile()) return;
-
-                function onDown(e) { const el = ref.current; if (el && !el.contains(e.target)) onClose(); }
-                const t = setTimeout(() => window.addEventListener('mousedown', onDown), 150);
-                return () => {
-                    clearTimeout(t);
-                    window.removeEventListener('mousedown', onDown);
-                };
-            }, [onClose]);
             return (
-                <div id="scratch-fp" ref={ref}>
+                <div id="scratch-fp">
                     <FloatingPanel title="Scratch Pad" icon="📝" onClose={onClose} initW={560} initH={440}
                         storageKey="scratch"
                         extraHeaderContent={
@@ -4066,14 +4137,15 @@
                                 <span style={{
                                     fontSize: 10, color: 'var(--green)', display: 'flex',
                                     alignItems: 'center', gap: 3
-                                }}><span style={{
-                                    width: 5, height: 5,
-                                    borderRadius: '50%', background: 'var(--green)',
-                                    display: 'inline-block'
-                                }} />saved</span>
+                                }}>
+                                    <span style={{
+                                        width: 5, height: 5,
+                                        borderRadius: '50%', background: 'var(--green)',
+                                        display: 'inline-block'
+                                    }} />saved
+                                </span>
                                 <button onClick={() => {
-                                    if (content.trim() && confirm('Clear scratch pad?'))
-                                        onChange('');
+                                    if (content.trim() && confirm('Clear scratch pad?')) onChange('');
                                 }} style={{
                                     fontSize: 10, padding: '2px 8px',
                                     borderRadius: 5, border: '1px solid var(--red-dim)',
@@ -4082,8 +4154,9 @@
                                 }}>clear</button>
                             </div>
                         }>
-                        <div style={{ flex: 1, padding: 10, overflow: 'auto' }}><MdEditor value={content} onChange={
-                            onChange} /></div>
+                        <div style={{ flex: 1, padding: 10, overflow: 'auto' }}>
+                            <MdEditor value={content} onChange={onChange} />
+                        </div>
                     </FloatingPanel>
                 </div>
             );
@@ -4776,6 +4849,8 @@
         ];
 
         function KrokiPanel({ onClose }) {
+            const mobile = useIsMobile(640);
+
             const [type, setType] = useState('plantuml');
             const [src, setSrc] = useState(KROKI_TYPES[0].example);
             const [imgUrl, setImgUrl] = useState('');
@@ -4864,8 +4939,14 @@
                             </>}
                         </div>
                     </div>
-                    <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
-                        <div style={{ flex: '0 0 45%', display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)', minHeight: 0 }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: mobile ? 'column' : 'row', minHeight: 0, overflow: 'hidden' }}>
+                        <div style={{
+                            flex: mobile ? '1 1 45%' : '0 0 45%',
+                            display: 'flex', flexDirection: 'column',
+                            borderRight: mobile ? 'none' : '1px solid var(--border)',
+                            borderBottom: mobile ? '1px solid var(--border)' : 'none',
+                            minHeight: 0
+                        }}>
                             <div style={{ padding: '4px 10px', background: 'var(--bg3)', borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                                 <span style={{ color: 'var(--text2)', fontWeight: 600 }}>Source</span>
                                 <span style={{ marginLeft: 'auto' }}>{src.length}ch · {src.split('\n').length}ln</span>
@@ -4952,6 +5033,8 @@
         }
 
         function ZplPanel({ onClose }) {
+            const mobile = useIsMobile(640);
+
             const [mode, setMode] = useState('zpl');
             const [src, setSrc] = useState(() => loadLS('daily_zpl_src',
                 `^XA
@@ -5224,10 +5307,14 @@
                         </div>
                     </div>
 
-                    <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: mobile ? 'column' : 'row', minHeight: 0, overflow: 'hidden' }}>
+
                         <div style={{
-                            flex: '0 0 42%', display: 'flex', flexDirection: 'column',
-                            borderRight: '1px solid var(--border)', minHeight: 0
+                            flex: mobile ? '1 1 45%' : '0 0 42%',
+                            display: 'flex', flexDirection: 'column',
+                            borderRight: mobile ? 'none' : '1px solid var(--border)',
+                            borderBottom: mobile ? '1px solid var(--border)' : 'none',
+                            minHeight: 0
                         }}>
                             {mode === 'zpl' && (<>
                                 <div style={{
@@ -5691,6 +5778,8 @@
         }
 
         function JsonPanel({ onClose }) {
+            const mobile = useIsMobile(640);
+
             const [input, setInput] = useState(() => loadLS('daily_json_input', ''));
             const [result, setResult] = useState(null);
             const [copied, setCopied] = useState(false);
@@ -5892,11 +5981,13 @@
                         </div>
                     )}
 
-                    <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
-
+                    <div style={{ flex: 1, display: 'flex', flexDirection: mobile ? 'column' : 'row', minHeight: 0, overflow: 'hidden' }}>
                         <div style={{
-                            flex: '0 0 42%', display: 'flex', flexDirection: 'column',
-                            borderRight: '1px solid var(--border)', minHeight: 0
+                            flex: mobile ? '1 1 45%' : '0 0 42%',
+                            display: 'flex', flexDirection: 'column',
+                            borderRight: mobile ? 'none' : '1px solid var(--border)',
+                            borderBottom: mobile ? '1px solid var(--border)' : 'none',
+                            minHeight: 0
                         }}>
                             <div style={{
                                 padding: '4px 10px', background: 'var(--bg3)',
@@ -7980,12 +8071,20 @@
 
             useEffect(() => {
                 function onKey(e) {
-                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-                    if (e.key === 'n' || e.key === 'N') setAddCardCol(cols[0]?.id);
-                    if (e.key === 'e' || e.key === 'E') setShowEditor(o => !o);
-                    if (e.key === 'd' || e.key === 'D') setShowDraw(o => !o);
-                    if (e.key === 'c' || e.key === 'C') setShowCalendar(o => !o);
-                    if (e.key === '?') setShowShortcuts(true);
+                    const tag = e.target.tagName;
+                    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+
+                    const mod = e.ctrlKey || e.metaKey || e.altKey;
+
+                    // Only handle single-key shortcuts when NO modifier is held
+                    if (!mod) {
+                        if (e.key === 'n' || e.key === 'N') setAddCardCol(cols[0]?.id);
+                        else if (e.key === 'e' || e.key === 'E') setShowEditor(o => !o);
+                        else if (e.key === 'd' || e.key === 'D') setShowDraw(o => !o);
+                        else if (e.key === 'c' || e.key === 'C') setShowCalendar(o => !o);
+                        else if (e.key === '?') setShowShortcuts(true);
+                    }
+
                     if (e.key === 'Escape') {
                         setOpenCard(null);
                         setAddCardCol(null);
@@ -8455,7 +8554,15 @@
             return (
                 <div className="app">
                     <div className="header">
-                        <div className="logo">Daily<span>.</span></div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginRight: 4 }}>
+                            <img
+                                src="./daily-icon.png"
+                                alt="Daily"
+                                style={{ width: 26, height: 26, borderRadius: 6, display: 'block', flexShrink: 0 }}
+                                onError={e => { e.currentTarget.style.display = 'none'; }}
+                            />
+                            <div className="logo" style={{ marginRight: 0 }}>Daily<span>.</span></div>
+                        </div>
                         {(mobile || tablet) ? renderMobileTabletHeader() : renderDesktopHeader()}
                     </div>
                     <div className="board-wrap">
