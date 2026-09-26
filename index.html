@@ -10,16 +10,213 @@
     <link rel="manifest" href="#" id="manifest-link" />
     <link rel="icon" type="image/png" sizes="512x512" href="./daily-icon.png" />
     <link rel="apple-touch-icon" sizes="512x512" href="./daily-icon.png" />
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link
-        href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap"
-        rel="stylesheet" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+
+    <script>
+        /* ═══════════════════════════════════════════════════════════
+           OFFLINE BOOTSTRAP
+           Every third-party asset (React, ReactDOM, Babel, KaTeX,
+           Font Awesome, Google Fonts + their font files) is fetched
+           once and stored in Cache Storage, with CSS url()s rewritten
+           to inline data: URIs. After the first successful online load
+           the whole app runs with zero network access.
+           ═══════════════════════════════════════════════════════════ */
+        (function () {
+            'use strict';
+
+            var CACHE_NAME = 'daily-offline-v1';
+            var INLINE_MAX = 400 * 1024;   // skip inlining single files above this
+
+            var STYLES = [
+                { id: 'fa-css', url: 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css' },
+                { id: 'katex-css', url: 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css' },
+                { id: 'gfonts-css', url: 'https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap' }
+            ];
+
+            var SCRIPTS = [
+                { id: 'react', url: 'https://unpkg.com/react@18.3.1/umd/react.production.min.js' },
+                { id: 'react-dom', url: 'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js' },
+                { id: 'babel', url: 'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js' },
+                { id: 'katex', url: 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js' }
+            ];
+
+            /* ---------- cache plumbing ---------- */
+            var _cache = null;
+            function getCache() {
+                if (!_cache) {
+                    _cache = (async function () {
+                        try {
+                            if (typeof caches === 'undefined') return null;
+                            return await caches.open(CACHE_NAME);
+                        } catch (e) { return null; }
+                    })();
+                }
+                return _cache;
+            }
+
+            async function getResource(url) {
+                var cache = await getCache();
+                if (cache) {
+                    try {
+                        var hit = await cache.match(url);
+                        if (hit) return hit;
+                    } catch (e) { }
+                }
+                var res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' });
+                if (!res || !res.ok) throw new Error('HTTP ' + (res && res.status) + ' — ' + url);
+                if (cache) {
+                    try { await cache.put(url, res.clone()); } catch (e) { }
+                }
+                return res;
+            }
+
+            function blobToDataURL(blob) {
+                return new Promise(function (resolve, reject) {
+                    var fr = new FileReader();
+                    fr.onload = function () { resolve(fr.result); };
+                    fr.onerror = reject;
+                    fr.readAsDataURL(blob);
+                });
+            }
+
+            /* ---------- CSS with inlined fonts ---------- */
+            async function inlineCssUrls(cssText, baseUrl) {
+                var re = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g;
+                var targets = new Map(), m;
+                while ((m = re.exec(cssText)) !== null) {
+                    var raw = m[2].trim();
+                    if (!raw || raw.indexOf('data:') === 0 || raw.charAt(0) === '#') continue;
+                    var abs;
+                    try { abs = new URL(raw, baseUrl).href; } catch (e) { continue; }
+                    if (!targets.has(raw)) targets.set(raw, abs);
+                }
+                if (!targets.size) return cssText;
+
+                var map = new Map();
+                await Promise.all(Array.from(targets.entries()).map(async function (pair) {
+                    try {
+                        var res = await getResource(pair[1]);
+                        var blob = await res.blob();
+                        if (!blob.size || blob.size > INLINE_MAX) return;
+                        map.set(pair[0], await blobToDataURL(blob));
+                    } catch (e) { /* leave the remote URL in place */ }
+                }));
+                if (!map.size) return cssText;
+
+                return cssText.replace(re, function (full, q, raw) {
+                    var d = map.get(raw.trim());
+                    return d ? 'url("' + d + '")' : full;
+                });
+            }
+
+            async function loadStylesheet(spec) {
+                var cache = await getCache();
+                var key = spec.url + '::inlined';
+                var text = null;
+
+                if (cache) {
+                    try {
+                        var hit = await cache.match(key);
+                        if (hit) text = await hit.text();
+                    } catch (e) { }
+                }
+                if (text === null) {
+                    var res = await getResource(spec.url);
+                    text = await res.text();
+                    try { text = await inlineCssUrls(text, spec.url); } catch (e) { }
+                    if (cache) {
+                        try {
+                            await cache.put(key, new Response(text, {
+                                headers: { 'Content-Type': 'text/css; charset=utf-8' }
+                            }));
+                        } catch (e) { }
+                    }
+                }
+                var style = document.createElement('style');
+                style.id = spec.id;
+                style.textContent = text;
+                document.head.appendChild(style);
+            }
+
+            /* ---------- scripts ---------- */
+            async function loadScript(spec) {
+                var res = await getResource(spec.url);
+                var code = await res.text();
+                await new Promise(function (resolve, reject) {
+                    var blob = new Blob([code], { type: 'application/javascript' });
+                    var url = URL.createObjectURL(blob);
+                    var s = document.createElement('script');
+                    s.src = url;
+                    s.async = false;
+                    s.onload = function () { URL.revokeObjectURL(url); resolve(); };
+                    s.onerror = function () { URL.revokeObjectURL(url); reject(new Error('Failed to run ' + spec.url)); };
+                    document.head.appendChild(s);
+                });
+            }
+
+            /* ---------- boot UI ---------- */
+            function bootMsg(msg, sub) {
+                var el = document.getElementById('boot-screen');
+                if (!el) return;
+                var m = el.querySelector('.boot-msg');
+                var s = el.querySelector('.boot-sub');
+                if (m && msg) m.textContent = msg;
+                if (s && sub !== undefined) s.textContent = sub;
+            }
+
+            function bootError(err) {
+                var el = document.getElementById('boot-screen');
+                if (!el) return;
+                el.classList.remove('hide');
+                el.innerHTML =
+                    '<div style="font-size:42px">📡</div>' +
+                    '<div class="boot-msg">First run needs the internet</div>' +
+                    '<div class="boot-sub" style="max-width:440px;line-height:1.7;font-size:13px;color:#9a9da6">' +
+                    'Daily. downloads React, Babel, KaTeX and its fonts once, then stores them on this device. ' +
+                    'After that single online load it runs <b style="color:#3ecf8e">100% offline</b>.' +
+                    '<br><br>Connect to the internet and reload the page.' +
+                    '<br><br><span style="font-family:monospace;font-size:11px;color:#5a5d66">' +
+                    String((err && err.message) || err) + '</span></div>' +
+                    '<button onclick="location.reload()" style="margin-top:10px;padding:10px 24px;border-radius:9px;border:none;background:#4f8ef7;color:#fff;font-weight:600;font-size:13px;cursor:pointer">Retry</button>';
+            }
+
+            async function boot() {
+                try {
+                    bootMsg('Loading Daily…', 'Reading local cache');
+                    await Promise.allSettled(STYLES.map(loadStylesheet));
+
+                    for (var i = 0; i < SCRIPTS.length; i++) {
+                        bootMsg('Loading Daily…', 'Fetching ' + SCRIPTS[i].id);
+                        await loadScript(SCRIPTS[i]);
+                    }
+
+                    if (typeof Babel === 'undefined') throw new Error('Babel standalone did not load');
+
+                    bootMsg('Starting…', 'Compiling application');
+                    await new Promise(function (r) { setTimeout(r, 30); });
+
+                    Babel.transformScriptTags();
+
+                    setTimeout(function () {
+                        var el = document.getElementById('boot-screen');
+                        if (el) {
+                            el.classList.add('hide');
+                            setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 400);
+                        }
+                    }, 400);
+                } catch (err) {
+                    console.error('[Daily] offline bootstrap failed:', err);
+                    bootError(err);
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', boot);
+            } else {
+                boot();
+            }
+        })();
+    </script>
+
     <style>
         *,
         *::before,
@@ -2208,13 +2405,112 @@
                 margin-right: 0;
                 cursor: default
             }
+
+            .offline-pill .offline-text {
+                display: none
+            }
+        }
+
+        /* ══════════════════════════════════════════════
+           OFFLINE BOOT SCREEN + STATUS
+           ══════════════════════════════════════════════ */
+        #boot-screen {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            background: #0e0f11;
+            color: #e8e9eb;
+            font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            text-align: center;
+            padding: 24px;
+            transition: opacity .35s ease
+        }
+
+        #boot-screen.hide {
+            opacity: 0;
+            pointer-events: none
+        }
+
+        .boot-logo {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -1px
+        }
+
+        .boot-logo span {
+            color: #4f8ef7
+        }
+
+        .boot-spinner {
+            width: 34px;
+            height: 34px;
+            border: 3px solid #242629;
+            border-top-color: #4f8ef7;
+            border-radius: 50%;
+            animation: bootspin .8s linear infinite
+        }
+
+        @keyframes bootspin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        .boot-msg {
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: -.2px
+        }
+
+        .boot-sub {
+            font-size: 12px;
+            color: #5a5d66
+        }
+
+        .offline-pill {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--amber);
+            background: var(--amber-dim);
+            border: 1px solid rgba(247, 195, 90, .3);
+            white-space: nowrap;
+            flex-shrink: 0
+        }
+
+        .offline-note {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: var(--amber-dim);
+            border: 1px solid rgba(247, 195, 90, .25);
+            color: var(--amber);
+            font-size: 12px;
+            line-height: 1.5
         }
     </style>
 </head>
 
 <body>
     <div id="root"></div>
-    <script type="text/babel">
+    <div id="boot-screen">
+        <div class="boot-logo">Daily<span>.</span></div>
+        <div class="boot-spinner"></div>
+        <div class="boot-msg">Loading Daily…</div>
+        <div class="boot-sub">Preparing offline cache</div>
+    </div>
+    <script type="text/babel" data-presets="react">
         const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
         /* ── PWA ── */
@@ -2238,12 +2534,6 @@
             };
             const mBlob = new Blob([JSON.stringify(m)], { type: 'application/json' });
             document.getElementById('manifest-link').href = URL.createObjectURL(mBlob);
-            if ('serviceWorker' in navigator) {
-                const swCode =
-                    `self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(clients.claim()));self.addEventListener('fetch',e=>e.respondWith(fetch(e.request).catch(()=>new Response('Offline',{status:503}))));`;
-                navigator.serviceWorker.register(URL.createObjectURL(new Blob([swCode], { type: 'application/javascript' })))
-                    .catch(() => { });
-            }
         })();
 
         /* ── CONSTANTS ── */
@@ -2275,6 +2565,185 @@
             { name: 'Copilot', url: 'https://copilot.microsoft.com', icon: '🪟', color: '#0078d4' },
             { name: 'DeepSeek', url: 'https://chat.deepseek.com', icon: '🐳', color: '#4d6bfe' },
         ];
+
+        /* ══════════════════════════════════════════════════════════
+   OP-LOG SYNC ENGINE — never loses data
+   ══════════════════════════════════════════════════════════ */
+        const SYNC = (() => {
+            let PEER = localStorage.getItem('daily_peer');
+            if (!PEER) {
+                PEER = 'p' + Math.random().toString(36).slice(2, 10);
+                localStorage.setItem('daily_peer', PEER);
+            }
+
+            let log = [];                 // [{id,e,eid,f,v,ts,p}]
+            let seen = new Set();         // op ids we've applied
+            let state = {};               // state[e][eid][f] = {v,ts,p}
+            let counter = 0;
+
+            function load() {
+                try {
+                    const raw = localStorage.getItem('daily_oplog');
+                    if (!raw) return;
+                    const p = JSON.parse(raw);
+                    log = p.log || [];
+                    log.forEach(o => seen.add(o.id));
+                    state = p.state || {};
+                    counter = p.counter || 0;
+                } catch (e) { console.warn('oplog load', e); }
+            }
+
+            function save() {
+                try {
+                    if (log.length > 6000) log = log.slice(-6000);
+                    localStorage.setItem('daily_oplog', JSON.stringify({ log, state, counter }));
+                } catch (e) { console.warn('oplog save', e); }
+            }
+
+            function makeOp(e, eid, f, v) {
+                counter++;
+                const ts = Date.now();
+                return { id: PEER + ':' + counter.toString(36) + ':' + ts.toString(36), e, eid, f, v, ts, p: PEER };
+            }
+
+            // Apply one op. LWW per field. Returns true if anything changed.
+            function applyOp(op) {
+                if (seen.has(op.id)) return false;
+                seen.add(op.id);
+                log.push(op);
+
+                const bucket = (state[op.e] = state[op.e] || {});
+                const rec = (bucket[op.eid] = bucket[op.eid] || {});
+                const cur = rec[op.f];
+
+                const wins = !cur || op.ts > cur.ts || (op.ts === cur.ts && op.p > cur.p);
+                if (wins) {
+                    rec[op.f] = { v: op.v, ts: op.ts, p: op.p };
+                    return true;
+                }
+                return false;
+            }
+
+            // Local mutation — creates ops, applies them, returns them for broadcast.
+            function mutateMany(changes) {
+                const ops = changes.map(({ e, eid, f, v }) => makeOp(e, eid, f, v));
+                ops.forEach(applyOp);
+                save();
+                return ops;
+            }
+            function mutate(e, eid, f, v) { return mutateMany([{ e, eid, f, v }]); }
+
+            // Merge ops from peers. Returns { changed, accepted } — accepted should be re-broadcast.
+            function mergeOps(remote) {
+                let changed = false;
+                const accepted = [];
+                (remote || []).forEach(op => {
+                    if (seen.has(op.id)) return;
+                    accepted.push(op);
+                    if (applyOp(op)) changed = true;
+                });
+                if (accepted.length) save();
+                return { changed, accepted };
+            }
+
+            // Derive {cols, cards} from state for rendering.
+            function materialize() {
+                const cols = [], cards = {};
+
+                Object.entries(state.column || {}).forEach(([id, f]) => {
+                    if (f.__del__?.v) return;
+                    cols.push({
+                        id,
+                        label: f.label?.v ?? 'Untitled',
+                        color: f.color?.v ?? '#4f8ef7',
+                        locked: f.locked?.v ?? false,
+                        _pos: f.pos?.v ?? 0,
+                    });
+                });
+                cols.sort((a, b) => a._pos - b._pos);
+                cols.forEach(c => delete c._pos);
+
+                Object.entries(state.card || {}).forEach(([id, f]) => {
+                    if (f.__del__?.v) return;
+                    const colId = f.column?.v;
+                    if (!colId) return;
+                    (cards[colId] = cards[colId] || []).push({
+                        id,
+                        task: f.task?.v ?? '',
+                        priority: f.priority?.v ?? 'None',
+                        content: f.content?.v ?? '',
+                        color: f.color?.v ?? '',
+                        doneAt: f.doneAt?.v,
+                        createdAt: f.createdAt?.v,
+                        updatedAt: f.updatedAt?.v,
+                        dueDate: f.dueDate?.v,
+                        expiryDays: f.expiryDays?.v,
+                        _pos: f.pos?.v ?? 0,
+                        comments: [],
+                    });
+                });
+
+                Object.keys(cards).forEach(colId => {
+                    cards[colId].sort((a, b) => a._pos - b._pos).forEach(c => delete c._pos);
+                });
+
+                Object.entries(state.comment || {}).forEach(([id, f]) => {
+                    if (f.__del__?.v) return;
+                    const cardId = f.cardId?.v;
+                    if (!cardId) return;
+                    for (const colId in cards) {
+                        const card = cards[colId].find(c => c.id === cardId);
+                        if (card) {
+                            card.comments.push({
+                                id,
+                                author: f.author?.v ?? 'Anon',
+                                text: f.text?.v ?? '',
+                                ts: f.ts?.v ?? 0,
+                                reactions: f.reactions?.v ?? {},
+                            });
+                            break;
+                        }
+                    }
+                });
+                Object.values(cards).forEach(arr => arr.forEach(c => c.comments.sort((a, b) => a.ts - b.ts)));
+
+                return { cols, cards };
+            }
+
+            // Turn an existing {cols, cards} into ops (one-time migration).
+            function bootstrapOps(cols, cards) {
+                const ops = [];
+                cols.forEach((c, i) => {
+                    ops.push({ e: 'column', eid: c.id, f: 'label', v: c.label });
+                    ops.push({ e: 'column', eid: c.id, f: 'color', v: c.color });
+                    ops.push({ e: 'column', eid: c.id, f: 'locked', v: !!c.locked });
+                    ops.push({ e: 'column', eid: c.id, f: 'pos', v: i });
+                });
+                Object.entries(cards).forEach(([colId, arr]) => {
+                    (arr || []).forEach((c, i) => {
+                        ops.push({ e: 'card', eid: c.id, f: 'task', v: c.task });
+                        ops.push({ e: 'card', eid: c.id, f: 'column', v: colId });
+                        ops.push({ e: 'card', eid: c.id, f: 'priority', v: c.priority || 'None' });
+                        ops.push({ e: 'card', eid: c.id, f: 'content', v: c.content || '' });
+                        ops.push({ e: 'card', eid: c.id, f: 'color', v: c.color || '' });
+                        ops.push({ e: 'card', eid: c.id, f: 'createdAt', v: c.createdAt || new Date().toISOString() });
+                        ops.push({ e: 'card', eid: c.id, f: 'pos', v: i });
+                        if (c.doneAt) ops.push({ e: 'card', eid: c.id, f: 'doneAt', v: c.doneAt });
+                        if (c.expiryDays != null) ops.push({ e: 'card', eid: c.id, f: 'expiryDays', v: c.expiryDays });
+                    });
+                });
+                return ops;
+            }
+
+            function getLog() { return log; }
+            function reset() {
+                log = []; seen = new Set(); state = {}; counter = 0;
+                localStorage.removeItem('daily_oplog');
+            }
+
+            load();
+            return { PEER, mutate, mutateMany, mergeOps, materialize, bootstrapOps, getLog, reset };
+        })();
 
         /* ── ALARM ── */
         const AlarmCtx = { ctx: null, playing: false };
@@ -2398,6 +2867,24 @@
                 };
             }, [bp]);
             return m;
+        }
+
+        /* ── ONLINE / OFFLINE (reactive) ── */
+        function useOnline() {
+            const [online, setOnline] = useState(() =>
+                typeof navigator === 'undefined' ? true : navigator.onLine !== false
+            );
+            useEffect(() => {
+                const up = () => setOnline(true);
+                const down = () => setOnline(false);
+                window.addEventListener('online', up);
+                window.addEventListener('offline', down);
+                return () => {
+                    window.removeEventListener('online', up);
+                    window.removeEventListener('offline', down);
+                };
+            }, []);
+            return online;
         }
 
         /* ── STORAGE ── */
@@ -4187,6 +4674,7 @@
             const iframeRef = useRef();
             const excalidrawUrl = 'https://excalidraw.com';
             const mobile = isMobile();
+            const online = useOnline();
             return (
                 <div className="draw-panel-overlay">
                     <div className="draw-panel-hdr">
@@ -4202,7 +4690,7 @@
                                 points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>Powered by
                             Excalidraw</div>}
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-                            {!mobile && <a href={excalidrawUrl} target="_blank" rel="noopener" style={{
+                            {!mobile && online && <a href={excalidrawUrl} target="_blank" rel="noopener" style={{
                                 fontSize: 11,
                                 padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)',
                                 background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer',
@@ -4224,11 +4712,32 @@
                         </div>
                     </div>
                     <div className="draw-panel-body">
-                        <iframe ref={iframeRef} src={excalidrawUrl} title="Excalidraw Drawing Board"
-                            allow="clipboard-read; clipboard-write" style={{
-                                width: '100%', height: '100%',
-                                border: 'none', display: 'block'
-                            }} />
+                        {online ? (
+                            <iframe ref={iframeRef} src={excalidrawUrl} title="Excalidraw Drawing Board"
+                                allow="clipboard-read; clipboard-write" style={{
+                                    width: '100%', height: '100%',
+                                    border: 'none', display: 'block'
+                                }} />
+                        ) : (
+                            <div style={{
+                                width: '100%', height: '100%', display: 'flex',
+                                flexDirection: 'column', alignItems: 'center',
+                                justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: 52, opacity: .5 }}>✏️</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>
+                                    Drawing needs a connection
+                                </div>
+                                <div style={{
+                                    fontSize: 13, color: 'var(--text3)', maxWidth: 380,
+                                    lineHeight: 1.7
+                                }}>
+                                    Excalidraw runs in an embedded web app, so it can't load while you're offline.
+                                    Your board, notes and timers all keep working — reconnect to draw.
+                                </div>
+                                <button className="btn primary" onClick={onClose}>Back to board</button>
+                            </div>
+                        )}
                     </div>
                 </div>
             );
@@ -4236,6 +4745,7 @@
 
         /* ── AI PANEL ── */
         function AiPanel({ onClose }) {
+            const online = useOnline();
             return (
                 <div className="ai-panel">
                     <div className="ai-panel-hdr">
@@ -4251,9 +4761,16 @@
                         display: 'flex', flexDirection: 'column', gap: 5, padding: 14, flex: 1,
                         overflowY: 'auto'
                     }}>
+                        {!online && (
+                            <div className="offline-note" style={{ marginBottom: 4 }}>
+                                <span>📡</span>
+                                <span>You're offline — these links will only open once you reconnect.</span>
+                            </div>
+                        )}
                         <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>Opens in a new tab →</div>
                         {AI_SERVICES.map(s => (
-                            <a key={s.name} href={s.url} target="_blank" rel="noopener" className="ai-service-btn">
+                            <a key={s.name} href={s.url} target="_blank" rel="noopener" className="ai-service-btn"
+                                style={!online ? { opacity: .55 } : undefined}>
                                 <div className="ai-service-icon" style={{
                                     background: s.color + '22', color: s
                                         .color
@@ -4753,6 +5270,7 @@
         /* ── SYNC MODAL ── */
         function SyncModal({ onClose, peerStatus, peerCount, roomId, setRoomId, createRoom, joinRoom, disconnectRoom,
             myPeerId, activeRoom, broadcastWebSocket }) {
+            const online = useOnline();
             const shareUrl = activeRoom ?
                 `${location.origin}${location.pathname}?room=${encodeURIComponent(activeRoom)}` : '';
             const connected = peerStatus === 'connected';
@@ -4776,10 +5294,21 @@
                             <h3 style={{ fontSize: 15, fontWeight: 600 }}>Sync You Work!</h3>
                             <button className="ibtn" onClick={onClose} style={{ width: 28, height: 28 }}>✕</button>
                         </div>
+
+                        {!online && (
+                            <div className="offline-note">
+                                <span>📡</span>
+                                <span>
+                                    You're offline. Everything is saved on this device and sync will resume
+                                    automatically when the connection returns.
+                                </span>
+                            </div>
+                        )}
+
                         {!activeRoom ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                <button className="btn primary" style={{ padding: '9px', fontSize: 13 }} onClick={
-                                    createRoom}>✨ Create new room</button>
+                                <button className="btn primary" style={{ padding: '9px', fontSize: 13 }}
+                                    disabled={!online} onClick={createRoom}>✨ Create new room</button>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{
                                     flex: 1,
                                     height: 1, background: 'var(--border)'
@@ -4791,8 +5320,9 @@
                                 <div style={{ display: 'flex', gap: 6 }}>
                                     <input className="sync-input" style={{ flex: 1 }} placeholder="Paste Room ID…"
                                         value={roomId} onChange={e => setRoomId(e.target.value)} onKeyDown={e =>
-                                            e.key === 'Enter' && joinRoom()} />
-                                    <button className="btn" onClick={joinRoom} disabled={!roomId.trim()}>Join</button>
+                                            e.key === 'Enter' && online && joinRoom()} />
+                                    <button className="btn" onClick={joinRoom}
+                                        disabled={!roomId.trim() || !online}>Join</button>
                                 </div>
                             </div>
                         ) : (
@@ -4829,7 +5359,7 @@
                                 background: 'var(--amber-dim)', color: 'var(--amber)'
                             } : !connected ?
                                 { background: 'var(--red-dim)', color: 'var(--red)' } : {}}>
-                                {connected ? 'Syncing ✓' : connecting ? 'Connecting…' : 'Not connected'}
+                                {!online ? 'Offline' : connected ? 'Syncing ✓' : connecting ? 'Connecting…' : 'Not connected'}
                             </span>
                             {peerCount > 0 && <span style={{ fontSize: 11, color: 'var(--text3)' }}>· {peerCount} peer{
                                 peerCount !== 1 ? 's' : ''}</span>}
@@ -4842,7 +5372,8 @@
                             </button>
                         )}
                         {peerStatus === 'disconnected' && roomId && !activeRoom && (
-                            <button className="btn" style={{ marginTop: 8 }} onClick={() => joinRoom()}>
+                            <button className="btn" style={{ marginTop: 8 }} disabled={!online}
+                                onClick={() => joinRoom()}>
                                 Retry
                             </button>
                         )}
@@ -4870,6 +5401,7 @@
 
         function KrokiPanel({ onClose }) {
             const mobile = useIsMobile(640);
+            const online = useOnline();
 
             const [type, setType] = useState('plantuml');
             const [src, setSrc] = useState(KROKI_TYPES[0].example);
@@ -4893,6 +5425,11 @@
             }, [src, type]);
 
             async function render() {
+                if (!online) {
+                    setError('You are offline. Diagram rendering uses kroki.io and needs a connection.');
+                    setImgUrl('');
+                    return;
+                }
                 if (!src.trim()) { setError('Nothing to render.'); return; }
                 setLoading(true); setError(''); setImgUrl('');
                 try {
@@ -4912,11 +5449,11 @@
             }
 
             useEffect(() => {
-                if (!autoRender) return;
+                if (!autoRender || !online) return;
                 clearTimeout(debounceRef.current);
                 debounceRef.current = setTimeout(() => render(), 900);
                 return () => clearTimeout(debounceRef.current);
-            }, [src, type, outputFmt, autoRender]);
+            }, [src, type, outputFmt, autoRender, online]);
 
             function copyUrl() {
                 if (!imgUrl) return;
@@ -4948,7 +5485,7 @@
                             <input type="checkbox" checked={autoRender} onChange={e => setAutoRender(e.target.checked)} style={{ accentColor: 'var(--blue)' }} />
                             Auto
                         </label>
-                        <button className="btn primary" style={{ padding: '4px 14px', fontSize: 12 }} onClick={render} disabled={loading}>
+                        <button className="btn primary" style={{ padding: '4px 14px', fontSize: 12 }} onClick={render} disabled={loading || !online}>
                             {loading ? '⏳ Rendering…' : '▶ Render'}
                         </button>
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
@@ -4959,6 +5496,14 @@
                             </>}
                         </div>
                     </div>
+                    {!online && (
+                        <div style={{ padding: '8px 12px', flexShrink: 0 }}>
+                            <div className="offline-note">
+                                <span>📡</span>
+                                <span>Offline — rendering is unavailable. Your source is still saved locally.</span>
+                            </div>
+                        </div>
+                    )}
                     <div style={{ flex: 1, display: 'flex', flexDirection: mobile ? 'column' : 'row', minHeight: 0, overflow: 'hidden' }}>
                         <div style={{
                             flex: mobile ? '1 1 45%' : '0 0 45%',
@@ -5054,6 +5599,7 @@
 
         function ZplPanel({ onClose }) {
             const mobile = useIsMobile(640);
+            const online = useOnline();
 
             const [mode, setMode] = useState('zpl');
             const [src, setSrc] = useState(() => loadLS('daily_zpl_src',
@@ -5142,6 +5688,10 @@
             }
 
             async function render() {
+                if (!online) {
+                    setError('You are offline. Label rendering uses labelary.com and needs a connection.');
+                    return;
+                }
                 setLoading(true); setError('');
                 try {
                     const zpl = getZpl();
@@ -5172,11 +5722,11 @@
             }
 
             useEffect(() => {
-                if (!autoRender) return;
+                if (!autoRender || !online) return;
                 clearTimeout(debounceRef.current);
                 debounceRef.current = setTimeout(() => render(), 1000);
                 return () => clearTimeout(debounceRef.current);
-            }, [src, b64Input, dpmm, width, height, labelIdx, autoRender, outputFmt, mode]);
+            }, [src, b64Input, dpmm, width, height, labelIdx, autoRender, outputFmt, mode, online]);
 
             function downloadImg() {
                 if (!imgUrl) return;
@@ -5315,7 +5865,7 @@
                         </label>
 
                         <button className="btn primary" style={{ padding: '5px 14px', fontSize: 12 }}
-                            onClick={render} disabled={loading}>
+                            onClick={render} disabled={loading || !online}>
                             {loading ? '⏳…' : '▶ Render'}
                         </button>
 
@@ -5326,6 +5876,15 @@
                             </>}
                         </div>
                     </div>
+
+                    {!online && (
+                        <div style={{ padding: '8px 12px', flexShrink: 0 }}>
+                            <div className="offline-note">
+                                <span>📡</span>
+                                <span>Offline — label rendering is unavailable. Your ZPL and Base64 are saved locally.</span>
+                            </div>
+                        </div>
+                    )}
 
                     <div style={{ flex: 1, display: 'flex', flexDirection: mobile ? 'column' : 'row', minHeight: 0, overflow: 'hidden' }}>
 
@@ -5583,7 +6142,7 @@
                                         }}>{error}</pre>
                                         <div style={{ display: 'flex', gap: 6 }}>
                                             <button className="btn" style={{ fontSize: 11, padding: '5px 12px' }}
-                                                onClick={() => { navigator.clipboard?.writeText(getZpl().catch?.(() => '') || src); }}>
+                                                onClick={() => { navigator.clipboard?.writeText(src); }}>
                                                 Copy ZPL
                                             </button>
                                         </div>
@@ -7546,15 +8105,39 @@
         function App() {
             const WS_SERVER_URL = 'https://daily-2.onrender.com';
 
-            const saved = loadData();
+            const savedLocal = loadData();
+            const hasLocal = !!(savedLocal
+                && Array.isArray(savedLocal.cols) && savedLocal.cols.length
+                && savedLocal.cards && typeof savedLocal.cards === 'object');
+
+
+            // One-time migration of the old save into the op-log (sync metadata)
+            (function migrate() {
+                const done = localStorage.getItem('daily_oplog_migrated');
+                if (done) return;
+                if (hasLocal) {
+                    SYNC.mutateMany(SYNC.bootstrapOps(savedLocal.cols, savedLocal.cards));
+                }
+                localStorage.setItem('daily_oplog_migrated', '1');
+            })();
+
+            const initial = SYNC.materialize();
             const def = defaultData();
-            const [cols, setCols] = useState(saved?.cols || def.cols);
-            const [cards, setCards] = useState(saved?.cards || def.cards);
+            const startCols = hasLocal ? savedLocal.cols
+                : (initial.cols.length ? initial.cols : def.cols);
+            const startCards = hasLocal ? savedLocal.cards
+                : (initial.cols.length ? initial.cards : def.cards);
+
+            const [cols, setCols] = useState(startCols);
+            const [cards, setCards] = useState(startCards);
+
             const [now, setNow] = useState(Date.now());
             const [spinning, setSpinning] = useState(false);
             const [windowW, setWindowW] = useState(window.innerWidth);
             const [scratch, setScratch] = useState(() => loadLS('daily_scratch', ''));
             useEffect(() => saveLS('daily_scratch', scratch), [scratch]);
+
+            const online = useOnline();
 
             const SESSION_ID = useRef(Math.random().toString(36).slice(2, 10));
             const wsClient = useRef(null);
@@ -7585,6 +8168,15 @@
             useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
 
             function tryParse(s, fb) { try { return JSON.parse(s); } catch { return fb; } }
+
+            function applyChanges(changes, opts = {}) {
+                const ops = SYNC.mutateMany(changes);
+                const m = SYNC.materialize();
+                setCols(m.cols);
+                setCards(m.cards);
+                if (!opts.skipBroadcast) broadcastOps(ops);
+                return ops;
+            }
 
             function mergeRemoteState(remoteCols, remoteCards, remoteScratch) {
                 const localCols = colsRef.current;
@@ -7714,6 +8306,11 @@
             function wsConnect(room) {
                 const r = (room || '').trim();
                 if (!r) return;
+                if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                    setPeerStatus('disconnected');
+                    addToast('Offline — sync unavailable', 'error');
+                    return;
+                }
                 if (wsClient.current) {
                     wsClient.current.close();
                     wsClient.current = null;
@@ -7760,7 +8357,7 @@
                 ws.onerror = (err) => {
                     console.warn('WebSocket error', err);
                     setPeerStatus('disconnected');
-                    addToast('Sync error', 'error');
+                    if (navigator.onLine !== false) addToast('Sync error', 'error');
                 };
 
                 ws.onclose = () => {
@@ -7768,7 +8365,7 @@
                     setPeerStatus('disconnected');
                     setPeerCount(0);
                     setTimeout(() => {
-                        if (activeRoomRef.current && !wsConnected.current) {
+                        if (activeRoomRef.current && !wsConnected.current && navigator.onLine !== false) {
                             wsConnect(activeRoomRef.current);
                         }
                     }, 3000);
@@ -7798,6 +8395,21 @@
                 setPeerCount(0);
                 addToast('Disconnected from sync');
             }
+
+            /* ── connection awareness ── */
+            useEffect(() => {
+                const onUp = () => {
+                    addToast('Back online ✓ — local data intact', 'success');
+                    if (activeRoomRef.current && !wsConnected.current) wsConnect(activeRoomRef.current);
+                };
+                const onDown = () => addToast('Offline — everything still works locally', '');
+                window.addEventListener('online', onUp);
+                window.addEventListener('offline', onDown);
+                return () => {
+                    window.removeEventListener('online', onUp);
+                    window.removeEventListener('offline', onDown);
+                };
+            }, []);
 
             useEffect(() => {
                 const r = new URLSearchParams(location.search).get('room');
@@ -7833,7 +8445,8 @@
 
             useEffect(() => {
                 const handleVisibilityChange = () => {
-                    if (document.visibilityState === 'visible' && activeRoom && !wsConnected.current) {
+                    if (document.visibilityState === 'visible' && activeRoom && !wsConnected.current &&
+                        navigator.onLine !== false) {
                         wsConnect(activeRoom);
                     }
                 };
@@ -7936,6 +8549,19 @@
                 });
             }, []);
             useEffect(() => { saveData({ cols, cards }); }, [cols, cards]);
+
+            useEffect(() => {
+                const flush = () => {
+                    try { localStorage.setItem('daily_v5', JSON.stringify({ cols: colsRef.current, cards: cardsRef.current })); } catch { }
+                };
+                window.addEventListener('beforeunload', flush);
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'hidden') flush();
+                });
+                return () => window.removeEventListener('beforeunload', flush);
+            }, []);
+
+
             useEffect(() => {
                 document.body.classList.toggle('light', light); try {
                     localStorage.setItem('daily_theme', light ? 'light' : 'dark');
@@ -8526,7 +9152,7 @@
                         <button className="ibtn" data-tip="Shortcuts" onClick={() => setShowShortcuts(true)}><i className="fa-solid fa-keyboard"></i></button>
                         <button className="ibtn" data-tip="Import JSON" onClick={importJSON}><i className="fa-solid fa-file-import"></i></button>
                         <button className="ibtn" data-tip="Export JSON" onClick={exportJSON}><i className="fa-solid fa-file-export"></i></button>
-                       
+
                         <button className="ibtn" data-tip="Install App" onClick={installPwa} style={{
                             color: 'var(--blue)',
                             borderColor: 'var(--blue-dim)', background: 'var(--blue-dim)'
@@ -8608,6 +9234,13 @@
                             />
                             <div className="logo" style={{ marginRight: 0 }}>Daily<span>.</span></div>
                         </div>
+                        {!online && (
+                            <div className="offline-pill"
+                                title="No internet connection — all data stays on this device">
+                                <i className="fa-solid fa-plug-circle-xmark"></i>
+                                <span className="offline-text">Offline</span>
+                            </div>
+                        )}
                         {(mobile || tablet) ? renderMobileTabletHeader() : renderDesktopHeader()}
                     </div>
                     <div className="board-wrap">
