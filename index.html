@@ -7,6 +7,12 @@
     <title>Daily.</title>
     <meta name="description" content="Collaborate, organize, secure, and sync your work in real time." />
     <meta name="theme-color" content="#0e0f11" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Daily" />
+    <link rel="apple-touch-icon" sizes="512x512" href="./daily-icon.png" />
     <link rel="manifest" href="#" id="manifest-link" />
     <link rel="icon" type="image/png" sizes="512x512" href="./daily-icon.png" />
     <link rel="apple-touch-icon" sizes="512x512" href="./daily-icon.png" />
@@ -208,6 +214,21 @@
                     bootError(err);
                 }
             }
+
+            /* best-effort offline shell (works where the platform permits) */
+            (function swAttempt() {
+                if (!('serviceWorker' in navigator)) return;
+                try {
+                    var sw = "self.addEventListener('install',e=>self.skipWaiting());"
+                        + "self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));"
+                        + "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;"
+                        + "e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{"
+                        + "if(res&&res.ok){var c=res.clone();caches.open('daily-shell-v1').then(x=>x.put(e.request,c)).catch(()=>{});}"
+                        + "return res;}).catch(()=>caches.match(e.request).then(x=>x||Response.error()))));});";
+                    var url = URL.createObjectURL(new Blob([sw], { type: 'application/javascript' }));
+                    navigator.serviceWorker.register(url).catch(function () { });
+                } catch (_) { }
+            })();
 
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', boot);
@@ -4968,6 +4989,19 @@
                 }
             }
 
+            function minimizeToHalf() {
+                if (maximized) {
+                    if (prevSzRef.current) setSz(prevSzRef.current);
+                    setMaximized(false);
+                    return;
+                }
+                const w = Math.round(window.innerWidth * 0.5);
+                const h = Math.round(window.innerHeight * 0.5);
+                const x = Math.round((window.innerWidth - w) / 2);
+                const y = Math.round((window.innerHeight - h) / 2);
+                setSz({ x, y, w, h });
+            }
+
             if (mobile) return (
                 <div ref={ref} className="fp">
                     <div className="fp-hdr">
@@ -4996,6 +5030,17 @@
                         style={{ cursor: maximized ? 'default' : 'move' }}>
                         <span style={{ fontSize: 14 }}>{icon}</span><span className="fp-title">{title}</span>
                         {extraHeaderContent}
+                        <button onClick={minimizeToHalf} title="Minimize to 50 %" style={{
+                            fontSize: 13, color: 'var(--text3)', background: 'none',
+                            border: 'none', cursor: 'pointer', padding: '2px 8px',
+                            display: 'flex', alignItems: 'center'
+                        }}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" strokeWidth="2.5">
+                                <rect x="4" y="10" width="16" height="10" rx="1" />
+                                <line x1="4" y1="5" x2="20" y2="5" />
+                            </svg>
+                        </button>
                         <button onClick={toggleMaximize} title={maximized ? 'Restore' : 'Maximize'}
                             style={{
                                 fontSize: 13, color: 'var(--text3)', background: 'none',
@@ -5017,6 +5062,7 @@
                             fontSize: 14, color: 'var(--text3)', background: 'none',
                             border: 'none', cursor: 'pointer', padding: '2px 6px'
                         }}>✕</button>
+
                     </div>
                     <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                         {children}</div>
