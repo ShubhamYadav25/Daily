@@ -336,6 +336,208 @@
             color: var(--blue)
         }
 
+        /* ══════════════════════════════════════════════
+   NOTIFICATION PERMISSION SNACKBAR
+   ══════════════════════════════════════════════ */
+        .notif-snack-wrap {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: calc(18px + var(--safe-bottom));
+            display: flex;
+            justify-content: center;
+            padding: 0 10px;
+            z-index: 850;
+            pointer-events: none;
+        }
+
+        .notif-snack {
+            pointer-events: auto;
+            position: relative;
+            width: min(470px, 100%);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 15px 16px;
+            border-radius: 16px;
+            background: var(--bg2);
+            border: 1px solid var(--border2);
+            box-shadow:
+                0 18px 50px rgba(0, 0, 0, .55),
+                0 0 0 1px rgba(79, 142, 247, .10),
+                0 0 44px rgba(79, 142, 247, .10);
+            overflow: hidden;
+            animation: snackIn .42s cubic-bezier(.21, .9, .35, 1.15) both;
+        }
+
+        .notif-snack::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background: radial-gradient(130% 110% at 0% 0%, rgba(79, 142, 247, .12), transparent 58%);
+            pointer-events: none;
+        }
+
+        @keyframes snackIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(.95);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .notif-snack-icon {
+            position: relative;
+            width: 40px;
+            height: 40px;
+            flex-shrink: 0;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            color: var(--blue);
+            background: linear-gradient(135deg, rgba(79, 142, 247, .22), rgba(167, 139, 250, .16));
+            border: 1px solid rgba(79, 142, 247, .35);
+        }
+
+        .notif-snack-icon .pulse-ring {
+            position: absolute;
+            inset: -1px;
+            border-radius: inherit;
+            border: 1.5px solid rgba(79, 142, 247, .55);
+            animation: notifPulse 2.2s ease-out infinite;
+            pointer-events: none;
+        }
+
+        @keyframes notifPulse {
+            0% {
+                transform: scale(1);
+                opacity: .75;
+            }
+
+            100% {
+                transform: scale(1.55);
+                opacity: 0;
+            }
+        }
+
+        .notif-snack-body {
+            flex: 1;
+            min-width: 0;
+            position: relative;
+            z-index: 1;
+        }
+
+        .notif-snack-title {
+            font-size: 13.5px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -.15px;
+        }
+
+        .notif-snack-text {
+            font-size: 12px;
+            color: var(--text3);
+            line-height: 1.55;
+            margin-top: 3px;
+        }
+
+        .notif-snack-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 11px;
+            flex-wrap: wrap;
+        }
+
+        .notif-btn {
+            padding: 7px 14px;
+            border-radius: 9px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--bg3);
+            color: var(--text2);
+            transition: background .15s, color .15s, transform .15s, box-shadow .15s;
+            line-height: 1.2;
+        }
+
+        .notif-btn:hover:not(:disabled) {
+            background: var(--bg4);
+            color: var(--text);
+        }
+
+        .notif-btn.primary {
+            border-color: transparent;
+            color: #fff;
+            background: linear-gradient(135deg, #4f8ef7, #6ea2ff);
+            box-shadow: 0 4px 14px rgba(79, 142, 247, .38);
+        }
+
+        .notif-btn.primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 7px 22px rgba(79, 142, 247, .52);
+        }
+
+        .notif-btn:disabled {
+            opacity: .55;
+            cursor: default;
+        }
+
+        .notif-snack-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 22px;
+            height: 22px;
+            border-radius: 7px;
+            border: none;
+            background: transparent;
+            color: var(--text3);
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background .12s, color .12s;
+            z-index: 2;
+        }
+
+        .notif-snack-close:hover {
+            background: var(--bg4);
+            color: var(--text);
+        }
+
+        @media (max-width: 640px) {
+            .notif-snack-wrap {
+                bottom: calc(12px + var(--safe-bottom));
+                padding: 0 8px;
+            }
+
+            .notif-snack {
+                padding: 14px;
+                border-radius: 14px;
+                gap: 10px;
+            }
+
+            .notif-snack-icon {
+                width: 36px;
+                height: 36px;
+                font-size: 15px;
+            }
+
+            .notif-snack-actions .notif-btn {
+                flex: 1;
+                text-align: center;
+            }
+        }
+
         .stat-pill {
             display: flex;
             align-items: center;
@@ -2790,23 +2992,47 @@
         function uid() { return Math.random().toString(36).slice(2, 10) }
 
         /* ── NOTIFICATION PERMISSION ── */
+        /* ── NOTIFICATION PERMISSION ── */
         function ensureNotificationPermission(force) {
-            if (typeof window === 'undefined' || !window.Notification) return;
+            if (typeof window === 'undefined' || !('Notification' in window)) return;
             if (Notification.permission === 'granted' || Notification.permission === 'denied') return;
 
             let alreadyAsked = false;
             try { alreadyAsked = localStorage.getItem('daily_notif_asked') === '1'; } catch { }
 
-            // Auto-ask only once, unless explicitly forced by user action
             if (!force && alreadyAsked) return;
 
-            try { localStorage.setItem('daily_notif_asked', '1'); } catch { }
-            try { Notification.requestPermission(); } catch { }
+            // NEVER call Notification.requestPermission() here.
+            // Browsers (especially Safari / iOS) ignore it outside a real user gesture,
+            // and the native prompt looks broken & un-themeable.
+            // Instead we surface our own snackbar; the native prompt is only triggered
+            // when the user taps "Enable" inside it.
+            try { window.dispatchEvent(new CustomEvent('daily:notif-prompt')); } catch { }
         }
 
         function getNotificationPermission() {
-            if (typeof window === 'undefined' || !window.Notification) return 'unsupported';
+            if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
             return Notification.permission; // 'default' | 'granted' | 'denied'
+        }
+
+        /* ── FIRE A REAL NOTIFICATION (with safe fallback) ── */
+        async function showLocalNotification(title, body, tag) {
+            if (typeof window === 'undefined' || !('Notification' in window)) return false;
+            if (Notification.permission !== 'granted') return false;
+            const opts = { body: body || '', tag: tag || undefined, icon: './daily-icon.png', badge: './daily-icon.png' };
+            try {
+                // Preferred path — works on Android Chrome & installed PWAs
+                if (navigator.serviceWorker) {
+                    const reg = await navigator.serviceWorker.getRegistration();
+                    if (reg && reg.showNotification) {
+                        await reg.showNotification(title, opts);
+                        return true;
+                    }
+                }
+            } catch { }
+            try { new Notification(title, opts); return true; } catch { }
+            try { new Notification(title, { body: body || '', tag: tag || undefined }); return true; } catch { }
+            return false;
         }
 
         function daysDiff(iso) { if (!iso) return 0; return Math.floor((Date.now() - new Date(iso).getTime()) / 864e5); }
@@ -4839,6 +5065,80 @@
         function Toast({ toasts }) {
             return <div className="toasts">{toasts.map(t => <div key={t.id} className={
                 `toast ${t.type || ''}`}>{t.msg}</div>)}</div>;
+        }
+
+        /* ── NOTIFICATION PERMISSION SNACKBAR ── */
+        function NotificationPrompt({ onClose, addToast }) {
+            const [busy, setBusy] = useState(false);
+
+            async function enable() {
+                if (busy) return;
+                setBusy(true);
+                try {
+                    try { localStorage.setItem('daily_notif_asked', '1'); } catch { }
+
+                    if (typeof Notification === 'undefined') {
+                        addToast('Notifications are not supported here', 'error');
+                        setBusy(false); onClose(); return;
+                    }
+
+                    const perm = await Notification.requestPermission();
+
+                    if (perm === 'granted') {
+                        addToast('Notifications enabled 🔔', 'success');
+                        setTimeout(() => {
+                            showLocalNotification(
+                                'Daily. notifications are on',
+                                "You'll be reminded about timers, deadlines and events.",
+                                'daily-welcome'
+                            );
+                        }, 450);
+                    } else if (perm === 'denied') {
+                        addToast('Blocked — enable in your browser settings', 'error');
+                    } else {
+                        addToast('No change — you can enable this anytime');
+                    }
+                } catch (e) {
+                    addToast('Could not request permission', 'error');
+                }
+                setBusy(false);
+                onClose();
+            }
+
+            function later() {
+                try { localStorage.setItem('daily_notif_asked', '1'); } catch { }
+                onClose();
+            }
+
+            return (
+                <div className="notif-snack-wrap">
+                    <div className="notif-snack" role="dialog" aria-live="polite">
+                        <div className="notif-snack-icon">
+                            <span className="pulse-ring" />
+                            <i className="fa-solid fa-bell" />
+                        </div>
+
+                        <div className="notif-snack-body">
+                            <div className="notif-snack-title">Stay on top of your day</div>
+                            <div className="notif-snack-text">
+                                Enable notifications to get reminders for timers, deadlines and calendar
+                                events — even when this tab is in the background.
+                            </div>
+                            <div className="notif-snack-actions">
+                                <button className="notif-btn primary" onClick={enable} disabled={busy}>
+                                    {busy ? 'Requesting…' : '🔔 Enable notifications'}
+                                </button>
+                                <button className="notif-btn" onClick={later} disabled={busy}>
+                                    Not now
+                                </button>
+                            </div>
+                        </div>
+
+                        <button className="notif-snack-close" onClick={later}
+                            title="Dismiss" aria-label="Dismiss">✕</button>
+                    </div>
+                </div>
+            );
         }
 
         /* ── ALARM OVERLAY ── */
@@ -8504,10 +8804,10 @@
                         });
                         if (newAlarms.length > 0) {
                             playAlarmSound();
-                            setAlarms(a => [...a, ...newAlarms]); if (window.Notification &&
-                                Notification.permission === 'granted') {
-                                newAlarms.forEach(na => new Notification('⏱ Timer Done!', { body: na.task }));
-                            }
+                            setAlarms(a => [...a, ...newAlarms]);
+                            newAlarms.forEach(na =>
+                                showLocalNotification('⏱ Timer Done!', na.task, 'timer-' + na.id)
+                            );
                         }
                         return changed ? next : prev;
                     });
@@ -8532,6 +8832,7 @@
             const [confetti, setConfetti] = useState(false);
             const confettiKey = useRef(0);
             const [toasts, setToasts] = useState([]);
+            const [showNotifPrompt, setShowNotifPrompt] = useState(false);
             const [light, setLight] = useState(() => {
                 try { return localStorage.getItem('daily_theme') === 'light'; } catch {
                     return false;
@@ -8573,8 +8874,6 @@
             const [snoozed, setSnoozed] = useState([]);
 
             useEffect(() => {
-                ensureNotificationPermission();
-
                 const now = Date.now();
                 const missed = [];
                 loadEvents().forEach(evt => {
@@ -8592,6 +8891,27 @@
                 if (missed.length > 0) {
                     addToast(`You have ${missed.length} recent event${missed.length > 1 ? 's' : ''}! Check calendar.`, '');
                 }
+            }, []);
+
+            /* ── auto-show the permission snackbar once, after the app settles ── */
+            useEffect(() => {
+                if (typeof window === 'undefined' || !('Notification' in window)) return;
+                if (Notification.permission !== 'default') return;
+                let asked = false;
+                try { asked = localStorage.getItem('daily_notif_asked') === '1'; } catch { }
+                if (asked) return;
+                const t = setTimeout(() => setShowNotifPrompt(true), 2200);
+                return () => clearTimeout(t);
+            }, []);
+
+            /* ── open it on demand (timer set, event saved, overflow menu, …) ── */
+            useEffect(() => {
+                const onPrompt = () => {
+                    if (typeof window === 'undefined' || !('Notification' in window)) return;
+                    if (Notification.permission === 'default') setShowNotifPrompt(true);
+                };
+                window.addEventListener('daily:notif-prompt', onPrompt);
+                return () => window.removeEventListener('daily:notif-prompt', onPrompt);
             }, []);
 
             useEffect(() => {
@@ -8633,16 +8953,13 @@
                     if (toFire.length > 0) {
                         playAlarmSound();
                         setEventAlarms(a => [...a, ...toFire]);
-                        if (window.Notification && Notification.permission === 'granted') {
-                            toFire.forEach(evt => {
-                                try {
-                                    new Notification('📅 ' + evt.title, {
-                                        body: [evt.time && '⏰ ' + evt.time, evt.notes?.slice(0, 80)].filter(Boolean).join('\n'),
-                                        tag: evt.id,
-                                    });
-                                } catch { }
-                            });
-                        }
+                        toFire.forEach(evt =>
+                            showLocalNotification(
+                                '📅 ' + evt.title,
+                                [evt.time && '⏰ ' + evt.time, evt.notes?.slice(0, 80)].filter(Boolean).join('\n'),
+                                evt.id
+                            )
+                        );
                     }
                 }, 30000);
                 return () => clearInterval(tick);
@@ -9302,6 +9619,9 @@
                         onResolveAll={resolveAllConflicts} />}
                     {confetti && <Confetti key={confettiKey.current} />}
                     <Toast toasts={toasts} />
+                    {showNotifPrompt && (
+                        <NotificationPrompt addToast={addToast} onClose={() => setShowNotifPrompt(false)} />
+                    )}
                     <AlarmOverlay alarms={alarms} onDismiss={dismissAlarms} />
                     <EventAlarmOverlay alarms={eventAlarms} onDismiss={dismissEventAlarms} onSnooze={snoozeEventAlarms} />
 
