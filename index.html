@@ -2634,6 +2634,54 @@
             padding: 0 1px;
         }
 
+        /* ── Diff navigation: minimap gutter ── */
+        .diff-minimap {
+            width: 14px;
+            flex-shrink: 0;
+            background: var(--bg4);
+            border-left: 1px solid var(--border);
+            position: relative;
+            cursor: pointer;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .diff-minimap-mark {
+            position: absolute;
+            left: 2px;
+            right: 2px;
+            min-height: 2px;
+            border-radius: 2px;
+            pointer-events: none;
+            transition: opacity .12s;
+        }
+
+        .diff-minimap-mark.add {
+            background: var(--green);
+        }
+
+        .diff-minimap-mark.del {
+            background: var(--red);
+        }
+
+        .diff-minimap-mark.mod {
+            background: linear-gradient(to bottom,
+                    var(--red) 0%, var(--red) 48%,
+                    var(--green) 52%, var(--green) 100%);
+        }
+
+        .diff-row.diff-active {
+            box-shadow: inset 4px 0 0 var(--amber);
+            background: rgba(247, 195, 90, .06);
+        }
+
+        /* wider minimap on touch devices */
+        @media (max-width: 640px) {
+            .diff-minimap {
+                width: 20px;
+            }
+        }
+
         body.light .diff-cell.add {
             background: rgba(62, 207, 142, .18);
         }
@@ -2695,7 +2743,7 @@
             margin-top: 8px;
         }
 
-        .ocr-progress > div {
+        .ocr-progress>div {
             height: 100%;
             background: linear-gradient(90deg, var(--blue), var(--purple));
             border-radius: 3px;
@@ -5689,6 +5737,69 @@
         }
 
         /* Build a row-per-line diff. type: same | add | del | mod */
+        /* ---------- LCS (accurate, O(m·n)) ---------- */
+        function lcsOps(an, bn) {
+            const m = an.length, n = bn.length;
+            const W = n + 1;
+            const dp = new Uint32Array((m + 1) * W);
+            for (let i = m - 1; i >= 0; i--) {
+                for (let j = n - 1; j >= 0; j--) {
+                    dp[i * W + j] = an[i] === bn[j]
+                        ? dp[(i + 1) * W + (j + 1)] + 1
+                        : Math.max(dp[(i + 1) * W + j], dp[i * W + (j + 1)]);
+                }
+            }
+            const ops = [];
+            let i = 0, j = 0;
+            while (i < m && j < n) {
+                if (an[i] === bn[j]) { ops.push(['same', i, j]); i++; j++; }
+                else if (dp[(i + 1) * W + j] >= dp[i * W + (j + 1)]) { ops.push(['del', i, -1]); i++; }
+                else { ops.push(['add', -1, j]); j++; }
+            }
+            while (i < m) { ops.push(['del', i, -1]); i++; }
+            while (j < n) { ops.push(['add', -1, j]); j++; }
+            return ops;
+        }
+
+        /* ---------- Greedy (fallback, ~O((m+n)·log)) ---------- */
+        function greedyOps(an, bn) {
+            const m = an.length, n = bn.length;
+            const indexB = new Map(), indexA = new Map();
+            for (let j = 0; j < n; j++) {
+                let a = indexB.get(bn[j]); if (!a) { a = []; indexB.set(bn[j], a); } a.push(j);
+            }
+            for (let i = 0; i < m; i++) {
+                let a = indexA.get(an[i]); if (!a) { a = []; indexA.set(an[i], a); } a.push(i);
+            }
+            const nextIn = (idx, key, from) => {
+                const arr = idx.get(key);
+                if (!arr) return -1;
+                let lo = 0, hi = arr.length;
+                while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < from) lo = mid + 1; else hi = mid; }
+                return lo < arr.length ? arr[lo] : -1;
+            };
+
+            const ops = [];
+            let i = 0, j = 0;
+            while (i < m && j < n) {
+                if (an[i] === bn[j]) { ops.push(['same', i, j]); i++; j++; continue; }
+                const nJ = nextIn(indexB, an[i], j);   // where does an[i] show up next in b?
+                const nI = nextIn(indexA, bn[j], i);   // where does bn[j] show up next in a?
+                if (nJ !== -1 && (nI === -1 || (nJ - j) <= (nI - i))) {
+                    while (j < nJ) { ops.push(['add', -1, j]); j++; }
+                } else if (nI !== -1) {
+                    while (i < nI) { ops.push(['del', i, -1]); i++; }
+                } else {
+                    ops.push(['del', i, -1]); i++;
+                    ops.push(['add', -1, j]); j++;
+                }
+            }
+            while (i < m) { ops.push(['del', i, -1]); i++; }
+            while (j < n) { ops.push(['add', -1, j]); j++; }
+            return ops;
+        }
+
+        /* ---------- New buildDiffRows ---------- */
         function buildDiffRows(aText, bText, opts) {
             const norm = (s) => {
                 let r = s;
@@ -5702,41 +5813,59 @@
             const bn = bl.map(norm);
             const m = al.length, n = bl.length;
 
-            if (m * n > 4000000) {
-                throw new Error('Input too large to diff (over ~4M line comparisons). Try trimming the files.');
+            // fast path — identical
+            if (m === n && an.every((x, i) => x === bn[i])) {
+                return al.map((_, i) => ({
+                    type: 'same', leftNo: i + 1, rightNo: i + 1,
+                    leftText: al[i], rightText: bl[i],
+                }));
             }
 
-            const W = n + 1;
-            const dp = new Uint32Array((m + 1) * W);
-            for (let i = m - 1; i >= 0; i--) {
-                for (let j = n - 1; j >= 0; j--) {
-                    dp[i * W + j] = an[i] === bn[j]
-                        ? dp[(i + 1) * W + (j + 1)] + 1
-                        : Math.max(dp[(i + 1) * W + j], dp[i * W + (j + 1)]);
-                }
-            }
+            // 1. strip common prefix
+            let pre = 0;
+            while (pre < m && pre < n && an[pre] === bn[pre]) pre++;
+            // 2. strip common suffix
+            let suf = 0;
+            while (suf < m - pre && suf < n - pre && an[m - 1 - suf] === bn[n - 1 - suf]) suf++;
 
-            const ops = [];
-            let i = 0, j = 0;
-            while (i < m && j < n) {
-                if (an[i] === bn[j]) { ops.push(['same', i, j]); i++; j++; }
-                else if (dp[(i + 1) * W + j] >= dp[i * W + (j + 1)]) { ops.push(['del', i, -1]); i++; }
-                else { ops.push(['add', -1, j]); j++; }
+            const midA = an.slice(pre, m - suf);
+            const midB = bn.slice(pre, n - suf);
+            const midAL = al.slice(pre, m - suf);
+            const midBL = bl.slice(pre, n - suf);
+            const mm = midA.length, nn = midB.length;
+
+            // pick algorithm on the trimmed middle only
+            let ops;
+            if (mm === 0 || nn === 0) {
+                ops = [];
+                for (let k = 0; k < mm; k++) ops.push(['del', k, -1]);
+                for (let k = 0; k < nn; k++) ops.push(['add', -1, k]);
+            } else if (mm * nn <= 4_000_000) {
+                ops = lcsOps(midA, midB);       // accurate
+            } else {
+                ops = greedyOps(midA, midB);    // fast fallback — never throws
             }
-            while (i < m) { ops.push(['del', i, -1]); i++; }
-            while (j < n) { ops.push(['add', -1, j]); j++; }
 
             const rows = [];
+
+            // prefix rows
+            for (let k = 0; k < pre; k++) {
+                rows.push({
+                    type: 'same', leftNo: k + 1, rightNo: k + 1,
+                    leftText: al[k], rightText: bl[k],
+                });
+            }
+
+            // middle rows
             let k = 0;
             while (k < ops.length) {
                 const t = ops[k][0];
                 if (t === 'same') {
+                    const i = ops[k][1], j = ops[k][2];
                     rows.push({
                         type: 'same',
-                        leftNo: ops[k][1] + 1,
-                        rightNo: ops[k][2] + 1,
-                        leftText: al[ops[k][1]],
-                        rightText: bl[ops[k][2]],
+                        leftNo: pre + i + 1, rightNo: pre + j + 1,
+                        leftText: midAL[i], rightText: midBL[j],
                     });
                     k++;
                 } else if (t === 'del') {
@@ -5746,29 +5875,27 @@
                     while (k < ops.length && ops[k][0] === 'add') { adds.push(ops[k][2]); k++; }
                     const pairs = Math.min(dels.length, adds.length);
                     for (let p = 0; p < pairs; p++) {
-                        const lt = al[dels[p]];
-                        const rt = bl[adds[p]];
+                        const lt = midAL[dels[p]];
+                        const rt = midBL[adds[p]];
                         const wd = wordLevelDiff(lt, rt);
                         rows.push({
                             type: 'mod',
-                            leftNo: dels[p] + 1,
-                            rightNo: adds[p] + 1,
-                            leftText: lt,
-                            rightText: rt,
+                            leftNo: pre + dels[p] + 1, rightNo: pre + adds[p] + 1,
+                            leftText: lt, rightText: rt,
                             leftParts: wd ? wd.aParts : null,
                             rightParts: wd ? wd.bParts : null,
                         });
                     }
                     for (let p = pairs; p < dels.length; p++) {
                         rows.push({
-                            type: 'del', leftNo: dels[p] + 1, rightNo: null,
-                            leftText: al[dels[p]], rightText: '',
+                            type: 'del', leftNo: pre + dels[p] + 1, rightNo: null,
+                            leftText: midAL[dels[p]], rightText: '',
                         });
                     }
                     for (let p = pairs; p < adds.length; p++) {
                         rows.push({
-                            type: 'add', leftNo: null, rightNo: adds[p] + 1,
-                            leftText: '', rightText: bl[adds[p]],
+                            type: 'add', leftNo: null, rightNo: pre + adds[p] + 1,
+                            leftText: '', rightText: midBL[adds[p]],
                         });
                     }
                 } else {
@@ -5776,12 +5903,22 @@
                     while (k < ops.length && ops[k][0] === 'add') { adds.push(ops[k][2]); k++; }
                     for (const ai of adds) {
                         rows.push({
-                            type: 'add', leftNo: null, rightNo: ai + 1,
-                            leftText: '', rightText: bl[ai],
+                            type: 'add', leftNo: null, rightNo: pre + ai + 1,
+                            leftText: '', rightText: midBL[ai],
                         });
                     }
                 }
             }
+
+            // suffix rows
+            for (let s = 0; s < suf; s++) {
+                rows.push({
+                    type: 'same',
+                    leftNo: m - suf + s + 1, rightNo: n - suf + s + 1,
+                    leftText: al[m - suf + s], rightText: bl[n - suf + s],
+                });
+            }
+
             return rows;
         }
 
@@ -5830,6 +5967,8 @@
             const timerRef = useRef(null);
             const leftFileRef = useRef();
             const rightFileRef = useRef();
+            const scrollRef = useRef(null);
+            const [changeIdx, setChangeIdx] = useState(-1);
 
             useEffect(() => { saveLS('daily_diff_left', left); }, [left]);
             useEffect(() => { saveLS('daily_diff_right', right); }, [right]);
@@ -5859,6 +5998,54 @@
                 }, 240);
                 return () => clearTimeout(timerRef.current);
             }, [left, right, ignoreCase, ignoreWs]);
+
+            /* ── change list + visual row map ── */
+            const changeRows = useMemo(() => {
+                if (!rows) return [];
+                return rows.map((r, i) => r.type !== 'same' ? i : -1).filter(i => i !== -1);
+            }, [rows]);
+
+            const visualInfo = useMemo(() => {
+                if (!rows || rows.length === 0) return { positions: [], total: 0 };
+                const unified = isMob || mode !== 'split';
+                const positions = new Array(rows.length);
+                let v = 0;
+                for (let i = 0; i < rows.length; i++) {
+                    positions[i] = v;
+                    v += (unified && rows[i].type === 'mod') ? 2 : 1;
+                }
+                return { positions, total: v };
+            }, [rows, mode, isMob]);
+
+            useEffect(() => {
+                setChangeIdx(changeRows.length > 0 ? 0 : -1);
+            }, [changeRows.length]);
+
+            const gotoChange = useCallback((idx) => {
+                if (changeRows.length === 0) return;
+                const len = changeRows.length;
+                const clamped = ((idx % len) + len) % len;
+                setChangeIdx(clamped);
+                if (isMob) setMTab('diff');
+                setTimeout(() => {
+                    const rowIdx = changeRows[clamped];
+                    const el = scrollRef.current &&
+                        scrollRef.current.querySelector('[data-row-idx="' + rowIdx + '"]');
+                    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 40);
+            }, [changeRows, isMob]);
+
+            /* keyboard: F7 / Shift+F7 */
+            useEffect(() => {
+                function onKey(e) {
+                    const tag = e.target.tagName;
+                    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+                    if (e.key === 'F7' && !e.shiftKey) { e.preventDefault(); gotoChange(changeIdx + 1); }
+                    else if (e.key === 'F7' && e.shiftKey) { e.preventDefault(); gotoChange(changeIdx - 1); }
+                }
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
+            }, [changeIdx, gotoChange]);
 
             function readFile(f, setter, setName) {
                 if (!f) return;
@@ -5896,52 +6083,64 @@
             /* ── ROW RENDERERS ── */
             const renderSplit = () => (
                 <div className="diff-scroll">
-                    {rows.map((r, i) => (
-                        <div className="diff-row" key={i}>
-                            <div className="diff-num">{r.leftNo || ''}</div>
-                            <div className={'diff-cell' + (r.type === 'del' || r.type === 'mod' ? ' del' : r.type === 'add' ? ' empty' : '')}>
-                                {r.type === 'add' ? '' : (r.leftParts ? renderDiffParts(r.leftParts, 'left') : r.leftText)}
+                    {rows.map((r, i) => {
+                        const isChange = r.type !== 'same';
+                        const isActive = isChange && changeIdx >= 0 && changeRows[changeIdx] === i;
+                        return (
+                            <div className={'diff-row' + (isActive ? ' diff-active' : '')}
+                                key={i}
+                                {...(isChange ? { 'data-row-idx': i } : {})}>
+                                <div className="diff-num">{r.leftNo || ''}</div>
+                                <div className={'diff-cell' + (r.type === 'del' || r.type === 'mod' ? ' del' : r.type === 'add' ? ' empty' : '')}>
+                                    {r.type === 'add' ? '' : (r.leftParts ? renderDiffParts(r.leftParts, 'left') : r.leftText)}
+                                </div>
+                                <div className="diff-num">{r.rightNo || ''}</div>
+                                <div className={'diff-cell' + (r.type === 'add' || r.type === 'mod' ? ' add' : r.type === 'del' ? ' empty' : '')}>
+                                    {r.type === 'del' ? '' : (r.rightParts ? renderDiffParts(r.rightParts, 'right') : r.rightText)}
+                                </div>
                             </div>
-                            <div className="diff-num">{r.rightNo || ''}</div>
-                            <div className={'diff-cell' + (r.type === 'add' || r.type === 'mod' ? ' add' : r.type === 'del' ? ' empty' : '')}>
-                                {r.type === 'del' ? '' : (r.rightParts ? renderDiffParts(r.rightParts, 'right') : r.rightText)}
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             );
 
             const renderUnified = () => (
                 <div className="diff-scroll">
-                    {rows.map((r, i) => (
-                        <React.Fragment key={i}>
-                            {(r.type === 'del' || r.type === 'mod') && (
-                                <div className="diff-row">
-                                    <div className="diff-num">{r.leftNo}</div>
-                                    <div className="diff-mid del">−</div>
-                                    <div className="diff-cell del">
-                                        {r.leftParts ? renderDiffParts(r.leftParts, 'left') : r.leftText}
+                    {rows.map((r, i) => {
+                        const isChange = r.type !== 'same';
+                        const isActive = isChange && changeIdx >= 0 && changeRows[changeIdx] === i;
+                        const activeCls = isActive ? ' diff-active' : '';
+                        const rowAttr = isChange ? { 'data-row-idx': i } : {};
+                        return (
+                            <React.Fragment key={i}>
+                                {(r.type === 'del' || r.type === 'mod') && (
+                                    <div className={'diff-row' + activeCls} {...rowAttr}>
+                                        <div className="diff-num">{r.leftNo}</div>
+                                        <div className="diff-mid del">−</div>
+                                        <div className="diff-cell del">
+                                            {r.leftParts ? renderDiffParts(r.leftParts, 'left') : r.leftText}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
-                            {(r.type === 'add' || r.type === 'mod') && (
-                                <div className="diff-row">
-                                    <div className="diff-num">{r.rightNo}</div>
-                                    <div className="diff-mid add">+</div>
-                                    <div className="diff-cell add">
-                                        {r.rightParts ? renderDiffParts(r.rightParts, 'right') : r.rightText}
+                                )}
+                                {(r.type === 'add' || r.type === 'mod') && (
+                                    <div className={'diff-row' + activeCls} {...rowAttr}>
+                                        <div className="diff-num">{r.rightNo}</div>
+                                        <div className="diff-mid add">+</div>
+                                        <div className="diff-cell add">
+                                            {r.rightParts ? renderDiffParts(r.rightParts, 'right') : r.rightText}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
-                            {r.type === 'same' && (
-                                <div className="diff-row">
-                                    <div className="diff-num">{r.leftNo}</div>
-                                    <div className="diff-mid" />
-                                    <div className="diff-cell">{r.leftText}</div>
-                                </div>
-                            )}
-                        </React.Fragment>
-                    ))}
+                                )}
+                                {r.type === 'same' && (
+                                    <div className="diff-row">
+                                        <div className="diff-num">{r.leftNo}</div>
+                                        <div className="diff-mid" />
+                                        <div className="diff-cell">{r.leftText}</div>
+                                    </div>
+                                )}
+                            </React.Fragment>
+                        );
+                    })}
                 </div>
             );
 
@@ -6052,23 +6251,62 @@
 
             const diffView = (
                 <div style={{
-                    flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--bg3)',
-                    borderRadius: 0, position: 'relative'
+                    flex: 1, minHeight: 0, display: 'flex',
+                    background: 'var(--bg3)', position: 'relative'
                 }}>
-                    {busy && (
-                        <div style={{
-                            position: 'absolute', top: 8, right: 12, fontSize: 10,
-                            color: 'var(--blue)', fontWeight: 600, zIndex: 3,
-                            background: 'var(--bg2)', padding: '2px 8px', borderRadius: 8,
-                            border: '1px solid var(--border)'
-                        }}>
-                            computing…
+                    <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}>
+                        {busy && (
+                            <div style={{
+                                position: 'absolute', top: 8, right: 12, fontSize: 10,
+                                color: 'var(--blue)', fontWeight: 600, zIndex: 3,
+                                background: 'var(--bg2)', padding: '2px 8px', borderRadius: 8,
+                                border: '1px solid var(--border)'
+                            }}>
+                                computing…
+                            </div>
+                        )}
+                        {err ? errorState
+                            : !rows ? emptyState
+                                : rows.length === 0 ? emptyState
+                                    : (mode === 'split' && !isMob ? renderSplit() : renderUnified())}
+                    </div>
+
+                    {/* ── right-hand change gutter ── */}
+                    {rows && rows.length > 0 && changeRows.length > 0 && (
+                        <div
+                            className="diff-minimap"
+                            title="Click to jump to a change"
+                            onClick={e => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const pct = (e.clientY - rect.top) / rect.height;
+                                const targetV = pct * visualInfo.total;
+                                let best = 0, bestDist = Infinity;
+                                changeRows.forEach((ri, ci) => {
+                                    const d = Math.abs(visualInfo.positions[ri] - targetV);
+                                    if (d < bestDist) { bestDist = d; best = ci; }
+                                });
+                                gotoChange(best);
+                            }}>
+                            {changeRows.map((rowIdx, ci) => {
+                                const row = rows[rowIdx];
+                                const topPct = (visualInfo.positions[rowIdx] / visualInfo.total) * 100;
+                                const span = (isMob || mode !== 'split') && row.type === 'mod' ? 2 : 1;
+                                const hPct = Math.max(0.2, (span / visualInfo.total) * 100);
+                                const isActive = changeIdx === ci;
+                                return (
+                                    <div key={ci}
+                                        className={'diff-minimap-mark ' +
+                                            (row.type === 'add' ? 'add' : row.type === 'del' ? 'del' : 'mod')}
+                                        style={{
+                                            top: topPct + '%',
+                                            height: hPct + '%',
+                                            opacity: isActive ? 1 : 0.7,
+                                            boxShadow: isActive ? '0 0 0 1px var(--amber)' : 'none'
+                                        }} />
+                                );
+                            })}
                         </div>
                     )}
-                    {err ? errorState
-                        : !rows ? emptyState
-                            : rows.length === 0 ? emptyState
-                                : (mode === 'split' && !isMob ? renderSplit() : renderUnified())}
                 </div>
             );
 
@@ -6143,6 +6381,39 @@
                         </button>
                     )}
 
+                    {/* ── change navigation ── */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center',
+                        background: 'var(--bg3)', border: '1px solid var(--border)',
+                        borderRadius: 7, overflow: 'hidden', flexShrink: 0
+                    }}>
+                        <button
+                            onClick={() => gotoChange(changeIdx - 1)}
+                            disabled={changeRows.length === 0}
+                            title="Previous change (Shift+F7)"
+                            style={{
+                                padding: '4px 9px', fontSize: 11, border: 'none', cursor: 'pointer',
+                                background: 'transparent', color: 'var(--text2)', fontWeight: 700,
+                                opacity: changeRows.length === 0 ? 0.4 : 1
+                            }}>▲</button>
+                        <span style={{
+                            fontSize: 11, color: 'var(--text3)', minWidth: 44, textAlign: 'center',
+                            fontFamily: "'DM Mono',monospace", padding: '0 4px',
+                            borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)'
+                        }}>
+                            {changeRows.length === 0 ? '0 / 0' : `${changeIdx + 1} / ${changeRows.length}`}
+                        </span>
+                        <button
+                            onClick={() => gotoChange(changeIdx + 1)}
+                            disabled={changeRows.length === 0}
+                            title="Next change (F7)"
+                            style={{
+                                padding: '4px 9px', fontSize: 11, border: 'none', cursor: 'pointer',
+                                background: 'transparent', color: 'var(--text2)', fontWeight: 700,
+                                opacity: changeRows.length === 0 ? 0.4 : 1
+                            }}>▼</button>
+                    </div>
+
                     <button className="btn" style={{ padding: '4px 11px', fontSize: 11 }} onClick={swap}>
                         ⇅ Swap
                     </button>
@@ -6169,7 +6440,7 @@
                         </button>
                         <button className="btn" style={{ padding: '4px 11px', fontSize: 11 }}
                             onClick={copyAsJson} disabled={!rows}>
-                            {} JSON
+                            { } JSON
                         </button>
                     </div>
                 </div>
