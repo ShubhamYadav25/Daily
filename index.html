@@ -10501,6 +10501,7 @@
             useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
 
             useEffect(() => {
+                 if (isMobile()) return; 
                 let seen = false;
                 try { seen = localStorage.getItem('daily_tour_seen') === '1'; } catch { }
                 if (seen) return;
@@ -10517,10 +10518,6 @@
             function skipTour() {
                 try { localStorage.setItem('daily_tour_seen', '1'); } catch { }
                 setShowTour(false);
-            }
-
-            function replayTour() {
-                setShowTour(true);
             }
 
             function tryParse(s, fb) { try { return JSON.parse(s); } catch { return fb; } }
@@ -11499,8 +11496,6 @@
                             : null,
                 },
                 null,
-                { icon: '🎓', label: 'Replay Tour', action: () => replayTour() },
-
                 { icon: '⌨️', label: 'Shortcuts', action: () => setShowShortcuts(true) },
                 null,
                 { icon: '⬇️', label: 'Import JSON', action: () => importJSON() },
@@ -11786,7 +11781,7 @@
                             <button className="pwa-dismiss" onClick={() => setPwaPrompt(null)}>✕</button>
                         </div>
                     )}
-                    {showTour && (
+                    {showTour && !mobile && (
                         <Tour steps={TOUR_STEPS} onFinish={finishTour} onSkip={skipTour} />
                     )}
                 </div>
