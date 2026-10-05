@@ -1168,6 +1168,15 @@
             background: var(--red-dim)
         }
 
+        .chbtn.clear-col:hover:not(:disabled) {
+            color: var(--amber);
+            background: var(--amber-dim);
+        }
+
+        .chbtn.clear-col:disabled {
+            cursor: default;
+        }
+
         .col-body {
             flex: 1;
             overflow-y: auto;
@@ -5041,7 +5050,7 @@
         /* ── COLUMN ── */
         function Column({ colData, cards, allCols, onCardDrop, onCardReorder, onColDragStart, onColDrop, onColDragOver,
             onOpen, onAddCard, onDeleteCol, onToggleLock, onRenameCol, dragCardId, isColDragging, isColDropTarget, now,
-            timers }) {
+            timers, onClearCards }) {
             const [renaming, setRenaming] = useState(false);
             const [renameVal, setRenameVal] = useState(colData.label);
             const blockerCount = cards.filter(c => parseBlocker(c.content)).length;
@@ -5097,7 +5106,28 @@
                         </div>
                         <span className="col-count" style={{ color: colData.color }}>{cards.length}</span>
                         {blockerCount > 0 && <span className="col-blocker-badge">🚫{blockerCount}</span>}
+
                         <div className="col-hdr-actions">
+                            <button
+                                className="chbtn clear-col"
+                                title={cards.length === 0
+                                    ? 'Column is empty'
+                                    : `Clear all ${cards.length} card${cards.length !== 1 ? 's' : ''}`}
+                                onClick={() => onClearCards(colData.id)}
+                                disabled={cards.length === 0}
+                                style={{
+                                    opacity: cards.length === 0 ? 0.4 : 1,
+                                    cursor: cards.length === 0 ? 'default' : 'pointer',
+                                }}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                                    strokeLinejoin="round">
+                                    {/* three falling rows */}
+                                    <path d="M5 3v7M12 3v7M19 3v7" />
+                                    {/* bin body */}
+                                    <path d="M3 12h18l-1.2 7.5a2 2 0 0 1-2 1.5H6.2a2 2 0 0 1-2-1.5z" />
+                                </svg>
+                            </button>
                             <button className={`chbtn${colData.locked ? ' lock-on' : ''}`} title={colData.locked ?
                                 'Unlock' : 'Lock'} onClick={() => onToggleLock(colData.id)}>
                                 {colData.locked ?
@@ -6653,6 +6683,226 @@
                         </div>)}
                         <button className="btn" style={{ width: '100%', marginTop: 14 }} onClick={onClose}>Close</button>
                     </div>
+                </div>
+            );
+        }
+
+        /* ══════════════════════════════════════════════════════════
+   GUIDED TOUR — first-run walkthrough
+   ══════════════════════════════════════════════════════════ */
+        function Tour({ steps, onFinish, onSkip }) {
+            const [idx, setIdx] = useState(0);
+            const [rect, setRect] = useState(null);
+            const [ready, setReady] = useState(false);
+            const step = steps[idx];
+            const isLast = idx === steps.length - 1;
+
+            /* auto-skip steps whose target doesn't exist on this screen
+               (e.g. desktop-only buttons on mobile) */
+            useEffect(() => {
+                if (!step) return;
+                if (step.target && !document.querySelector(step.target)) {
+                    if (idx < steps.length - 1) setIdx(idx + 1);
+                    else onFinish();
+                }
+            }, [idx, step, steps.length]);
+
+            /* measure + track the target */
+            useEffect(() => {
+                if (!step) return;
+                setReady(false);
+                const target = step.target ? document.querySelector(step.target) : null;
+
+                function measure() {
+                    if (!target) { setRect(null); setReady(true); return; }
+                    const r = target.getBoundingClientRect();
+                    setRect({ x: r.left, y: r.top, w: r.width, h: r.height });
+                    setReady(true);
+                }
+
+                if (target) {
+                    try {
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                    } catch { }
+                    const t1 = setTimeout(measure, 350);
+                    const t2 = setTimeout(measure, 700);
+                    window.addEventListener('resize', measure);
+                    window.addEventListener('scroll', measure, true);
+                    return () => {
+                        clearTimeout(t1); clearTimeout(t2);
+                        window.removeEventListener('resize', measure);
+                        window.removeEventListener('scroll', measure, true);
+                    };
+                }
+                setRect(null);
+                setReady(true);
+            }, [idx, step]);
+
+            /* keyboard nav */
+            useEffect(() => {
+                function onKey(e) {
+                    if (e.key === 'Escape') { e.preventDefault(); onSkip(); }
+                    else if (e.key === 'ArrowRight' && !isLast) { e.preventDefault(); setIdx(i => i + 1); }
+                    else if (e.key === 'ArrowLeft' && idx > 0) { e.preventDefault(); setIdx(i => i - 1); }
+                    else if (e.key === 'Enter') { e.preventDefault(); isLast ? onFinish() : setIdx(i => i + 1); }
+                }
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
+            }, [idx, isLast, onFinish, onSkip]);
+
+            if (!step) return null;
+
+            const pad = 8;
+            const spotlight = rect ? {
+                x: rect.x - pad, y: rect.y - pad,
+                w: rect.w + pad * 2, h: rect.h + pad * 2,
+            } : null;
+
+            function tooltipStyle() {
+                if (!spotlight) {
+                    return {
+                        left: '50%', top: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        width: 'min(440px, calc(100vw - 32px))',
+                    };
+                }
+                const margin = 16;
+                const vw = window.innerWidth, vh = window.innerHeight;
+                const tipW = Math.min(380, vw - 32);
+                const tipH = 260;
+                let p = step.placement || 'auto';
+                if (p === 'auto') {
+                    if (spotlight.y + spotlight.h + tipH + margin < vh) p = 'bottom';
+                    else if (spotlight.y - tipH - margin > 0) p = 'top';
+                    else if (spotlight.x + spotlight.w + tipW + margin < vw) p = 'right';
+                    else p = 'left';
+                }
+                let left, top;
+                if (p === 'bottom') { left = spotlight.x + spotlight.w / 2 - tipW / 2; top = spotlight.y + spotlight.h + margin; }
+                else if (p === 'top') { left = spotlight.x + spotlight.w / 2 - tipW / 2; top = spotlight.y - tipH - margin; }
+                else if (p === 'right') { left = spotlight.x + spotlight.w + margin; top = spotlight.y + spotlight.h / 2 - tipH / 2; }
+                else { left = spotlight.x - tipW - margin; top = spotlight.y + spotlight.h / 2 - tipH / 2; }
+
+                left = Math.max(12, Math.min(left, vw - tipW - 12));
+                top = Math.max(12, Math.min(top, vh - tipH - 12));
+                return { left, top, width: tipW };
+            }
+
+            return (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 5000,
+                    fontFamily: "'DM Sans', sans-serif",
+                }}>
+                    {/* Spotlight / dim overlay */}
+                    {spotlight ? (
+                        <div style={{
+                            position: 'fixed',
+                            left: spotlight.x, top: spotlight.y,
+                            width: spotlight.w, height: spotlight.h,
+                            borderRadius: 12,
+                            boxShadow: '0 0 0 9999px rgba(0,0,0,.78), 0 0 0 3px var(--blue), 0 0 42px 8px rgba(79,142,247,.45)',
+                            transition: 'all .4s cubic-bezier(.2,.9,.3,1.08)',
+                            pointerEvents: 'none',
+                        }} />
+                    ) : (
+                        <div style={{
+                            position: 'fixed', inset: 0,
+                            background: 'rgba(0,0,0,.78)',
+                            transition: 'background .3s',
+                        }} />
+                    )}
+
+                    {/* Tooltip card */}
+                    {ready && (
+                        <div style={{
+                            position: 'fixed',
+                            ...tooltipStyle(),
+                            background: 'var(--bg2)',
+                            border: '1px solid var(--border2)',
+                            borderRadius: 16,
+                            padding: '20px 20px 16px',
+                            boxShadow: '0 22px 60px rgba(0,0,0,.7), 0 0 0 1px rgba(79,142,247,.14), 0 0 48px rgba(79,142,247,.1)',
+                            animation: 'confirmIn .32s cubic-bezier(.2,.9,.3,1.1) both',
+                            pointerEvents: 'auto',
+                        }}>
+                            {/* Progress bar */}
+                            <div style={{
+                                display: 'flex', gap: 5, marginBottom: 14, alignItems: 'center',
+                            }}>
+                                {steps.map((_, i) => (
+                                    <div key={i} style={{
+                                        width: i === idx ? 22 : 6, height: 6,
+                                        borderRadius: 3,
+                                        background: i === idx ? 'var(--blue)'
+                                            : i < idx ? 'var(--blue-dim)' : 'var(--bg4)',
+                                        transition: 'all .3s cubic-bezier(.2,.9,.3,1.1)',
+                                        boxShadow: i === idx ? '0 0 8px rgba(79,142,247,.55)' : 'none',
+                                    }} />
+                                ))}
+                                <span style={{
+                                    marginLeft: 'auto', fontSize: 10, color: 'var(--text3)',
+                                    fontFamily: "'DM Mono',monospace",
+                                }}>
+                                    {idx + 1} / {steps.length}
+                                </span>
+                            </div>
+
+                            {step.icon && (
+                                <div style={{
+                                    fontSize: 32, marginBottom: 8,
+                                    filter: 'drop-shadow(0 0 12px rgba(79,142,247,.35))',
+                                }}>{step.icon}</div>
+                            )}
+
+                            <div style={{
+                                fontSize: 17, fontWeight: 700, color: 'var(--text)',
+                                letterSpacing: '-.25px', marginBottom: 8, lineHeight: 1.25,
+                            }}>
+                                {step.title}
+                            </div>
+
+                            <div style={{
+                                fontSize: 13.5, color: 'var(--text2)',
+                                lineHeight: 1.65, marginBottom: 18,
+                            }}>
+                                {step.body}
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <button onClick={onSkip}
+                                    style={{
+                                        fontSize: 12, color: 'var(--text3)', background: 'none',
+                                        border: 'none', cursor: 'pointer', padding: '6px 8px',
+                                        borderRadius: 6, transition: '.12s',
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.color = 'var(--text)'}
+                                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}>
+                                    Skip tour
+                                </button>
+                                <div style={{ flex: 1 }} />
+                                {idx > 0 && (
+                                    <button className="btn" onClick={() => setIdx(idx - 1)}
+                                        style={{ padding: '7px 14px', fontSize: 12 }}>
+                                        ← Back
+                                    </button>
+                                )}
+                                <button className="btn primary"
+                                    onClick={() => { isLast ? onFinish() : setIdx(idx + 1); }}
+                                    style={{ padding: '7px 20px', fontSize: 12, fontWeight: 600 }}>
+                                    {isLast ? "Let's go! 🚀" : 'Next →'}
+                                </button>
+                            </div>
+
+                            <div style={{
+                                marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)',
+                                fontSize: 10, color: 'var(--text3)',
+                                display: 'flex', justifyContent: 'space-between',
+                            }}>
+                                <span>Use <span className="kbd" style={{ fontSize: 9 }}>←</span> <span className="kbd" style={{ fontSize: 9 }}>→</span> to navigate</span>
+                                <span><span className="kbd" style={{ fontSize: 9 }}>Esc</span> to skip</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -10185,10 +10435,93 @@
             const [showOcr, setShowOcr] = useState(false);
             const [showDiff, setShowDiff] = useState(false);
 
+            /* ── Guided tour ── */
+            const [showTour, setShowTour] = useState(false);
+
+            const TOUR_STEPS = useMemo(() => [
+                {
+                    icon: '👋',
+                    title: 'Welcome to Daily.',
+                    body: 'A quick 30-second tour of what you can do here. Nothing you tap will break anything — this is just a walkthrough.',
+                    placement: 'auto',
+                },
+                {
+                    target: '[data-tour="board"]',
+                    icon: '📋',
+                    title: 'Your board',
+                    body: 'Columns are your workflow stages. Drag cards between them to change status, or drag the ⠿ grip on a column header to reorder columns.',
+                    placement: 'top',
+                },
+                {
+                    target: '[data-tour="fab"]',
+                    icon: '➕',
+                    title: 'Create a card',
+                    body: 'Tap the + button anytime to add a new card (or press N on desktop). Cards support markdown, checkboxes, images and math.',
+                    placement: 'top',
+                },
+                {
+                    target: '[data-tour="scratch"]',
+                    icon: '📝',
+                    title: 'Scratch Pad',
+                    body: 'A floating notebook that follows you. Perfect for quick thoughts, code snippets, and reminders you don\'t want to lose.',
+                    placement: 'bottom',
+                },
+                {
+                    target: '[data-tour="tools"], [data-tour="mobile-menu"]',
+                    icon: '🧰',
+                    title: 'Power tools',
+                    body: 'OCR (image → text), Diff Checker, Diagrams, JSON Prettifier, ZPL labels, Base64 decoder, Calendar and more — all one click away.',
+                    placement: 'bottom',
+                },
+                {
+                    target: '[data-tour="sync"]',
+                    icon: '📡',
+                    title: 'Real-time sync',
+                    body: 'Create a room ID and share it (or the URL) — every device stays in sync. Offline-first, so it keeps working without internet.',
+                    placement: 'bottom',
+                },
+                {
+                    target: '[data-tour="calendar"]',
+                    icon: '📅',
+                    title: 'Calendar & Time Machine',
+                    body: 'Schedule events with reminders, or scrub back through daily snapshots of your board — you can even restore an old state.',
+                    placement: 'bottom',
+                },
+                {
+                    icon: '✅',
+                    title: "You're all set!",
+                    body: 'That\'s everything you need. Replay this tour anytime from the ⋮ menu → "Replay Tour".',
+                    placement: 'auto',
+                },
+            ], []);
+
             useEffect(() => { colsRef.current = cols; }, [cols]);
             useEffect(() => { cardsRef.current = cards; }, [cards]);
             useEffect(() => { scratchRef.current = scratch; }, [scratch]);
             useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
+
+            useEffect(() => {
+                let seen = false;
+                try { seen = localStorage.getItem('daily_tour_seen') === '1'; } catch { }
+                if (seen) return;
+                const t = setTimeout(() => setShowTour(true), 1800);
+                return () => clearTimeout(t);
+            }, []);
+
+            function finishTour() {
+                try { localStorage.setItem('daily_tour_seen', '1'); } catch { }
+                setShowTour(false);
+                addToast('Tour complete — enjoy Daily! 🎉', 'success');
+            }
+
+            function skipTour() {
+                try { localStorage.setItem('daily_tour_seen', '1'); } catch { }
+                setShowTour(false);
+            }
+
+            function replayTour() {
+                setShowTour(true);
+            }
 
             function tryParse(s, fb) { try { return JSON.parse(s); } catch { return fb; } }
 
@@ -10735,21 +11068,48 @@
                 }
             }, [cols, cards]);
 
+            /* ── auto-delete expired cards ──
+    - runs once ~1s after boot
+    - re-checks every 60s so new expiries are caught without a reload
+    - uses cardsRef so we never act on stale state
+    - broadcasts change through the existing sync effect */
             useEffect(() => {
-                setCards(c => {
-                    const nc = { ...c };
-                    let ch = false;
-                    Object.keys(nc).forEach(k => {
-                        const f = (nc[k] || []).filter(card => !card.expiryDays || !card
-                            .doneAt || daysDiff(card.doneAt) < card.expiryDays); if (f.length !== nc[k]
-                                .length) {
-                            nc[k] = f;
-                            ch = true;
+                function purgeExpired() {
+                    const current = cardsRef.current || {};
+                    const next = { ...current };
+                    let removed = 0;
+
+                    Object.keys(next).forEach(colId => {
+                        const list = next[colId] || [];
+                        const kept = list.filter(card => {
+                            // keep anything that isn't scheduled for auto-delete
+                            if (!card.expiryDays || !card.doneAt) return true;
+                            const days = Math.floor(
+                                (Date.now() - new Date(card.doneAt).getTime()) / 864e5
+                            );
+                            return days < card.expiryDays;
+                        });
+                        if (kept.length !== list.length) {
+                            removed += (list.length - kept.length);
+                            next[colId] = kept;
                         }
                     });
-                    if (ch) addToast('Expired tasks removed', 'success');
-                    return ch ? nc : c;
-                });
+
+                    if (removed > 0) {
+                        setCards(next);
+                        addToast(
+                            `${removed} expired task${removed !== 1 ? 's' : ''} auto-removed`,
+                            'success'
+                        );
+                    }
+                }
+
+                const firstRun = setTimeout(purgeExpired, 1000);
+                const interval = setInterval(purgeExpired, 60000);
+                return () => {
+                    clearTimeout(firstRun);
+                    clearInterval(interval);
+                };
             }, []);
 
             useEffect(() => {
@@ -10931,6 +11291,42 @@
                 addToast('Column deleted');
             }
 
+            async function onClearCards(colId) {
+                const col = cols.find(c => c.id === colId);
+                const count = (cards[colId] || []).length;
+                if (count === 0) {
+                    addToast('Column is already empty');
+                    return;
+                }
+                const ok = await confirm({
+                    title: `Clear all ${count} card${count !== 1 ? 's' : ''}?`,
+                    message:
+                        `Every card inside "${col?.label || 'this column'}" will be permanently deleted. ` +
+                        `This cannot be undone.\n\n` +
+                        `Timers, notes, comments and attachments attached to these cards will be lost too.`,
+                    confirmText: `Delete ${count} card${count !== 1 ? 's' : ''}`,
+                    cancelText: 'Keep them',
+                    icon: '🧹',
+                    variant: 'danger',
+                });
+                if (!ok) return;
+
+                setCards(c => ({ ...c, [colId]: [] }));
+
+                // clear any running timers for those cards
+                setTimers(t => {
+                    const n = { ...t };
+                    (cardsRef.current[colId] || []).forEach(card => delete n[card.id]);
+                    saveTimers(n);
+                    return n;
+                });
+
+                addToast(
+                    `Cleared "${col?.label || 'column'}" — ${count} card${count !== 1 ? 's' : ''} deleted`,
+                    'success'
+                );
+            }
+
             function onAddCol(colDef) {
                 setCols(c => [...c, colDef]);
                 setCards(c => ({ ...c, [colDef.id]: [] }));
@@ -11103,6 +11499,8 @@
                             : null,
                 },
                 null,
+                { icon: '🎓', label: 'Replay Tour', action: () => replayTour() },
+
                 { icon: '⌨️', label: 'Shortcuts', action: () => setShowShortcuts(true) },
                 null,
                 { icon: '⬇️', label: 'Import JSON', action: () => importJSON() },
@@ -11127,7 +11525,7 @@
                             borderColor: 'var(--blue-dim)', background: 'var(--blue-dim)'
                         }}>⏱ {activeTimers}</div>}
                     </div>
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>
+                    <div data-tour="tools" style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>
                         <div className="search-wrap">
                             {searchOpen && (<div style={{
                                 position: 'relative', display: 'flex',
@@ -11150,7 +11548,7 @@
                                     .current?.focus(), 80);
                             }}><i className="fa-solid fa-magnifying-glass"></i></button>
                         </div>
-                        <button className={`ibtn${showEditor ? ' active' : ''}`} data-tip="Scratch Pad (E)" onClick={() =>
+                        <button className={`ibtn${showEditor ? ' active' : ''}`} data-tour="scratch" data-tip="Scratch Pad (E)" onClick={() =>
                             setShowEditor(o => !o)}><i className="fa-solid fa-pen-to-square"></i></button>
                         <button className="ibtn" data-tip="Drawing Board (D)" onClick={() => setShowDraw(true)} style={{
                             color: 'var(--blue)', borderColor: 'var(--blue-dim)',
@@ -11196,6 +11594,7 @@
 
                         <button
                             className={`ibtn${showCalendar ? ' active' : ''}`}
+                            data-tour="calendar"
                             data-tip="Calendar"
                             onClick={() => setShowCalendar(o => !o)}
                         >
@@ -11206,6 +11605,7 @@
                             <i className="fa-solid fa-file-code"></i>
                         </button>
                         <button className={`ibtn${(peerStatus === 'connected' || peerStatus === 'hosting') ? ' active' : ''}`}
+                            data-tour="sync"
                             data-tip="Sync" onClick={() => setShowSyncModal(true)} style={{ position: 'relative' }}><i className="fa-solid fa-network-wired"></i>{(peerStatus ===
                                 'connected' || peerStatus === 'hosting') && <div className={`sync-dot ${peerStatus === 'connected' ? 'connected' : 'connecting'}`}
                                     style={{ position: 'absolute', bottom: -2, right: -2, width: 8, height: 8 }} />}</button>
@@ -11267,7 +11667,7 @@
                                         r="2.5" /><path d="M7 7.5L10.5 16M17 7.5L13.5 16M7.5 6h9" /></svg>{(peerStatus ===
                                             'connected' || peerStatus === 'hosting') && <div className={`sync-dot ${peerStatus === 'connected' ? 'connected' : 'connecting'}`}
                                                 style={{ position: 'absolute', bottom: -2, right: -2, width: 8, height: 8 }} />}</button>
-                        <div style={{ position: 'relative' }}><button className={`ibtn${showOverflow ? ' active' : ''}`}
+                        <div data-tour="mobile-menu" style={{ position: 'relative' }}><button className={`ibtn${showOverflow ? ' active' : ''}`}
                             onClick={() => setShowOverflow(o => !o)}><svg width="14" height="14" viewBox="0 0 24 24"
                                 fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1.5"
                                     fill="currentColor" /><circle cx="12" cy="12" r="1.5" fill="currentColor" /><circle
@@ -11309,7 +11709,8 @@
                         {(mobile || tablet) ? renderMobileTabletHeader() : renderDesktopHeader()}
                     </div>
                     <div className="board-wrap">
-                        <div className="board" onDragEnd={() => {
+                        <div className="board" data-tour="board" onDragEnd={() => {
+
                             setDragCardId(null);
                             setDragCardFrom(null);
                             setDragColId(null);
@@ -11327,7 +11728,9 @@
                                         setOpenCardCol(col.id);
                                     }}
                                     onAddCard={setAddCardCol} onDeleteCol={onDeleteCol} onToggleLock={onToggleLock}
-                                    onRenameCol={onRenameCol} />
+                                    onRenameCol={onRenameCol}
+                                    onClearCards={onClearCards}
+                                />
                             ))}
                             <button className="add-col-btn" title="Add column" onClick={() => setShowAddCol(true)}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -11336,7 +11739,7 @@
                             </button>
                         </div>
                     </div>
-                    <button className="fab" onClick={() => setAddCardCol(cols[0]?.id)} title="New card (N)">
+                    <button className="fab" data-tour="fab" onClick={() => setAddCardCol(cols[0]?.id)} title="New card (N)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19"
                                 y2="12" /></svg>
@@ -11382,6 +11785,9 @@
                             <button className="pwa-install" onClick={installPwa}>Install</button>
                             <button className="pwa-dismiss" onClick={() => setPwaPrompt(null)}>✕</button>
                         </div>
+                    )}
+                    {showTour && (
+                        <Tour steps={TOUR_STEPS} onFinish={finishTour} onSkip={skipTour} />
                     )}
                 </div>
             );
