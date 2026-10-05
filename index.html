@@ -25,11 +25,14 @@
            once and stored in Cache Storage, with CSS url()s rewritten
            to inline data: URIs. After the first successful online load
            the whole app runs with zero network access.
+
+           Tesseract.js (OCR engine) is loaded as an OPTIONAL script —
+           a failure there never blocks the app from booting.
            ═══════════════════════════════════════════════════════════ */
         (function () {
             'use strict';
 
-            var CACHE_NAME = 'daily-offline-v1';
+            var CACHE_NAME = 'daily-offline-v2';
             var INLINE_MAX = 400 * 1024;   // skip inlining single files above this
 
             var STYLES = [
@@ -43,6 +46,11 @@
                 { id: 'react-dom', url: 'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js' },
                 { id: 'babel', url: 'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js' },
                 { id: 'katex', url: 'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js' }
+            ];
+
+            /* optional — app boots fine even if these fail */
+            var OPTIONAL_SCRIPTS = [
+                { id: 'tesseract', url: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js' }
             ];
 
             /* ---------- cache plumbing ---------- */
@@ -194,6 +202,12 @@
                         bootMsg('Loading Daily…', 'Fetching ' + SCRIPTS[i].id);
                         await loadScript(SCRIPTS[i]);
                     }
+
+                    /* optional extras — never block the boot */
+                    try {
+                        bootMsg('Loading Daily…', 'Fetching extras');
+                        await Promise.allSettled(OPTIONAL_SCRIPTS.map(loadScript));
+                    } catch (e) { /* ignore */ }
 
                     if (typeof Babel === 'undefined') throw new Error('Babel standalone did not load');
 
@@ -2530,6 +2544,164 @@
             padding: 4px
         }
 
+        /* ══════════════════════════════════════════════
+           DIFF VIEWER
+           ══════════════════════════════════════════════ */
+        .diff-scroll {
+            font-family: 'DM Mono', monospace;
+            font-size: 12px;
+            line-height: 1.65;
+            background: var(--bg3);
+        }
+
+        .diff-row {
+            display: flex;
+            align-items: stretch;
+            min-height: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, .025);
+        }
+
+        .diff-num {
+            width: 46px;
+            flex-shrink: 0;
+            text-align: right;
+            padding: 1px 8px 1px 4px;
+            color: var(--text3);
+            background: var(--bg4);
+            border-right: 1px solid var(--border);
+            user-select: none;
+            font-size: 10px;
+            line-height: 1.9;
+            overflow: hidden;
+        }
+
+        .diff-cell {
+            flex: 1;
+            min-width: 0;
+            padding: 1px 10px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text2);
+        }
+
+        .diff-cell.add {
+            background: rgba(62, 207, 142, .12);
+            color: var(--text);
+        }
+
+        .diff-cell.del {
+            background: rgba(247, 111, 111, .12);
+            color: var(--text);
+        }
+
+        .diff-cell.empty {
+            background-image: repeating-linear-gradient(45deg,
+                    transparent, transparent 6px,
+                    rgba(255, 255, 255, .022) 6px,
+                    rgba(255, 255, 255, .022) 12px);
+        }
+
+        .diff-mid {
+            width: 22px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 11px;
+            user-select: none;
+        }
+
+        .diff-mid.add {
+            color: var(--green);
+            background: rgba(62, 207, 142, .18);
+        }
+
+        .diff-mid.del {
+            color: var(--red);
+            background: rgba(247, 111, 111, .18);
+        }
+
+        .diff-mark-add {
+            background: rgba(62, 207, 142, .40);
+            border-radius: 3px;
+            padding: 0 1px;
+        }
+
+        .diff-mark-del {
+            background: rgba(247, 111, 111, .40);
+            border-radius: 3px;
+            padding: 0 1px;
+        }
+
+        body.light .diff-cell.add {
+            background: rgba(62, 207, 142, .18);
+        }
+
+        body.light .diff-cell.del {
+            background: rgba(247, 111, 111, .18);
+        }
+
+        body.light .diff-cell.empty {
+            background-image: repeating-linear-gradient(45deg,
+                    transparent, transparent 6px,
+                    rgba(0, 0, 0, .035) 6px,
+                    rgba(0, 0, 0, .035) 12px);
+        }
+
+        /* ══════════════════════════════════════════════
+           OCR DROPZONE
+           ══════════════════════════════════════════════ */
+        .ocr-drop {
+            border: 2px dashed var(--border2);
+            border-radius: 12px;
+            padding: 22px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color .15s, background .15s;
+            background: var(--bg3);
+        }
+
+        .ocr-drop:hover,
+        .ocr-drop.over {
+            border-color: var(--blue);
+            background: var(--blue-dim);
+        }
+
+        .ocr-img-wrap {
+            position: relative;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            background: var(--bg4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            max-height: 260px;
+        }
+
+        .ocr-img-wrap img {
+            max-width: 100%;
+            max-height: 260px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .ocr-progress {
+            height: 6px;
+            background: var(--bg4);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .ocr-progress > div {
+            height: 100%;
+            background: linear-gradient(90deg, var(--blue), var(--purple));
+            border-radius: 3px;
+            transition: width .2s;
+        }
+
         /* ── DESKTOP: > 900px ── */
         @media(min-width:901px) {
             .col {
@@ -2789,6 +2961,22 @@
 
             .offline-pill .offline-text {
                 display: none
+            }
+
+            .diff-num {
+                width: 34px;
+                font-size: 9px;
+                padding: 1px 5px 1px 2px;
+            }
+
+            .diff-cell {
+                padding: 1px 7px;
+                font-size: 11px;
+            }
+
+            .diff-mid {
+                width: 18px;
+                font-size: 10px;
             }
         }
 
@@ -5111,6 +5299,939 @@
                         </div>
                     </FloatingPanel>
                 </div>
+            );
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           OCR — IMAGE  →  TEXT  (Tesseract.js)
+           ══════════════════════════════════════════════════════════ */
+        const OCR_LANGS = [
+            { code: 'eng', label: 'English' },
+            { code: 'hin', label: 'Hindi (हिन्दी)' },
+            { code: 'tam', label: 'Tamil (தமிழ்)' },
+            { code: 'tel', label: 'Telugu (తెలుగు)' },
+            { code: 'ben', label: 'Bengali (বাংলা)' },
+            { code: 'ara', label: 'Arabic (العربية)' },
+            { code: 'chi_sim', label: 'Chinese Simplified (中文)' },
+            { code: 'jpn', label: 'Japanese (日本語)' },
+            { code: 'kor', label: 'Korean (한국어)' },
+            { code: 'rus', label: 'Russian (Русский)' },
+            { code: 'spa', label: 'Spanish (Español)' },
+            { code: 'fra', label: 'French (Français)' },
+            { code: 'deu', label: 'German (Deutsch)' },
+            { code: 'por', label: 'Portuguese (Português)' },
+            { code: 'ita', label: 'Italian (Italiano)' },
+        ];
+
+        /* Downscale very large images so OCR doesn't crawl. */
+        function prepOcrImage(dataUrl) {
+            return new Promise(resolve => {
+                const img = new Image();
+                img.onload = () => {
+                    const MAX = 2400;
+                    const s = Math.min(1, MAX / Math.max(img.width, img.height));
+                    if (s >= 1) { resolve(dataUrl); return; }
+                    try {
+                        const c = document.createElement('canvas');
+                        c.width = Math.round(img.width * s);
+                        c.height = Math.round(img.height * s);
+                        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                        resolve(c.toDataURL('image/png'));
+                    } catch { resolve(dataUrl); }
+                };
+                img.onerror = () => resolve(dataUrl);
+                img.src = dataUrl;
+            });
+        }
+
+        function OcrPanel({ onClose, addToast }) {
+            const mobile = useIsMobile(640);
+            const online = useOnline();
+
+            const [imgSrc, setImgSrc] = useState('');
+            const [imgName, setImgName] = useState('');
+            const [lang, setLang] = useState('eng');
+            const [busy, setBusy] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [status, setStatus] = useState('');
+            const [text, setText] = useState('');
+            const [error, setError] = useState('');
+            const [confidence, setConfidence] = useState(null);
+            const [copied, setCopied] = useState(false);
+            const [dragOver, setDragOver] = useState(false);
+
+            const fileRef = useRef();
+            const loggerRef = useRef(() => { });
+            const workerCache = useRef({});
+
+            useEffect(() => {
+                return () => {
+                    try {
+                        Object.values(workerCache.current).forEach(w => {
+                            try { w.terminate(); } catch { }
+                        });
+                    } catch { }
+                    workerCache.current = {};
+                };
+            }, []);
+
+            async function getWorker(langCode) {
+                if (workerCache.current[langCode]) return workerCache.current[langCode];
+                const w = await Tesseract.createWorker(langCode, 1, {
+                    logger: m => loggerRef.current(m)
+                });
+                workerCache.current[langCode] = w;
+                return w;
+            }
+
+            function pickFile(f) {
+                if (!f) return;
+                if (!f.type.startsWith('image/')) { addToast('Please pick an image file', 'error'); return; }
+                const r = new FileReader();
+                r.onload = e => {
+                    setImgSrc(e.target.result);
+                    setImgName(f.name || 'image');
+                    setText(''); setError(''); setConfidence(null);
+                };
+                r.readAsDataURL(f);
+            }
+
+            function onPaste(e) {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                for (const it of items) {
+                    if (it.type.startsWith('image/')) {
+                        e.preventDefault();
+                        pickFile(it.getAsFile());
+                        return;
+                    }
+                }
+            }
+
+            async function run() {
+                if (!imgSrc) { addToast('Load an image first', 'error'); return; }
+                if (typeof Tesseract === 'undefined') {
+                    setError('OCR engine not loaded. Connect to the internet once so it can be cached, then reload.');
+                    return;
+                }
+                setBusy(true); setError(''); setText(''); setProgress(0);
+                setStatus('preparing'); setConfidence(null);
+
+                loggerRef.current = m => {
+                    if (m && m.status) setStatus(String(m.status));
+                    if (m && typeof m.progress === 'number') setProgress(m.progress);
+                };
+
+                try {
+                    const prepared = await prepOcrImage(imgSrc);
+                    const worker = await getWorker(lang);
+                    const { data } = await worker.recognize(prepared);
+                    const out = (data && data.text) ? data.text : '';
+                    setText(out);
+                    setConfidence(data && typeof data.confidence === 'number' ? data.confidence : null);
+                    if (!out.trim()) addToast('No readable text found in that image');
+                    else addToast('OCR complete ✓', 'success');
+                } catch (e) {
+                    console.error('[OCR]', e);
+                    setError('OCR failed: ' + ((e && e.message) || e));
+                }
+                setBusy(false); setStatus('');
+                setProgress(1);
+            }
+
+            function copyText() {
+                if (!text) return;
+                try {
+                    navigator.clipboard.writeText(text);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1600);
+                } catch {
+                    const ta = document.createElement('textarea');
+                    ta.value = text; document.body.appendChild(ta);
+                    ta.select(); document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1600);
+                }
+            }
+
+            function downloadTxt() {
+                if (!text) return;
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+                a.download = (imgName ? imgName.replace(/\.[^.]+$/, '') : 'ocr') + '.txt';
+                a.click();
+                addToast('Downloaded ✓', 'success');
+            }
+
+            function insertToScratch() {
+                if (!text) return;
+                const cur = loadLS('daily_scratch', '');
+                saveLS('daily_scratch', cur + (cur ? '\n\n' : '') + text.trim());
+                addToast('Added to Scratch Pad — open 📝 to see it', 'success');
+            }
+
+            const pct = Math.round(progress * 100);
+
+            return (
+                <FloatingPanel title="Image → Text" icon="🔎" onClose={onClose}
+                    initW={880} initH={620} storageKey="ocr">
+
+                    {/* toolbar */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px',
+                        background: 'var(--bg4)', borderBottom: '1px solid var(--border)',
+                        flexWrap: 'wrap', rowGap: 5, flexShrink: 0
+                    }}>
+                        <select value={lang} onChange={e => setLang(e.target.value)}
+                            className="fselect" style={{ width: 'auto', padding: '4px 8px', fontSize: 12 }}>
+                            {OCR_LANGS.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                        </select>
+
+                        <button className="btn primary" style={{ padding: '5px 16px', fontSize: 12 }}
+                            onClick={run} disabled={busy || !imgSrc}>
+                            {busy ? '⏳ Working…' : '▶ Extract text'}
+                        </button>
+
+                        <button className="btn" style={{ padding: '5px 12px', fontSize: 12 }}
+                            onClick={() => fileRef.current && fileRef.current.click()}>
+                            📁 Choose image
+                        </button>
+
+                        {imgSrc && (
+                            <button className="btn" style={{ padding: '5px 12px', fontSize: 12, color: 'var(--red)' }}
+                                onClick={() => { setImgSrc(''); setImgName(''); setText(''); setError(''); setConfidence(null); }}>
+                                ✕ Clear
+                            </button>
+                        )}
+
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                            {confidence !== null && (
+                                <span style={{
+                                    fontSize: 10, padding: '3px 9px', borderRadius: 12, fontWeight: 700,
+                                    background: confidence > 80 ? 'var(--green-dim)' : confidence > 60 ? 'var(--amber-dim)' : 'var(--red-dim)',
+                                    color: confidence > 80 ? 'var(--green)' : confidence > 60 ? 'var(--amber)' : 'var(--red)',
+                                    border: '1px solid ' + (confidence > 80 ? 'rgba(62,207,142,.3)' : confidence > 60 ? 'rgba(247,195,90,.3)' : 'rgba(247,111,111,.3)')
+                                }}>
+                                    {Math.round(confidence)}% confidence
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {!online && (
+                        <div style={{ padding: '8px 12px', flexShrink: 0 }}>
+                            <div className="offline-note">
+                                <span>📡</span>
+                                <span>
+                                    Offline. OCR engine + language data need one online load first. After that they're cached.
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
+                    {busy && (
+                        <div style={{ padding: '10px 14px', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', marginBottom: 4 }}>
+                                <span>{status || 'working…'}</span>
+                                <span>{pct}%</span>
+                            </div>
+                            <div className="ocr-progress"><div style={{ width: pct + '%' }} /></div>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div style={{ padding: '8px 14px', flexShrink: 0 }}>
+                            <div style={{ background: 'var(--red-dim)', border: '1px solid rgba(247,111,111,.3)', borderRadius: 10, padding: '10px 14px', color: 'var(--red)', fontSize: 12, lineHeight: 1.55 }}>
+                                {error}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* body */}
+                    <div
+                        onPaste={onPaste}
+                        style={{
+                            flex: 1, display: 'flex',
+                            flexDirection: mobile ? 'column' : 'row',
+                            minHeight: 0, overflow: 'hidden'
+                        }}>
+                        {/* LEFT — image */}
+                        <div style={{
+                            flex: mobile ? '0 0 auto' : '0 0 42%',
+                            display: 'flex', flexDirection: 'column', minHeight: 0,
+                            borderRight: mobile ? 'none' : '1px solid var(--border)',
+                            borderBottom: mobile ? '1px solid var(--border)' : 'none'
+                        }}>
+                            <div style={{ padding: '4px 10px', background: 'var(--bg3)', borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Image</span>
+                                <span style={{ marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{imgName || '—'}</span>
+                            </div>
+                            <div style={{ flex: 1, overflow: 'auto', padding: 12, minHeight: mobile ? 140 : 0 }}>
+                                {!imgSrc ? (
+                                    <div
+                                        className={'ocr-drop' + (dragOver ? ' over' : '')}
+                                        onClick={() => fileRef.current && fileRef.current.click()}
+                                        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                                        onDragLeave={() => setDragOver(false)}
+                                        onDrop={e => {
+                                            e.preventDefault(); setDragOver(false);
+                                            const f = e.dataTransfer.files && e.dataTransfer.files[0];
+                                            pickFile(f);
+                                        }}>
+                                        <div style={{ fontSize: 34, marginBottom: 8 }}>🖼️</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
+                                            Drop an image here
+                                        </div>
+                                        <div style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6 }}>
+                                            or click to browse · Ctrl/⌘+V to paste<br />
+                                            PNG · JPG · WEBP · BMP · GIF
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="ocr-img-wrap">
+                                        <img src={imgSrc} alt="source" />
+                                    </div>
+                                )}
+                                <input
+                                    ref={fileRef}
+                                    type="file"
+                                    accept="image/*"
+                                    style={{ display: 'none' }}
+                                    onChange={e => { pickFile(e.target.files && e.target.files[0]); e.target.value = ''; }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* RIGHT — text */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                            <div style={{ padding: '4px 10px', background: 'var(--bg3)', borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Extracted text</span>
+                                <span>{text.length}ch · {text ? text.split('\n').length : 0}ln</span>
+                                <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                    <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }}
+                                        onClick={copyText} disabled={!text}>
+                                        {copied ? '✓ Copied' : '📋 Copy'}
+                                    </button>
+                                    <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }}
+                                        onClick={downloadTxt} disabled={!text}>
+                                        💾 .txt
+                                    </button>
+                                    <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }}
+                                        onClick={insertToScratch} disabled={!text}>
+                                        📝 Scratch
+                                    </button>
+                                </div>
+                            </div>
+                            <textarea
+                                value={text}
+                                onChange={e => setText(e.target.value)}
+                                placeholder="Recognised text will appear here — you can edit it before copying…"
+                                spellCheck={false}
+                                style={{
+                                    flex: 1, background: 'var(--bg3)', border: 'none', padding: '10px 12px',
+                                    fontSize: 13, fontFamily: "'DM Mono',monospace", color: 'var(--text)',
+                                    resize: 'none', outline: 'none', lineHeight: 1.7, overflowY: 'auto',
+                                    minHeight: mobile ? 160 : 0
+                                }}
+                            />
+                        </div>
+                    </div>
+                </FloatingPanel>
+            );
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           FILE DIFF — line + word level, green / red highlighting
+           ══════════════════════════════════════════════════════════ */
+
+        function tokenizeLine(s) {
+            if (!s) return [];
+            const out = [];
+            const re = /(\s+|\S+)/g;
+            let m;
+            while ((m = re.exec(s)) !== null) out.push(m[0]);
+            return out;
+        }
+
+        /* LCS-based word diff for a single pair of changed lines. */
+        function wordLevelDiff(a, b) {
+            const at = tokenizeLine(a);
+            const bt = tokenizeLine(b);
+            const m = at.length, n = bt.length;
+            if (m === 0 && n === 0) return { aParts: [], bParts: [] };
+            if (m * n > 80000) return null;
+            const W = n + 1;
+            const dp = new Uint32Array((m + 1) * W);
+            for (let i = m - 1; i >= 0; i--) {
+                for (let j = n - 1; j >= 0; j--) {
+                    dp[i * W + j] = at[i] === bt[j]
+                        ? dp[(i + 1) * W + (j + 1)] + 1
+                        : Math.max(dp[(i + 1) * W + j], dp[i * W + (j + 1)]);
+                }
+            }
+            const aParts = [], bParts = [];
+            let i = 0, j = 0;
+            while (i < m && j < n) {
+                if (at[i] === bt[j]) {
+                    aParts.push({ t: 'same', text: at[i] });
+                    bParts.push({ t: 'same', text: bt[j] });
+                    i++; j++;
+                } else if (dp[(i + 1) * W + j] >= dp[i * W + (j + 1)]) {
+                    aParts.push({ t: 'del', text: at[i] }); i++;
+                } else {
+                    bParts.push({ t: 'add', text: bt[j] }); j++;
+                }
+            }
+            while (i < m) aParts.push({ t: 'del', text: at[i++] });
+            while (j < n) bParts.push({ t: 'add', text: bt[j++] });
+            return { aParts, bParts };
+        }
+
+        /* Build a row-per-line diff. type: same | add | del | mod */
+        function buildDiffRows(aText, bText, opts) {
+            const norm = (s) => {
+                let r = s;
+                if (opts.ignoreWs) r = r.replace(/\s+/g, ' ').trim();
+                if (opts.ignoreCase) r = r.toLowerCase();
+                return r;
+            };
+            const al = aText.split('\n');
+            const bl = bText.split('\n');
+            const an = al.map(norm);
+            const bn = bl.map(norm);
+            const m = al.length, n = bl.length;
+
+            if (m * n > 4000000) {
+                throw new Error('Input too large to diff (over ~4M line comparisons). Try trimming the files.');
+            }
+
+            const W = n + 1;
+            const dp = new Uint32Array((m + 1) * W);
+            for (let i = m - 1; i >= 0; i--) {
+                for (let j = n - 1; j >= 0; j--) {
+                    dp[i * W + j] = an[i] === bn[j]
+                        ? dp[(i + 1) * W + (j + 1)] + 1
+                        : Math.max(dp[(i + 1) * W + j], dp[i * W + (j + 1)]);
+                }
+            }
+
+            const ops = [];
+            let i = 0, j = 0;
+            while (i < m && j < n) {
+                if (an[i] === bn[j]) { ops.push(['same', i, j]); i++; j++; }
+                else if (dp[(i + 1) * W + j] >= dp[i * W + (j + 1)]) { ops.push(['del', i, -1]); i++; }
+                else { ops.push(['add', -1, j]); j++; }
+            }
+            while (i < m) { ops.push(['del', i, -1]); i++; }
+            while (j < n) { ops.push(['add', -1, j]); j++; }
+
+            const rows = [];
+            let k = 0;
+            while (k < ops.length) {
+                const t = ops[k][0];
+                if (t === 'same') {
+                    rows.push({
+                        type: 'same',
+                        leftNo: ops[k][1] + 1,
+                        rightNo: ops[k][2] + 1,
+                        leftText: al[ops[k][1]],
+                        rightText: bl[ops[k][2]],
+                    });
+                    k++;
+                } else if (t === 'del') {
+                    const dels = [];
+                    while (k < ops.length && ops[k][0] === 'del') { dels.push(ops[k][1]); k++; }
+                    const adds = [];
+                    while (k < ops.length && ops[k][0] === 'add') { adds.push(ops[k][2]); k++; }
+                    const pairs = Math.min(dels.length, adds.length);
+                    for (let p = 0; p < pairs; p++) {
+                        const lt = al[dels[p]];
+                        const rt = bl[adds[p]];
+                        const wd = wordLevelDiff(lt, rt);
+                        rows.push({
+                            type: 'mod',
+                            leftNo: dels[p] + 1,
+                            rightNo: adds[p] + 1,
+                            leftText: lt,
+                            rightText: rt,
+                            leftParts: wd ? wd.aParts : null,
+                            rightParts: wd ? wd.bParts : null,
+                        });
+                    }
+                    for (let p = pairs; p < dels.length; p++) {
+                        rows.push({
+                            type: 'del', leftNo: dels[p] + 1, rightNo: null,
+                            leftText: al[dels[p]], rightText: '',
+                        });
+                    }
+                    for (let p = pairs; p < adds.length; p++) {
+                        rows.push({
+                            type: 'add', leftNo: null, rightNo: adds[p] + 1,
+                            leftText: '', rightText: bl[adds[p]],
+                        });
+                    }
+                } else {
+                    const adds = [];
+                    while (k < ops.length && ops[k][0] === 'add') { adds.push(ops[k][2]); k++; }
+                    for (const ai of adds) {
+                        rows.push({
+                            type: 'add', leftNo: null, rightNo: ai + 1,
+                            leftText: '', rightText: bl[ai],
+                        });
+                    }
+                }
+            }
+            return rows;
+        }
+
+        function diffRowsToText(rows) {
+            const out = [];
+            rows.forEach(r => {
+                if (r.type === 'same') out.push('  ' + r.leftText);
+                else if (r.type === 'del') out.push('- ' + r.leftText);
+                else if (r.type === 'add') out.push('+ ' + r.rightText);
+                else { out.push('- ' + r.leftText); out.push('+ ' + r.rightText); }
+            });
+            return out.join('\n');
+        }
+
+        function renderDiffParts(parts, side) {
+            if (!parts) return null;
+            return parts.map((p, i) => {
+                if (p.t === 'same') return <span key={i}>{p.text}</span>;
+                if (side === 'left' && p.t === 'del') {
+                    return <span key={i} className="diff-mark-del">{p.text}</span>;
+                }
+                if (side === 'right' && p.t === 'add') {
+                    return <span key={i} className="diff-mark-add">{p.text}</span>;
+                }
+                return null;
+            });
+        }
+
+        function DiffPanel({ onClose, addToast }) {
+            const isMob = useIsMobile(640);
+            const [left, setLeft] = useState(() => loadLS('daily_diff_left', ''));
+            const [right, setRight] = useState(() => loadLS('daily_diff_right', ''));
+            const [leftName, setLeftName] = useState('Original');
+            const [rightName, setRightName] = useState('Modified');
+            const [ignoreCase, setIgnoreCase] = useState(false);
+            const [ignoreWs, setIgnoreWs] = useState(false);
+            const [mode, setMode] = useState(isMob ? 'unified' : 'split');
+            const [mTab, setMTab] = useState('diff'); // mobile only: 'left' | 'right' | 'diff'
+            const [showInputs, setShowInputs] = useState(true);
+
+            const [rows, setRows] = useState(null);
+            const [stats, setStats] = useState({ added: 0, removed: 0, same: 0, mod: 0 });
+            const [busy, setBusy] = useState(false);
+            const [err, setErr] = useState('');
+
+            const timerRef = useRef(null);
+            const leftFileRef = useRef();
+            const rightFileRef = useRef();
+
+            useEffect(() => { saveLS('daily_diff_left', left); }, [left]);
+            useEffect(() => { saveLS('daily_diff_right', right); }, [right]);
+
+            useEffect(() => {
+                if (!left && !right) { setRows(null); setErr(''); return; }
+                clearTimeout(timerRef.current);
+                setBusy(true);
+                timerRef.current = setTimeout(() => {
+                    try {
+                        const r = buildDiffRows(left, right, { ignoreCase, ignoreWs });
+                        let added = 0, removed = 0, same = 0, mod = 0;
+                        r.forEach(x => {
+                            if (x.type === 'add') added++;
+                            else if (x.type === 'del') removed++;
+                            else if (x.type === 'mod') { mod++; added++; removed++; }
+                            else same++;
+                        });
+                        setRows(r);
+                        setStats({ added, removed, same, mod });
+                        setErr('');
+                    } catch (e) {
+                        setErr(e.message || String(e));
+                        setRows(null);
+                    }
+                    setBusy(false);
+                }, 240);
+                return () => clearTimeout(timerRef.current);
+            }, [left, right, ignoreCase, ignoreWs]);
+
+            function readFile(f, setter, setName) {
+                if (!f) return;
+                const r = new FileReader();
+                r.onload = e => { setter(String(e.target.result || '')); setName(f.name || 'file'); };
+                r.readAsText(f);
+            }
+
+            function swap() {
+                setLeft(right); setRight(left);
+                setLeftName(rightName); setRightName(leftName);
+            }
+
+            function copyDiff() {
+                if (!rows) return;
+                try { navigator.clipboard.writeText(diffRowsToText(rows)); addToast('Unified diff copied ✓', 'success'); }
+                catch { addToast('Copy failed', 'error'); }
+            }
+
+            function copyAsJson() {
+                if (!rows) return;
+                const payload = {
+                    generatedAt: new Date().toISOString(),
+                    stats: { added: stats.added, removed: stats.removed, unchanged: stats.same, modified: stats.mod },
+                    changes: rows.filter(r => r.type !== 'same').map(r => ({
+                        type: r.type,
+                        leftLine: r.leftNo, rightLine: r.rightNo,
+                        left: r.leftText, right: r.rightText,
+                    })),
+                };
+                try { navigator.clipboard.writeText(JSON.stringify(payload, null, 2)); addToast('JSON copied ✓', 'success'); }
+                catch { addToast('Copy failed', 'error'); }
+            }
+
+            /* ── ROW RENDERERS ── */
+            const renderSplit = () => (
+                <div className="diff-scroll">
+                    {rows.map((r, i) => (
+                        <div className="diff-row" key={i}>
+                            <div className="diff-num">{r.leftNo || ''}</div>
+                            <div className={'diff-cell' + (r.type === 'del' || r.type === 'mod' ? ' del' : r.type === 'add' ? ' empty' : '')}>
+                                {r.type === 'add' ? '' : (r.leftParts ? renderDiffParts(r.leftParts, 'left') : r.leftText)}
+                            </div>
+                            <div className="diff-num">{r.rightNo || ''}</div>
+                            <div className={'diff-cell' + (r.type === 'add' || r.type === 'mod' ? ' add' : r.type === 'del' ? ' empty' : '')}>
+                                {r.type === 'del' ? '' : (r.rightParts ? renderDiffParts(r.rightParts, 'right') : r.rightText)}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+
+            const renderUnified = () => (
+                <div className="diff-scroll">
+                    {rows.map((r, i) => (
+                        <React.Fragment key={i}>
+                            {(r.type === 'del' || r.type === 'mod') && (
+                                <div className="diff-row">
+                                    <div className="diff-num">{r.leftNo}</div>
+                                    <div className="diff-mid del">−</div>
+                                    <div className="diff-cell del">
+                                        {r.leftParts ? renderDiffParts(r.leftParts, 'left') : r.leftText}
+                                    </div>
+                                </div>
+                            )}
+                            {(r.type === 'add' || r.type === 'mod') && (
+                                <div className="diff-row">
+                                    <div className="diff-num">{r.rightNo}</div>
+                                    <div className="diff-mid add">+</div>
+                                    <div className="diff-cell add">
+                                        {r.rightParts ? renderDiffParts(r.rightParts, 'right') : r.rightText}
+                                    </div>
+                                </div>
+                            )}
+                            {r.type === 'same' && (
+                                <div className="diff-row">
+                                    <div className="diff-num">{r.leftNo}</div>
+                                    <div className="diff-mid" />
+                                    <div className="diff-cell">{r.leftText}</div>
+                                </div>
+                            )}
+                        </React.Fragment>
+                    ))}
+                </div>
+            );
+
+            /* ── EMPTY / ERROR STATES ── */
+            const emptyState = (
+                <div style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    justifyContent: 'center', height: '100%', padding: 28,
+                    color: 'var(--text3)', textAlign: 'center', gap: 8
+                }}>
+                    <div style={{ fontSize: 42, opacity: .35 }}>⚖️</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text2)' }}>
+                        Paste or upload two versions
+                    </div>
+                    <div style={{ fontSize: 12, lineHeight: 1.7, maxWidth: 340 }}>
+                        Added lines are shown in <b style={{ color: 'var(--green)' }}>green</b>, removed lines in{' '}
+                        <b style={{ color: 'var(--red)' }}>red</b> — changed lines are highlighted word-by-word.
+                    </div>
+                </div>
+            );
+
+            const errorState = (
+                <div style={{ padding: 16 }}>
+                    <div style={{
+                        background: 'var(--red-dim)', border: '1px solid rgba(247,111,111,.3)',
+                        borderRadius: 10, padding: '12px 16px', color: 'var(--red)',
+                        fontSize: 12, lineHeight: 1.6
+                    }}>
+                        <b>Diff failed</b><br />{err}
+                    </div>
+                </div>
+            );
+
+            /* ── SHARED SUB-UI ── */
+            const leftEditor = (
+                <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+                    <div style={{
+                        padding: '4px 10px', background: 'var(--bg3)',
+                        borderBottom: '1px solid var(--border)', fontSize: 10,
+                        color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6,
+                        flexShrink: 0, flexWrap: 'wrap'
+                    }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--red)', flexShrink: 0 }} />
+                        <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Original</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
+                            {leftName}
+                        </span>
+                        <span style={{ marginLeft: 'auto' }}>{left.length}ch</span>
+                        <button className="btn" style={{ padding: '2px 8px', fontSize: 10 }}
+                            onClick={() => leftFileRef.current && leftFileRef.current.click()}>
+                            📁 Upload
+                        </button>
+                        <button className="btn" style={{ padding: '2px 8px', fontSize: 10, color: 'var(--red)' }}
+                            onClick={() => { setLeft(''); setLeftName('Original'); }}>
+                            Clear
+                        </button>
+                    </div>
+                    <textarea
+                        value={left}
+                        onChange={e => setLeft(e.target.value)}
+                        placeholder="Paste the original / first version here…"
+                        spellCheck={false}
+                        style={{
+                            flex: 1, minHeight: 0, background: 'var(--bg3)', border: 'none',
+                            padding: '10px 12px', fontSize: 12,
+                            fontFamily: "'DM Mono',monospace", color: 'var(--text)',
+                            resize: 'none', outline: 'none', lineHeight: 1.7, overflowY: 'auto'
+                        }} />
+                </div>
+            );
+
+            const rightEditor = (
+                <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+                    <div style={{
+                        padding: '4px 10px', background: 'var(--bg3)',
+                        borderBottom: '1px solid var(--border)', fontSize: 10,
+                        color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6,
+                        flexShrink: 0, flexWrap: 'wrap'
+                    }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--green)', flexShrink: 0 }} />
+                        <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Modified</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
+                            {rightName}
+                        </span>
+                        <span style={{ marginLeft: 'auto' }}>{right.length}ch</span>
+                        <button className="btn" style={{ padding: '2px 8px', fontSize: 10 }}
+                            onClick={() => rightFileRef.current && rightFileRef.current.click()}>
+                            📁 Upload
+                        </button>
+                        <button className="btn" style={{ padding: '2px 8px', fontSize: 10, color: 'var(--red)' }}
+                            onClick={() => { setRight(''); setRightName('Modified'); }}>
+                            Clear
+                        </button>
+                    </div>
+                    <textarea
+                        value={right}
+                        onChange={e => setRight(e.target.value)}
+                        placeholder="Paste the modified / second version here…"
+                        spellCheck={false}
+                        style={{
+                            flex: 1, minHeight: 0, background: 'var(--bg3)', border: 'none',
+                            padding: '10px 12px', fontSize: 12,
+                            fontFamily: "'DM Mono',monospace", color: 'var(--text)',
+                            resize: 'none', outline: 'none', lineHeight: 1.7, overflowY: 'auto'
+                        }} />
+                </div>
+            );
+
+            const diffView = (
+                <div style={{
+                    flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--bg3)',
+                    borderRadius: 0, position: 'relative'
+                }}>
+                    {busy && (
+                        <div style={{
+                            position: 'absolute', top: 8, right: 12, fontSize: 10,
+                            color: 'var(--blue)', fontWeight: 600, zIndex: 3,
+                            background: 'var(--bg2)', padding: '2px 8px', borderRadius: 8,
+                            border: '1px solid var(--border)'
+                        }}>
+                            computing…
+                        </div>
+                    )}
+                    {err ? errorState
+                        : !rows ? emptyState
+                            : rows.length === 0 ? emptyState
+                                : (mode === 'split' && !isMob ? renderSplit() : renderUnified())}
+                </div>
+            );
+
+            const toolbar = (
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px',
+                    background: 'var(--bg4)', borderBottom: '1px solid var(--border)',
+                    flexWrap: 'wrap', rowGap: 5, flexShrink: 0
+                }}>
+                    <div style={{
+                        display: 'flex', background: 'var(--bg3)', borderRadius: 7,
+                        border: '1px solid var(--border)', overflow: 'hidden', flexShrink: 0
+                    }}>
+                        {!isMob && (
+                            <>
+                                <button onClick={() => setMode('split')}
+                                    style={{
+                                        padding: '4px 12px', fontSize: 11, border: 'none', cursor: 'pointer',
+                                        fontWeight: 600, background: mode === 'split' ? 'var(--blue)' : 'transparent',
+                                        color: mode === 'split' ? '#fff' : 'var(--text3)', whiteSpace: 'nowrap'
+                                    }}>▥ Split</button>
+                                <button onClick={() => setMode('unified')}
+                                    style={{
+                                        padding: '4px 12px', fontSize: 11, border: 'none', cursor: 'pointer',
+                                        fontWeight: 600, background: mode === 'unified' ? 'var(--blue)' : 'transparent',
+                                        color: mode === 'unified' ? '#fff' : 'var(--text3)', whiteSpace: 'nowrap'
+                                    }}>≣ Unified</button>
+                            </>
+                        )}
+                        {isMob && (
+                            <>
+                                {[['left', '📄 Original'], ['right', '📝 Modified'], ['diff', '⚖️ Diff']].map(([id, lbl]) => (
+                                    <button key={id} onClick={() => setMTab(id)}
+                                        style={{
+                                            padding: '5px 12px', fontSize: 11, border: 'none', cursor: 'pointer',
+                                            fontWeight: 600,
+                                            background: mTab === id ? 'var(--blue)' : 'transparent',
+                                            color: mTab === id ? '#fff' : 'var(--text3)', whiteSpace: 'nowrap'
+                                        }}>{lbl}</button>
+                                ))}
+                            </>
+                        )}
+                    </div>
+
+                    {!isMob && (
+                        <label style={{
+                            display: 'flex', alignItems: 'center', gap: 4, fontSize: 11,
+                            color: 'var(--text2)', cursor: 'pointer', userSelect: 'none'
+                        }}>
+                            <input type="checkbox" checked={ignoreCase}
+                                onChange={e => setIgnoreCase(e.target.checked)}
+                                style={{ accentColor: 'var(--blue)' }} />
+                            Aa
+                        </label>
+                    )}
+                    {!isMob && (
+                        <label style={{
+                            display: 'flex', alignItems: 'center', gap: 4, fontSize: 11,
+                            color: 'var(--text2)', cursor: 'pointer', userSelect: 'none'
+                        }}>
+                            <input type="checkbox" checked={ignoreWs}
+                                onChange={e => setIgnoreWs(e.target.checked)}
+                                style={{ accentColor: 'var(--blue)' }} />
+                            whitespace
+                        </label>
+                    )}
+
+                    {!isMob && (
+                        <button className="btn" style={{ padding: '4px 11px', fontSize: 11 }}
+                            onClick={() => setShowInputs(v => !v)}>
+                            {showInputs ? '▲ Hide inputs' : '▼ Show inputs'}
+                        </button>
+                    )}
+
+                    <button className="btn" style={{ padding: '4px 11px', fontSize: 11 }} onClick={swap}>
+                        ⇅ Swap
+                    </button>
+
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{
+                            fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 12,
+                            background: 'var(--green-dim)', color: 'var(--green)',
+                            border: '1px solid rgba(62,207,142,.3)'
+                        }}>+{stats.added}</span>
+                        <span style={{
+                            fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 12,
+                            background: 'var(--red-dim)', color: 'var(--red)',
+                            border: '1px solid rgba(247,111,111,.3)'
+                        }}>−{stats.removed}</span>
+                        <span style={{
+                            fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 12,
+                            background: 'var(--bg3)', color: 'var(--text3)',
+                            border: '1px solid var(--border)'
+                        }}>={stats.same}</span>
+                        <button className="btn" style={{ padding: '4px 11px', fontSize: 11 }}
+                            onClick={copyDiff} disabled={!rows}>
+                            📋 Unified
+                        </button>
+                        <button className="btn" style={{ padding: '4px 11px', fontSize: 11 }}
+                            onClick={copyAsJson} disabled={!rows}>
+                            {} JSON
+                        </button>
+                    </div>
+                </div>
+            );
+
+            return (
+                <FloatingPanel title="Diff Checker" icon="⚖️" onClose={onClose}
+                    initW={1140} initH={700} storageKey="diff">
+
+                    {/* hidden file inputs */}
+                    <input ref={leftFileRef} type="file" accept=".txt,.md,.json,.js,.jsx,.ts,.tsx,.css,.html,.xml,.csv,.log,.yml,.yaml,.py,.java,.c,.cpp,.h,.go,.rb,.php,.sql,text/*"
+                        style={{ display: 'none' }}
+                        onChange={e => { readFile(e.target.files && e.target.files[0], setLeft, setLeftName); e.target.value = ''; }} />
+                    <input ref={rightFileRef} type="file" accept=".txt,.md,.json,.js,.jsx,.ts,.tsx,.css,.html,.xml,.csv,.log,.yml,.yaml,.py,.java,.c,.cpp,.h,.go,.rb,.php,.sql,text/*"
+                        style={{ display: 'none' }}
+                        onChange={e => { readFile(e.target.files && e.target.files[0], setRight, setRightName); e.target.value = ''; }} />
+
+                    {toolbar}
+
+                    {/* ── MOBILE LAYOUT ── */}
+                    {isMob ? (
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                            {mTab === 'left' && (
+                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                                    {leftEditor}
+                                </div>
+                            )}
+                            {mTab === 'right' && (
+                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                                    {rightEditor}
+                                </div>
+                            )}
+                            {mTab === 'diff' && (
+                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                                    {diffView}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        /* ── DESKTOP LAYOUT ── */
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                            {showInputs && (
+                                <div style={{
+                                    display: 'grid', gridTemplateColumns: '1fr 1fr',
+                                    height: 200, flexShrink: 0,
+                                    borderBottom: '1px solid var(--border)'
+                                }}>
+                                    <div style={{
+                                        display: 'flex', flexDirection: 'column', minHeight: 0,
+                                        borderRight: '1px solid var(--border)'
+                                    }}>
+                                        {leftEditor}
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                                        {rightEditor}
+                                    </div>
+                                </div>
+                            )}
+                            {diffView}
+                        </div>
+                    )}
+                </FloatingPanel>
             );
         }
 
@@ -8790,6 +9911,8 @@
             const [showZpl, setShowZpl] = useState(false);
             const [showJson, setShowJson] = useState(false);
             const [showCalendar, setShowCalendar] = useState(false);
+            const [showOcr, setShowOcr] = useState(false);
+            const [showDiff, setShowDiff] = useState(false);
 
             useEffect(() => { colsRef.current = cols; }, [cols]);
             useEffect(() => { cardsRef.current = cards; }, [cards]);
@@ -9667,6 +10790,8 @@
                 { icon: '✏️', label: 'Drawing Board', action: () => setShowDraw(true) },
                 { icon: '🤖', label: 'AI Assistants', action: () => setShowAi(o => !o) },
                 null,
+                { icon: '🔎', label: 'Image → Text', action: () => setShowOcr(true) },
+                { icon: '⚖️', label: 'Diff Checker', action: () => setShowDiff(true) },
                 { icon: '🔄', label: 'Base64 Converter', action: () => setShowBase64(true) },
                 { icon: '📐', label: 'Diagrams', action: () => setShowKroki(true) },
                 { icon: '✨', label: 'JSON Prettifier', action: () => setShowJson(true) },
@@ -9764,6 +10889,22 @@
                             setShowAi(o => !o)}><i className="fa-solid fa-wand-magic-sparkles"></i></button>
                         <button className={`ibtn${showKroki ? ' active' : ''}`} data-tip="Diagrams" onClick={() => setShowKroki(o => !o)}>
                             <i className="fa-solid fa-diagram-project"></i>
+                        </button>
+
+                        <button
+                            className={`ibtn${showOcr ? ' active' : ''}`}
+                            data-tip="Image → Text"
+                            onClick={() => setShowOcr(o => !o)}
+                        >
+                            <i className="fa-solid fa-image"></i>
+                        </button>
+
+                        <button
+                            className={`ibtn${showDiff ? ' active' : ''}`}
+                            data-tip="Diff Checker"
+                            onClick={() => setShowDiff(o => !o)}
+                        >
+                            <i className="fa-solid fa-code-compare"></i>
                         </button>
 
                         <button
@@ -9944,6 +11085,8 @@
                     {showZpl && <ZplPanel onClose={() => setShowZpl(false)} />}
                     {showJson && <JsonPanel onClose={() => setShowJson(false)} />}
                     {showCalendar && <CalendarPanel onClose={() => setShowCalendar(false)} addToast={addToast} />}
+                    {showOcr && <OcrPanel onClose={() => setShowOcr(false)} addToast={addToast} />}
+                    {showDiff && <DiffPanel onClose={() => setShowDiff(false)} addToast={addToast} />}
 
                     {showBase64 && <Base64Converter onClose={() => setShowBase64(false)} />}
                     {showSyncModal && <SyncModal
