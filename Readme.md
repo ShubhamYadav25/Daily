@@ -31,6 +31,8 @@ Whether you're working solo, studying, freelancing, or managing a team — Daily
 - Priority management
 - Mobile responsive UI
 - Local storage support
+- JSON syntax repair and partial recovery, with unresolved text and original input preserved in recovery reports
+- JSON diagnostics with source locations, fix hints, and warnings for duplicate keys, integer precision loss, and suspicious path escapes
 - Minimal & distraction-free design
 
 ---
