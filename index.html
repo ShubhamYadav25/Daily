@@ -50,7 +50,9 @@
 
             /* optional — app boots fine even if these fail */
             var OPTIONAL_SCRIPTS = [
-                { id: 'tesseract', url: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js' }
+                { id: 'tesseract', url: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js' },
+                { id: 'jsonrepair', url: 'https://cdn.jsdelivr.net/npm/jsonrepair@3.13.1/lib/umd/jsonrepair.min.js' },
+                { id: 'jsonlint', url: 'https://cdn.jsdelivr.net/npm/@jsonlint/core@0.1.1/src/index.js', module: true, global: 'JSONLint' }
             ];
 
             /* ---------- cache plumbing ---------- */
@@ -155,6 +157,12 @@
             async function loadScript(spec) {
                 var res = await getResource(spec.url);
                 var code = await res.text();
+                if (spec.module) {
+                    var moduleUrl = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+                    try { window[spec.global] = await import(moduleUrl); }
+                    finally { URL.revokeObjectURL(moduleUrl); }
+                    return;
+                }
                 await new Promise(function (resolve, reject) {
                     var blob = new Blob([code], { type: 'application/javascript' });
                     var url = URL.createObjectURL(blob);
@@ -8443,170 +8451,176 @@
         }
 
         function normalizeJson(raw) {
-            if (!raw || !raw.trim()) return { ok: false, error: 'Empty input', result: '' };
-
-            let s = raw;
+            if (!raw || !raw.trim()) return { ok: false, result: '', issues: [], steps: [] };
             const steps = [];
+            const issues = [];
+            const repair = window.JSONRepair?.jsonrepair;
 
-            s = s.trim();
+            function parse(text, path) {
+                try { return { value: JSON.parse(text) }; } catch { }
+                if (!repair) return null;
+                try {
+                    const value = JSON.parse(repair(text));
+                    steps.push('Repaired syntax at ' + path);
+                    return { value };
+                } catch { return null; }
+            }
 
-            try {
-                if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-                    const inner = s.slice(1, -1);
-                    try { const p = JSON.parse(inner); steps.push('Unwrapped outer quotes'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-                    s = inner; steps.push('Stripped outer quotes');
+            function retain(text, path, reason) {
+                issues.push({ path, raw: text, reason });
+                return text;
+            }
+
+            function recover(text, path, depth = 0) {
+                const trimmed = text.trim();
+                if (depth > 100) return retain(text, path, 'Nesting limit reached; original text retained');
+                const parsed = parse(trimmed, path);
+                if (parsed) return parsed.value;
+                const array = trimmed[0] === '[';
+                if (!array && trimmed[0] !== '{') {
+                    return retain(text, path, 'Value could not be parsed; retained as text');
                 }
-            } catch { }
-
-            try {
-                const decoded = s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-                if (decoded !== s) { steps.push('Decoded \\uXXXX unicode escapes'); s = decoded; }
-            } catch { }
-
-            try {
-                let prev = '';
-                let iters = 0;
-                while (prev !== s && iters < 10) {
-                    prev = s;
-                    s = s.replace(/\\\\\\"/g, '"');
-                    s = s.replace(/\\\\\\\\/g, '\\\\');
-                    iters++;
-                }
-                if (prev !== s || iters > 1) steps.push('Unescaped double-escaped quotes (\\\\\\")');
-            } catch { }
-
-            try {
-                const escapedQuoteCount = (s.match(/\\"/g) || []).length;
-                const regularQuoteCount = (s.match(/(?<!\\)"/g) || []).length;
-                if (escapedQuoteCount > 4 && escapedQuoteCount > regularQuoteCount * 2) {
-                    const r = s.replace(/\\"/g, '"');
-                    try {
-                        const p = JSON.parse(r);
-                        steps.push('Unescaped serialized JSON string (\\")');
-                        return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p };
-                    } catch { }
-                    s = r; steps.push('Unescaped \\" for further processing');
-                }
-            } catch { }
-
-            try {
-                const r = s.replace(/(?<!https?:)(?<!http:)\/\/\/+/g, '/');
-                if (r !== s) { steps.push('Normalized excess forward slashes (//)'); s = r; }
-            } catch { }
-            try {
-                const r = s.replace(/\\{3,}/g, '\\');
-                if (r !== s) { steps.push('Collapsed excess backslashes (\\\\\\)'); s = r; }
-            } catch { }
-
-            try {
-                const r = s.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r');
-                if (r !== s) { steps.push('Replaced \\n \\t \\r sequences'); s = r; }
-            } catch { }
-
-            try {
-                const r = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-                if (r !== s) { steps.push('Stripped control characters'); s = r; }
-            } catch { }
-
-            try {
-                const parsed = JSON.parse(s);
-                return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
-            } catch { }
-
-            try {
-                const trimmed = s.trim();
-                if ((trimmed.startsWith('"') && trimmed.endsWith('"'))) {
-                    const inner = JSON.parse(trimmed);
-                    if (typeof inner === 'string') {
-                        const parsed = JSON.parse(inner);
-                        steps.push('Unwrapped double-stringified JSON');
-                        return { ok: true, result: JSON.stringify(parsed, null, 2), steps, parsed };
+                const closing = array ? ']' : '}';
+                const body = trimmed.slice(1, trimmed.endsWith(closing) ? -1 : undefined);
+                const fragments = [];
+                let start = 0, quote = '', escaped = false, comment = '';
+                const stack = [];
+                for (let index = 0; index < body.length; index++) {
+                    const char = body[index], next = body[index + 1];
+                    if (comment === 'line') {
+                        if (char !== '\n') continue;
+                        comment = '';
+                    } else if (comment === 'block') {
+                        if (char === '*' && next === '/') { comment = ''; index++; }
+                        continue;
+                    }
+                    if (quote) {
+                        if (escaped) { escaped = false; continue; }
+                        if (char === '\\') { escaped = true; continue; }
+                        if (char === quote) { quote = ''; continue; }
+                        if (char !== '\n' || stack.length) continue;
+                        quote = '';
+                    }
+                    if (char === '/' && (next === '/' || next === '*')) {
+                        comment = next === '/' ? 'line' : 'block'; index++; continue;
+                    }
+                    if (char === '"' || char === "'") { quote = char; continue; }
+                    if (char === '{' || char === '[') stack.push(char);
+                    else if ((char === '}' || char === ']') && stack.length) stack.pop();
+                    if (!stack.length && (char === ',' || char === '\n')) {
+                        fragments.push(body.slice(start, index)); start = index + 1;
                     }
                 }
-            } catch { }
-
-            try {
-                const r = s.replace(/,(\s*[}\]])/g, '$1');
-                try { const p = JSON.parse(r); steps.push('Removed trailing commas'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-                s = r;
-            } catch { }
-
-            try {
-                const r = s.replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, (m, inner) => '"' + inner.replace(/"/g, '\\"') + '"');
-                try { const p = JSON.parse(r); steps.push('Converted single quotes to double quotes'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-            } catch { }
-
-            try {
-                const r = s.replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3');
-                try { const p = JSON.parse(r); steps.push('Quoted unquoted keys'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-                s = r;
-            } catch { }
-
-            try {
-                const r = s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-                try { const p = JSON.parse(r); steps.push('Removed JS comments'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-                s = r;
-            } catch { }
-
-            try {
-                const r = s.replace(/"([^"]+)"\s*=\s*/g, '"$1": ');
-                try { const p = JSON.parse(r); steps.push('Fixed = to :'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-            } catch { }
-
-            try {
-                const firstObj = s.indexOf('{');
-                const firstArr = s.indexOf('[');
-                let start = -1; let closing = '';
-                if (firstObj !== -1 && (firstArr === -1 || firstObj < firstArr)) { start = firstObj; closing = '}'; }
-                else if (firstArr !== -1) { start = firstArr; closing = ']'; }
-                if (start !== -1) {
-                    let depth = 0; let found = -1;
-                    const open = closing === '}' ? '{' : '[';
-                    for (let i = start; i < s.length; i++) {
-                        if (s[i] === open) depth++;
-                        else if (s[i] === closing) { depth--; if (depth === 0) { found = i; break; } }
+                fragments.push(body.slice(start));
+                const value = array ? [] : Object.create(null);
+                fragments.forEach(fragment => {
+                    if (!fragment.trim()) return;
+                    if (array) {
+                        value.push(recover(fragment, path + '[' + value.length + ']', depth + 1));
+                        return;
                     }
-                    if (found !== -1) {
-                        const extracted = s.slice(start, found + 1);
-                        try { const p = JSON.parse(extracted); steps.push('Extracted JSON from surrounding text'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-                        try {
-                            const ex2 = extracted.replace(/,(\s*[}\]])/g, '$1').replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3');
-                            const p = JSON.parse(ex2);
-                            steps.push('Extracted + normalized JSON');
-                            return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p };
-                        } catch { }
+                    const member = fragment.match(/^\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s:={}\[\],]+)\s*[:=]([\s\S]*)$/);
+                    if (!member) {
+                        retain(fragment, path, 'Unrecognized member; original text retained separately');
+                        return;
                     }
-                }
-            } catch { }
-
-            try {
-                const r = s.replace(/:(\s*)"((?:[^"\\]|\\.)*)"/g, (m, sp, val) => {
-                    const fixed = val.replace(/(?<!\\)"/g, '\\"');
-                    return ':' + sp + '"' + fixed + '"';
+                    const keyResult = parse(member[1], path + ' (key)');
+                    const key = keyResult && typeof keyResult.value === 'string' ? keyResult.value : member[1];
+                    const memberPath = path + '[' + JSON.stringify(key) + ']';
+                    if (Object.hasOwn(value, key)) {
+                        retain(fragment, memberPath, 'Duplicate key; first value retained');
+                        return;
+                    }
+                    value[key] = recover(member[2], memberPath, depth + 1);
                 });
-                try { const p = JSON.parse(r); steps.push('Fixed unescaped quotes in values'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-            } catch { }
+                return value;
+            }
 
-            try {
-                const r = s.replace(/\\\//g, '/');
-                try { const p = JSON.parse(r); steps.push('Normalized escaped slashes'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-            } catch { }
-
-            try {
-                let r = s
-                    .replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false')
-                    .replace(/\bNone\b/g, 'null').replace(/\bundefined\b/g, 'null')
-                    .replace(/\bNaN\b/g, 'null').replace(/\bInfinity\b/g, 'null');
-                try { const p = JSON.parse(r); steps.push('Fixed Python/JS literals'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch { }
-                r = r
-                    .replace(/,(\s*[}\]])/g, '$1')
-                    .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3')
-                    .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-                try { const p = JSON.parse(r); steps.push('Applied all normalizations'); return { ok: true, result: JSON.stringify(p, null, 2), steps, parsed: p }; } catch (e) {
-                    return { ok: false, error: e.message, result: s, steps };
+            let source = raw.trim();
+            let strict;
+            try { strict = { value: JSON.parse(source) }; } catch { }
+            if (strict) {
+                if (typeof strict.value !== 'string' || !/^\s*[\[{]/.test(strict.value)) {
+                    return { ok: true, status: 'valid', original: raw, parsed: strict.value, result: JSON.stringify(strict.value, null, 2), steps, issues };
                 }
-            } catch (e) {
-                return { ok: false, error: e.message, result: s, steps };
+                source = strict.value;
+                steps.push('Unwrapped serialized JSON');
+            } else if (/^[\[{]\s*\\(?:n|r|t|u0022|")/i.test(source)) {
+                try {
+                    source = JSON.parse('"' + source.replace(/"/g, '\\"') + '"');
+                    steps.push('Decoded serialized JSON escapes');
+                } catch { }
+            }
+            if (/^```(?:json)?\s/i.test(source) && /```$/.test(source)) {
+                source = source.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '');
+                steps.push('Removed Markdown fence');
+            }
+            const whole = /^[\[{]/.test(source.trim()) ? parse(source, '$') : null;
+            const documents = [];
+            if (!whole) {
+                let cursor = 0;
+                while (cursor < source.length) {
+                    const relativeStart = source.slice(cursor).search(/[\[{]/);
+                    const start = relativeStart < 0 ? source.length : cursor + relativeStart;
+                    const outside = source.slice(cursor, start);
+                    if (outside.trim() && (start < source.length || documents.length)) retain(outside, '$', 'Text outside JSON; original text retained separately');
+                    if (start === source.length) break;
+                    const stack = [];
+                    let quote = '', escaped = false, comment = '', end = start;
+                    for (; end < source.length; end++) {
+                        const char = source[end], next = source[end + 1];
+                        if (comment === 'line') {
+                            if (char === '\n') comment = '';
+                            continue;
+                        }
+                        if (comment === 'block') {
+                            if (char === '*' && next === '/') { comment = ''; end++; }
+                            continue;
+                        }
+                        if (quote) {
+                            if (escaped) escaped = false;
+                            else if (char === '\\') escaped = true;
+                            else if (char === quote || char === '\n') quote = '';
+                            continue;
+                        }
+                        if (char === '/' && (next === '/' || next === '*')) {
+                            comment = next === '/' ? 'line' : 'block'; end++; continue;
+                        }
+                        if (char === '"' || char === "'") quote = char;
+                        else if (char === '{' || char === '[') stack.push(char);
+                        else if (char === '}' || char === ']') {
+                            stack.pop();
+                            if (!stack.length) { end++; break; }
+                        }
+                    }
+                    documents.push(source.slice(start, end));
+                    cursor = end;
+                }
+            }
+            const parsed = whole ? whole.value : documents.length
+                ? (documents.length === 1 ? recover(documents[0], '$') : documents.map((text, index) => recover(text, '$[' + index + ']')))
+                : retain(source, '$', 'No JSON structure recognized; original text retained');
+            return {
+                ok: true, status: issues.length ? 'partial' : 'repaired', original: raw, parsed,
+                result: JSON.stringify(parsed, null, 2), steps, issues
+            };
+        }
+
+        function validateJsonInput(raw) {
+            const lint = window.JSONLint;
+            if (!lint) return { available: false, diagnostics: [], reason: 'Validator not loaded; formatting and recovery remain available' };
+            try {
+                const validation = lint.validate(raw, { mode: 'strict', duplicateKeys: 'warn', protoKeys: 'safe', maxDepth: 512 });
+                return {
+                    available: true,
+                    diagnostics: validation.diagnostics.map(diagnostic => ({
+                        ...diagnostic,
+                        location: lint.lineColumn(raw, diagnostic.start),
+                        relatedLocation: diagnostic.related ? lint.lineColumn(raw, diagnostic.related.start) : undefined
+                    }))
+                };
+            } catch {
+                return { available: false, diagnostics: [], reason: 'Validation could not complete; formatting and recovery remain available' };
             }
         }
 
@@ -8621,6 +8635,7 @@
             const [wrapLines, setWrapLines] = useState(true);
             const [showSteps, setShowSteps] = useState(false);
             const debounceRef = useRef();
+            const inputRef = useRef();
 
             useEffect(() => saveLS('daily_json_input', input), [input]);
 
@@ -8628,64 +8643,64 @@
                 if (!input.trim()) { setResult(null); return; }
                 clearTimeout(debounceRef.current);
                 debounceRef.current = setTimeout(() => {
-                    setResult(normalizeJson(input));
+                    const validation = validateJsonInput(input);
+                    setResult({ ...normalizeJson(input), validation });
                 }, 400);
                 return () => clearTimeout(debounceRef.current);
             }, [input]);
 
+            function exportResult() {
+                return result.status === 'partial' ? JSON.stringify({
+                    status: 'partial', recovered: result.parsed,
+                    unparsed: result.issues, original: result.original,
+                    diagnostics: result.validation.diagnostics
+                }, null, 2) : result.result;
+            }
+
             function copy() {
                 if (!result?.ok) return;
-                navigator.clipboard?.writeText(result.result);
+                navigator.clipboard?.writeText(exportResult());
                 setCopied(true); setTimeout(() => setCopied(false), 2000);
             }
 
             function download() {
                 if (!result?.ok) return;
                 const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([result.result], { type: 'application/json' }));
-                a.download = 'pretty.json'; a.click();
+                const url = URL.createObjectURL(new Blob([exportResult()], { type: 'application/json' }));
+                a.href = url;
+                a.download = result.status === 'partial' ? 'recovery-report.json' : 'pretty.json';
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 0);
             }
 
             function insertToScratch() {
                 if (!result?.ok) return;
                 const cur = loadLS('daily_scratch', '');
-                saveLS('daily_scratch', cur + '\n\n```json\n' + result.result + '\n```\n');
+                saveLS('daily_scratch', cur + '\n\n```json\n' + exportResult() + '\n```\n');
             }
 
             function highlight(json) {
-                if (!json) return '';
+                if (!json) return null;
                 const isDark = theme === 'dark';
-                let h = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                h = h.replace(
-                    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
-                    match => {
-                        let cls;
-                        if (/^"/.test(match)) {
-                            if (/:$/.test(match)) {
-                                cls = isDark ? 'color:#9cdcfe;font-weight:600' : 'color:#0550ae;font-weight:700';
-                            } else {
-                                cls = isDark ? 'color:#ce9178' : 'color:#0a7a0a';
-                            }
-                        } else if (/true|false/.test(match)) {
-                            cls = isDark ? 'color:#4ec9b0' : 'color:#0070c1';
-                        } else if (/null/.test(match)) {
-                            cls = isDark ? 'color:#808080' : 'color:#888888';
-                        } else {
-                            cls = isDark ? 'color:#b5cea8' : 'color:#c7254e';
-                        }
-                        return `<span style="${cls}">${match}</span>`;
-                    }
-                );
-                if (searchQ.trim()) {
-                    const esc = searchQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const re = new RegExp(`(${esc})(?![^<]*>)`, 'gi');
-                    h = h.replace(re, '<mark style="background:#f7c35a55;color:inherit;border-radius:2px;padding:0 1px">$1</mark>');
-                }
-                return h;
+                const query = searchQ.trim();
+                const searchPattern = query ? new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi') : null;
+                return json.split(/("(?:\\.|[^"\\])*"\s*:?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g).map((token, index) => {
+                    let color = textColor;
+                    if (token.startsWith('"')) color = token.endsWith(':') ? (isDark ? '#9cdcfe' : '#0550ae') : (isDark ? '#ce9178' : '#0a7a0a');
+                    else if (/^(true|false)$/.test(token)) color = isDark ? '#4ec9b0' : '#0070c1';
+                    else if (token === 'null') color = isDark ? '#808080' : '#888888';
+                    else if (/^-?\d/.test(token)) color = isDark ? '#b5cea8' : '#c7254e';
+                    return <span key={index} style={{ color }}>{searchPattern ? token.split(searchPattern).map((part, partIndex) =>
+                        partIndex % 2 ? <mark key={partIndex} style={{ background: '#f7c35a55', color: 'inherit' }}>{part}</mark> : part
+                    ) : token}</span>;
+                });
             }
 
             const lineCount = result?.result?.split('\n').length || 0;
             const charCount = result?.result?.length || 0;
+            const diagnostics = result?.validation?.diagnostics || [];
+            const errorCount = diagnostics.filter(diagnostic => diagnostic.severity === 'error').length;
+            const warningCount = diagnostics.length - errorCount;
 
             const matchCount = useMemo(() => {
                 if (!searchQ.trim() || !result?.result) return 0;
@@ -8710,11 +8725,11 @@
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                                 {result.ok
                                     ? <span style={{
-                                        fontSize: 11, color: 'var(--green)', fontWeight: 600,
+                                        fontSize: 11, color: result.status === 'valid' && !diagnostics.length ? 'var(--green)' : 'var(--amber)', fontWeight: 600,
                                         display: 'flex', alignItems: 'center', gap: 3
                                     }}>
-                                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
-                                        Valid JSON
+                                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />
+                                        {result.status === 'valid' ? (warningCount ? 'Valid JSON (warnings)' : 'Valid JSON') : result.status === 'partial' ? 'Partial recovery' : 'Repaired JSON'}
                                     </span>
                                     : <span style={{
                                         fontSize: 11, color: 'var(--red)', fontWeight: 600,
@@ -8723,6 +8738,9 @@
                                         <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', display: 'inline-block' }} />
                                         Invalid
                                     </span>}
+                                {result.validation && !result.validation.available && (
+                                    <span title={result.validation.reason} style={{ fontSize: 10, color: 'var(--text2)' }}>Validation unavailable</span>
+                                )}
                                 {result.steps?.length > 0 && (
                                     <button onClick={() => setShowSteps(s => !s)}
                                         style={{
@@ -8778,7 +8796,7 @@
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
                             {result?.ok && <>
                                 <button className="btn" style={{ padding: '4px 9px', fontSize: 11 }} onClick={copy}>
-                                    {copied ? '✓ Copied' : 'Copy'}
+                                    {copied ? '✓ Copied' : result.status === 'partial' ? 'Copy report' : 'Copy'}
                                 </button>
                                 <button className="btn" style={{ padding: '4px 9px', fontSize: 11 }} onClick={download}>💾</button>
                                 <button className="btn" style={{ padding: '4px 9px', fontSize: 11 }} onClick={insertToScratch}>📝</button>
@@ -8816,7 +8834,7 @@
 
                     <div style={{ flex: 1, display: 'flex', flexDirection: mobile ? 'column' : 'row', minHeight: 0, overflow: 'hidden' }}>
                         <div style={{
-                            flex: mobile ? '1 1 45%' : '0 0 42%',
+                            flex: mobile ? '0 0 38%' : '0 0 42%',
                             display: 'flex', flexDirection: 'column',
                             borderRight: mobile ? 'none' : '1px solid var(--border)',
                             borderBottom: mobile ? '1px solid var(--border)' : 'none',
@@ -8851,14 +8869,14 @@
                                     📋 Paste
                                 </button>
                             </div>
-                            <textarea value={input} onChange={e => setInput(e.target.value)}
+                            <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                                 style={{
                                     flex: 1, background: 'var(--bg3)', border: 'none', padding: '10px 12px',
                                     fontSize: 12, fontFamily: "'DM Mono',monospace", color: 'var(--text)',
                                     resize: 'none', outline: 'none', lineHeight: 1.7, overflowY: 'auto',
                                     whiteSpace: 'pre-wrap', wordBreak: 'break-all'
                                 }}
-                                placeholder={"Paste any valid JSON"}
+                                placeholder={"Paste JSON"}
                                 spellCheck={false} />
                         </div>
 
@@ -8896,33 +8914,47 @@
                                     </div>
                                 )}
 
-                                {input.trim() && result && !result.ok && (
-                                    <div style={{ padding: 16 }}>
-                                        <div style={{
-                                            background: 'rgba(247,111,111,.1)', border: '1px solid rgba(247,111,111,.3)',
-                                            borderRadius: 10, padding: '14px 16px'
-                                        }}>
-                                            <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6, fontSize: 12 }}>
-                                                ✗ Could not parse
-                                            </div>
-                                            <div style={{
-                                                fontFamily: "'DM Mono',monospace", fontSize: 11,
-                                                color: theme === 'dark' ? '#f88' : '#c55', lineHeight: 1.6
-                                            }}>
-                                                {result.error}
-                                            </div>
-                                            {result.steps?.length > 0 && (
-                                                <div style={{ marginTop: 8, fontSize: 11, color: theme === 'dark' ? '#666' : '#aaa' }}>
-                                                    Tried {result.steps.length} fix(es) but could not recover the JSON.
+                                {diagnostics.length > 0 && (
+                                    <details style={{ padding: 12, color: textColor, fontSize: 12, borderBottom: '1px solid var(--border)' }}>
+                                        <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+                                            Original input: {errorCount} error{errorCount !== 1 ? 's' : ''}, {warningCount} warning{warningCount !== 1 ? 's' : ''}
+                                        </summary>
+                                        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                            {diagnostics.map((diagnostic, index) => (
+                                                <div key={index} style={{ borderLeft: `3px solid ${diagnostic.severity === 'error' ? 'var(--red)' : 'var(--amber)'}`, paddingLeft: 8, overflowWrap: 'anywhere' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        <strong style={{ flex: 1 }}>{diagnostic.severity === 'error' ? 'Error' : 'Warning'} {diagnostic.code} - Line {diagnostic.location.line}, column {diagnostic.location.column}</strong>
+                                                        <button className="ibtn" title="Select in original input" aria-label="Select in original input"
+                                                            disabled={input !== result.original}
+                                                            onClick={() => {
+                                                                inputRef.current.focus();
+                                                                inputRef.current.setSelectionRange(diagnostic.start, diagnostic.end);
+                                                            }}>
+                                                            <i className="fa-solid fa-location-crosshairs" />
+                                                        </button>
+                                                    </div>
+                                                    <div style={{ marginTop: 4 }}>{diagnostic.message}</div>
+                                                    {diagnostic.hint && <div style={{ marginTop: 4 }}>Suggestion: {diagnostic.hint}</div>}
+                                                    {diagnostic.relatedLocation && <div style={{ marginTop: 4 }}>First occurrence: line {diagnostic.relatedLocation.line}, column {diagnostic.relatedLocation.column}</div>}
                                                 </div>
-                                            )}
-                                            <div style={{
-                                                marginTop: 10, fontSize: 11,
-                                                color: theme === 'dark' ? '#555' : '#aaa', lineHeight: 1.5
-                                            }}>
-                                                💡 Make sure input contains a valid JSON object {'{'}'...'{'}'} or array [...]
-                                            </div>
+                                            ))}
                                         </div>
+                                    </details>
+                                )}
+
+                                {(result?.status !== 'valid' || diagnostics.length > 0) && result?.ok && (
+                                    <div style={{ padding: 12, color: textColor, fontSize: 12, borderBottom: '1px solid var(--border)' }}>
+                                        {result.issues.map((issue, index) => (
+                                            <div key={index} style={{ marginBottom: 10, borderLeft: '3px solid var(--amber)', paddingLeft: 8 }}>
+                                                <strong style={{ color: theme === 'dark' ? '#f7c35a' : '#895b00' }}>Unparsed: {issue.path}</strong>
+                                                <div style={{ marginTop: 4 }}>{issue.reason}</div>
+                                                <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: "'DM Mono',monospace" }}>{issue.raw}</pre>
+                                            </div>
+                                        ))}
+                                        <details>
+                                            <summary style={{ cursor: 'pointer' }}>Original input</summary>
+                                            <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: "'DM Mono',monospace" }}>{result.original}</pre>
+                                        </details>
                                     </div>
                                 )}
 
@@ -8944,15 +8976,14 @@
                                             ))}
                                         </div>
                                         <pre style={{
-                                            flex: 1, padding: '10px 14px', margin: 0, fontSize: 12,
+                                            flex: 1, minWidth: 0, padding: '10px 14px', margin: 0, fontSize: 12,
                                             fontFamily: "'DM Mono',monospace", lineHeight: 1.7,
                                             color: textColor, background: 'transparent',
                                             whiteSpace: wrapLines ? 'pre-wrap' : 'pre',
                                             wordBreak: wrapLines ? 'break-all' : 'normal',
                                             overflowX: wrapLines ? 'hidden' : 'auto',
                                             outline: 'none'
-                                        }}
-                                            dangerouslySetInnerHTML={{ __html: highlight(result.result) }} />
+                                        }}>{highlight(result.result)}</pre>
                                     </div>
                                 )}
                             </div>
@@ -8964,9 +8995,7 @@
                         background: 'var(--bg4)', fontSize: 10, color: 'var(--text3)',
                         display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap'
                     }}>
-                        <span>15-layer normalizer</span>
-                        <span>·</span>
-                        <span>unicode · backslashes · trailing commas · unquoted keys · comments · Python literals · buried JSON</span>
+                        <span>{result?.status === 'partial' ? `${result.issues.length} unresolved fragment(s); report includes original input` : result?.status === 'repaired' ? 'Syntax repaired; review original input' : 'JSON'}</span>
                     </div>
                 </FloatingPanel>
             );
