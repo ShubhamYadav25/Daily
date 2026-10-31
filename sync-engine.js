@@ -73,7 +73,7 @@
         return fields;
     }
 
-    function createEngine({ actor, records = {}, diffChars }) {
+    function createEngine({ actor, records = {}, diffChars, collaborative = false }) {
         let state = records;
         let sequence = Math.max(0, ...Object.values(state).map(register => register.clock[actor] || 0));
         const textField = key => ['task', 'content', 'label', 'text'].includes(JSON.parse(key)[2]);
@@ -172,8 +172,8 @@
             const current = state[key];
             const inspected = inspect(key, current);
             const guarded = current && (inspected.conflict
-                || (JSON.parse(key)[2] === '__deleted' && value === true)
-                || (textField(key) && additions(inspected.value ?? '', value) === null));
+                || (!collaborative && ((JSON.parse(key)[2] === '__deleted' && value === true)
+                    || (textField(key) && additions(inspected.value ?? '', value) === null))));
             const previous = !resolve && guarded ? inspected.alternatives.filter(other => !same(other, value)) : [];
             sequence++;
             const register = {
@@ -207,6 +207,13 @@
             const changed = !same(state, next);
             state = next;
             return changed;
+        }
+
+        function replace(records, live = false) {
+            if (!validRecords(records)) throw new Error('Invalid sync records');
+            state = records;
+            collaborative = live;
+            sequence = Math.max(sequence, 0, ...Object.values(state).map(register => register.clock[actor] || 0));
         }
 
         function materialize() {
@@ -258,7 +265,7 @@
             return { [conflict.key]: write(conflict.key, value, { resolve: true }) };
         }
 
-        return { capture, merge, materialize, resolve, getRecords: () => state, inspect };
+        return { capture, merge, replace, materialize, resolve, getRecords: () => state, inspect };
     }
 
     return { createEngine, mergeRecords, validRecords };

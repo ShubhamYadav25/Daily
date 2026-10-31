@@ -221,3 +221,136 @@ test('deletion concurrent with an edit or new comment reopens deletion review', 
         assert.equal(mobile.materialize().cards.TODO.length, 0);
     }
 });
+
+test('shared board applies ordinary replacements, moves and deletions immediately without changing device-sync rules', () => {
+    const host = createEngine({ actor: 'host', diffChars, collaborative: true });
+    host.capture(empty(), snapshot('original'));
+    const guest = createEngine({ actor: 'guest', diffChars, collaborative: true, records: host.getRecords() });
+    guest.capture(snapshot('original'), snapshot('rewritten'));
+    host.merge(guest.getRecords());
+    assert.equal(contentOf(host), 'rewritten');
+    assert.equal(host.materialize().conflicts.length, 0);
+    const moved = { cols: [...snapshot('').cols, { id: 'DONE', label: 'Done' }],
+        cards: { TODO: [], DONE: [{ id: 'card-a', task: 'Card A', content: 'rewritten' }] }, scratch: 'Shared notes' };
+    guest.capture(guest.materialize(), moved);
+    host.merge(guest.getRecords());
+    assert.equal(host.materialize().cards.DONE[0].id, 'card-a');
+    assert.equal(host.materialize().scratch, 'Shared notes');
+    guest.capture(moved, { ...moved, cards: { TODO: [], DONE: [] } });
+    host.merge(guest.getRecords());
+    assert.equal(host.materialize().cards.DONE.length, 0);
+    assert.equal(host.materialize().conflicts.length, 0);
+});
+
+test('shared board preserves simultaneous replacements and can restore an isolated personal board', () => {
+    const { desktop, mobile } = paired();
+    const original = desktop.getRecords();
+    desktop.replace(original, true);
+    mobile.replace(original, true);
+    desktop.capture(snapshot('abc'), snapshot('first'));
+    mobile.capture(snapshot('abc'), snapshot('second'));
+    desktop.merge(mobile.getRecords());
+    mobile.merge(desktop.getRecords());
+    const conflict = desktop.materialize().conflicts.find(item => item.field === 'content');
+    assert.deepEqual(new Set(conflict.values), new Set(['first', 'second']));
+    const decision = desktop.resolve(conflict, 'together');
+    mobile.merge(decision);
+    assert.equal(contentOf(mobile), 'together');
+    desktop.replace(original);
+    assert.equal(contentOf(desktop), 'abc');
+    desktop.capture(snapshot('abc'), snapshot('ab'));
+    assert.ok(desktop.materialize().conflicts.length);
+    desktop.replace({}, true);
+    assert.deepEqual(desktop.materialize(), { ...empty(), conflicts: [] });
+    assert.throws(() => desktop.replace({ invalid: {} }), /Invalid sync records/);
+});
+
+test('shared relay hosts, joins, tracks presence, replays edits and survives all clients leaving', { timeout: 10000 }, async context => {
+    const { server, wss } = createSyncServer();
+    const clients = [];
+    context.after(async () => {
+        clients.forEach(client => client.terminate());
+        await new Promise(resolve => wss.close(resolve));
+        await new Promise(resolve => server.close(resolve));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const frontend = await fetch(base);
+    assert.equal(frontend.status, 200);
+    assert.match(await frontend.text(), /window\.DAILY_RELAY/);
+    assert.match(await (await fetch(base + '/sync-engine.js')).text(), /createEngine/);
+    async function connect(id, { host = false, room = 'board-live', records } = {}) {
+        const client = new WebSocket(base.replace('http:', 'ws:') + `/?room=${room}&mode=collaborate${host ? '&host=1' : ''}`);
+        clients.push(client);
+        const messages = [];
+        const waiters = [];
+        client.on('message', raw => {
+            const message = JSON.parse(raw.toString());
+            messages.push(message);
+            waiters.forEach(waiter => { if (waiter.predicate(message)) waiter.resolve(message); });
+        });
+        const receive = predicate => {
+            const existing = messages.find(predicate);
+            return existing ? Promise.resolve(existing) : new Promise(resolve => waiters.push({ predicate, resolve }));
+        };
+        await once(client, 'open');
+        if (room !== 'missing') client.send(JSON.stringify({ _type: 'request_state', _sid: id, name: id,
+            ...(records ? { _sync: { records } } : {}) }));
+        return { client, receive };
+    }
+    const hostEngine = createEngine({ actor: 'host', diffChars, collaborative: true });
+    hostEngine.capture(empty(), snapshot('Host board'));
+    const host = await connect('host', { host: true, records: hostEngine.getRecords() });
+    assert.equal((await host.receive(message => message._type === 'sync_capabilities')).collaborative, true);
+    const guest = await connect('guest');
+    const initial = await guest.receive(message => message.initial);
+    const guestEngine = createEngine({ actor: 'guest', diffChars, collaborative: true, records: initial._sync.records });
+    assert.equal(contentOf(guestEngine), 'Host board');
+    const third = await connect('third');
+    assert.ok((await third.receive(message => message._type === 'peers' && message.peers.length === 3))
+        .participants.some(person => person.name === 'host' && person.host));
+    guest.client.send(JSON.stringify({ _type: 'presence', _sid: 'guest', cardId: 'card-a', name: 'Writer' }));
+    await host.receive(message => message.participants?.some(person => person.name === 'Writer' && person.cardId === 'card-a'));
+    const cursor = { anchor: 'card:card-a', x: 0.25, y: 0.6 };
+    const recordsBeforeCursor = JSON.stringify(initial._sync.records);
+    guest.client.send(JSON.stringify({ _type: 'cursor', _sid: 'spoofed', cursor }));
+    const pointer = await host.receive(message => message._type === 'cursor' && message.cursor?.x === 0.25);
+    assert.equal(pointer.id, 'guest', 'Cursor identity comes from the registered socket');
+    assert.deepEqual(pointer.cursor, cursor);
+    assert.deepEqual((await third.receive(message => message._type === 'cursor' && message.cursor?.x === 0.25)).cursor, cursor);
+    guest.client.send(JSON.stringify({ _type: 'cursor', cursor: { anchor: 'board', x: -1, y: 0 } }));
+    assert.equal((await guest.receive(message => message._type === 'sync_error')).message, 'Invalid cursor position');
+    guest.client.send(JSON.stringify({ _type: 'cursor', cursor: null }));
+    await host.receive(message => message._type === 'cursor' && message.cursor === null);
+    const replayDuringPresence = await connect('cursor-observer');
+    assert.equal(JSON.stringify((await replayDuringPresence.receive(message => message.initial))._sync.records), recordsBeforeCursor);
+    assert.equal((await replayDuringPresence.receive(message => message._type === 'peers')).participants
+        .some(person => Object.hasOwn(person, 'cursor')), false, 'Cursor positions are not retained');
+    replayDuringPresence.client.close();
+    guestEngine.capture(snapshot('Host board'), snapshot('Guest is typing'));
+    const sentAt = Date.now();
+    guest.client.send(JSON.stringify({ _protocol: 2, _sync: { records: guestEngine.getRecords() }, _messageId: 'typed' }));
+    const update = await third.receive(message => message._sync?.records
+        && JSON.stringify(message._sync.records).includes('Guest is typing'));
+    assert.ok(Date.now() - sentAt < 2000, 'Live updates must arrive without polling');
+    hostEngine.merge(update._sync.records);
+    assert.equal(contentOf(hostEngine), 'Guest is typing');
+    assert.equal(hostEngine.materialize().conflicts.length, 0);
+    await guest.receive(message => message._ack === 'typed');
+    const missing = await connect('missing', { room: 'missing' });
+    assert.equal((await missing.receive(message => message._type === 'sync_error')).fatal, true);
+    const closures = [host, guest, third].map(connection => {
+        const closed = once(connection.client, 'close');
+        connection.client.close();
+        return closed;
+    });
+    await Promise.all(closures);
+    const returning = await connect('returning');
+    const replay = await returning.receive(message => message.initial);
+    const restored = createEngine({ actor: 'returning', diffChars, collaborative: true, records: replay._sync.records });
+    assert.equal(contentOf(restored), 'Guest is typing');
+    const hostReturning = await connect('new-host-session', { host: true, records: hostEngine.getRecords() });
+    const peers = await hostReturning.receive(message => message.participants?.some(person => person.id === 'new-host-session' && person.host));
+    assert.equal(peers.host, 'new-host-session');
+});
