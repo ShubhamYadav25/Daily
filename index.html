@@ -53,7 +53,9 @@
             var OPTIONAL_SCRIPTS = [
                 { id: 'tesseract', url: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js' },
                 { id: 'jsonrepair', url: 'https://cdn.jsdelivr.net/npm/jsonrepair@3.13.1/lib/umd/jsonrepair.min.js' },
-                { id: 'jsonlint', url: 'https://cdn.jsdelivr.net/npm/@jsonlint/core@0.1.1/src/index.js', module: true, global: 'JSONLint' }
+                { id: 'jsonlint', url: 'https://cdn.jsdelivr.net/npm/@jsonlint/core@0.1.1/src/index.js', module: true, global: 'JSONLint' },
+                { id: 'jsqr', url: 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js' },
+                { id: 'quagga', url: 'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js' }
             ];
 
             /* ---------- cache plumbing ---------- */
@@ -5891,6 +5893,7 @@
             const { compact: mobile, panelRef } = usePanelLayout();
             const online = useOnline();
 
+            const [mode, setMode] = useState('ocr'); // 'ocr', 'qr', 'barcode'
             const [imgSrc, setImgSrc] = useState('');
             const [imgName, setImgName] = useState('');
             const [lang, setLang] = useState('eng');
@@ -5902,8 +5905,11 @@
             const [confidence, setConfidence] = useState(null);
             const [copied, setCopied] = useState(false);
             const [dragOver, setDragOver] = useState(false);
+            const [scannedData, setScannedData] = useState('');
+            const [barcodeCopied, setBarcodeCopied] = useState(false);
 
             const fileRef = useRef();
+            const canvasRef = useRef();
             const loggerRef = useRef(() => { });
             const workerCache = useRef({});
 
@@ -5982,6 +5988,97 @@
                 setProgress(1);
             }
 
+            async function scanQRCode() {
+                if (!imgSrc) {
+                    addToast('Load an image first', 'error');
+                    return;
+                }
+                if (typeof jsQR === 'undefined') {
+                    setError('QR Code scanner not loaded. Connect to the internet once so it can be cached, then reload.');
+                    return;
+                }
+                setBusy(true);
+                setError('');
+                setScannedData('');
+
+                try {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = canvasRef.current || document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
+                        
+                        if (code) {
+                            setScannedData(code.data);
+                            addToast('QR Code scanned successfully ✓', 'success');
+                        } else {
+                            setError('No QR code found in the image. Try a clearer image.');
+                        }
+                        setBusy(false);
+                    };
+                    img.onerror = () => {
+                        setError('Failed to load image');
+                        setBusy(false);
+                    };
+                    img.src = imgSrc;
+                } catch (e) {
+                    console.error('[QR Scan]', e);
+                    setError('QR scan failed: ' + ((e && e.message) || e));
+                    setBusy(false);
+                }
+            }
+
+            async function scanBarcode() {
+                if (!imgSrc) {
+                    addToast('Load an image first', 'error');
+                    return;
+                }
+                setBusy(true);
+                setError('');
+                setScannedData('');
+
+                try {
+                    if (typeof Quagga === 'undefined' || typeof Quagga.decodeSingle !== 'function') {
+                        throw new Error('Barcode decoder not loaded. Connect to the internet once and reload so it can be cached.');
+                    }
+
+                    const result = await new Promise((resolve, reject) => {
+                        const timer = setTimeout(() => reject(new Error('Barcode scan timed out. Try a smaller or clearer image.')), 15000);
+                        try {
+                            Quagga.decodeSingle({
+                                src: imgSrc,
+                                numOfWorkers: 0,
+                                inputStream: { size: 2000 },
+                                locator: { halfSample: false, patchSize: 'medium' },
+                                decoder: {
+                                    readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'upc_reader', 'upc_e_reader', 'codabar_reader', 'code_39_reader', 'code_39_vin_reader', '2of5_reader', 'i2of5_reader', 'code_93_reader']
+                                }
+                            }, decoded => {
+                                clearTimeout(timer);
+                                resolve(decoded);
+                            });
+                        } catch (e) {
+                            clearTimeout(timer);
+                            reject(e);
+                        }
+                    });
+                    if (!result || !result.codeResult || !result.codeResult.code) {
+                        throw new Error('No barcode detected. Try a clearer image or crop closely around the barcode.');
+                    }
+                    setScannedData(result.codeResult.code);
+                    addToast('Barcode decoded successfully', 'success');
+                } catch (e) {
+                    console.error('[Barcode Scan]', e);
+                    setError('Barcode scan failed: ' + ((e && e.message) || e));
+                } finally {
+                    setBusy(false);
+                }
+            }
+
             function copyText() {
                 if (!text) return;
                 try {
@@ -5996,6 +6093,33 @@
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1600);
                 }
+            }
+
+            function copyScanData() {
+                if (!scannedData) return;
+                try {
+                    navigator.clipboard.writeText(scannedData);
+                    setBarcodeCopied(true);
+                    setTimeout(() => setBarcodeCopied(false), 1600);
+                } catch {
+                    const ta = document.createElement('textarea');
+                    ta.value = scannedData;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    setBarcodeCopied(true);
+                    setTimeout(() => setBarcodeCopied(false), 1600);
+                }
+            }
+
+            function downloadScanData() {
+                if (!scannedData) return;
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([scannedData], { type: 'text/plain;charset=utf-8' }));
+                a.download = (mode === 'qr' ? 'qr' : 'barcode') + '_data.txt';
+                a.click();
+                addToast('Downloaded ✓', 'success');
             }
 
             function downloadTxt() {
@@ -6020,20 +6144,56 @@
                 <FloatingPanel title="Image → Text" icon="🔎" onClose={onClose}
                     initW={880} initH={620} storageKey="ocr" panelRef={panelRef}>
 
+                    {/* Tab selector */}
+                    <div style={{
+                        display: 'flex', gap: 0, padding: '0', background: 'var(--bg4)',
+                        borderBottom: '1px solid var(--border)', flexShrink: 0
+                    }}>
+                        <button onClick={() => { setMode('ocr'); setText(''); setScannedData(''); setError(''); setImgSrc(''); }}
+                            style={{
+                                flex: 1, padding: '10px 16px', background: mode === 'ocr' ? 'var(--bg2)' : 'transparent',
+                                border: 'none', borderBottom: mode === 'ocr' ? '3px solid var(--blue)' : 'none',
+                                color: mode === 'ocr' ? 'var(--text)' : 'var(--text2)', cursor: 'pointer',
+                                fontSize: 13, fontWeight: mode === 'ocr' ? 600 : 500, transition: 'all .2s'
+                            }}>
+                            <Icon name="ScanText" size="1em" style={{ marginRight: 6 }} /> Extract Text
+                        </button>
+                        <button onClick={() => { setMode('qr'); setScannedData(''); setText(''); setError(''); setImgSrc(''); }}
+                            style={{
+                                flex: 1, padding: '10px 16px', background: mode === 'qr' ? 'var(--bg2)' : 'transparent',
+                                border: 'none', borderBottom: mode === 'qr' ? '3px solid var(--blue)' : 'none',
+                                color: mode === 'qr' ? 'var(--text)' : 'var(--text2)', cursor: 'pointer',
+                                fontSize: 13, fontWeight: mode === 'qr' ? 600 : 500, transition: 'all .2s'
+                            }}>
+                            <Icon name="QrCode" size="1em" style={{ marginRight: 6 }} /> QR Code
+                        </button>
+                        <button onClick={() => { setMode('barcode'); setScannedData(''); setText(''); setError(''); setImgSrc(''); }}
+                            style={{
+                                flex: 1, padding: '10px 16px', background: mode === 'barcode' ? 'var(--bg2)' : 'transparent',
+                                border: 'none', borderBottom: mode === 'barcode' ? '3px solid var(--blue)' : 'none',
+                                color: mode === 'barcode' ? 'var(--text)' : 'var(--text2)', cursor: 'pointer',
+                                fontSize: 13, fontWeight: mode === 'barcode' ? 600 : 500, transition: 'all .2s'
+                            }}>
+                            <Icon name="Barcode" size="1em" style={{ marginRight: 6 }} /> Barcode
+                        </button>
+                    </div>
+
                     {/* toolbar */}
                     <div style={{
                         display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px',
                         background: 'var(--bg4)', borderBottom: '1px solid var(--border)',
                         flexWrap: 'wrap', rowGap: 5, flexShrink: 0
                     }}>
-                        <select value={lang} onChange={e => setLang(e.target.value)}
-                            className="fselect" style={{ width: 'auto', padding: '4px 8px', fontSize: 12 }}>
-                            {OCR_LANGS.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-                        </select>
+                        {mode === 'ocr' && (
+                            <select value={lang} onChange={e => setLang(e.target.value)}
+                                className="fselect" style={{ width: 'auto', padding: '4px 8px', fontSize: 12 }}>
+                                {OCR_LANGS.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                            </select>
+                        )}
 
                         <button className="btn primary" style={{ padding: '5px 16px', fontSize: 12 }}
-                            onClick={run} disabled={busy || !imgSrc}>
-                            {busy ? <IconLabel text={"⏳ Working…"} /> : <IconLabel text={"▶ Extract text"} />}
+                            onClick={mode === 'ocr' ? run : mode === 'qr' ? scanQRCode : scanBarcode} disabled={busy || !imgSrc}>
+                            {busy ? <IconLabel text={"⏳ Working…"} /> : <IconLabel text={"▶ " + (mode === 'ocr' ? 'Extract text' : mode === 'qr' ? 'Scan QR' : 'Scan Barcode')} />}
                         </button>
 
                         <button className="btn" style={{ padding: '5px 12px', fontSize: 12 }}
@@ -6043,13 +6203,13 @@
 
                         {imgSrc && (
                             <button className="btn" style={{ padding: '5px 12px', fontSize: 12, color: 'var(--red)' }}
-                                onClick={() => { setImgSrc(''); setImgName(''); setText(''); setError(''); setConfidence(null); }}>
+                                onClick={() => { setImgSrc(''); setImgName(''); setText(''); setError(''); setConfidence(null); setScannedData(''); }}>
                                 <Icon name="X" size="1em" /> Clear
                             </button>
                         )}
 
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                            {confidence !== null && (
+                            {mode === 'ocr' && confidence !== null && (
                                 <span style={{
                                     fontSize: 10, padding: '3px 9px', borderRadius: 12, fontWeight: 700,
                                     background: confidence > 80 ? 'var(--green-dim)' : confidence > 60 ? 'var(--amber-dim)' : 'var(--red-dim)',
@@ -6147,30 +6307,32 @@
                             </div>
                         </div>
 
-                        {/* RIGHT — text */}
+                        {/* RIGHT — text or scanned data */}
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                             <div style={{ padding: '4px 10px', background: 'var(--bg3)', borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
-                                <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Extracted text</span>
-                                <span>{text.length}ch · {text ? text.split('\n').length : 0}ln</span>
+                                <span style={{ fontWeight: 600, color: 'var(--text2)' }}>{mode === 'ocr' ? 'Extracted text' : 'Scanned data'}</span>
+                                <span>{(mode === 'ocr' ? text : scannedData).length}ch {mode === 'ocr' && text ? '· ' + text.split('\n').length + 'ln' : ''}</span>
                                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                     <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }}
-                                        onClick={copyText} disabled={!text}>
-                                        {copied ? <IconLabel text={"✓ Copied"} /> : <IconLabel text={"📋 Copy"} />}
+                                        onClick={mode === 'ocr' ? copyText : copyScanData} disabled={mode === 'ocr' ? !text : !scannedData}>
+                                        {(mode === 'ocr' ? copied : barcodeCopied) ? <IconLabel text={"✓ Copied"} /> : <IconLabel text={"📋 Copy"} />}
                                     </button>
                                     <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }}
-                                        onClick={downloadTxt} disabled={!text}>
+                                        onClick={mode === 'ocr' ? downloadTxt : downloadScanData} disabled={mode === 'ocr' ? !text : !scannedData}>
                                         <Icon name="Download" size="1em" /> .txt
                                     </button>
-                                    <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }}
-                                        onClick={insertToScratch} disabled={!text}>
-                                        <Icon name="NotebookPen" size="1em" /> Scratch
-                                    </button>
+                                    {mode === 'ocr' && (
+                                        <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }}
+                                            onClick={insertToScratch} disabled={!text}>
+                                            <Icon name="NotebookPen" size="1em" /> Scratch
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                             <textarea
-                                value={text}
-                                onChange={e => setText(e.target.value)}
-                                placeholder="Recognised text will appear here — you can edit it before copying…"
+                                value={mode === 'ocr' ? text : scannedData}
+                                onChange={e => mode === 'ocr' ? setText(e.target.value) : setScannedData(e.target.value)}
+                                placeholder={mode === 'ocr' ? "Recognised text will appear here — you can edit it before copying…" : `Scanned ${mode === 'qr' ? 'QR code' : 'barcode'} data will appear here — you can edit it…`}
                                 spellCheck={false}
                                 style={{
                                     flex: 1, background: 'var(--bg3)', border: 'none', padding: '10px 12px',
@@ -7427,7 +7589,8 @@
                                 <div style={{
                                     fontSize: 32, marginBottom: 8,
                                     filter: 'drop-shadow(0 0 12px rgba(79,142,247,.35))',
-                                }}><IconLabel text={step.icon} /></div>
+                                }}>{window.lucide.icons[step.icon]
+                                    ? <Icon name={step.icon} size={32} /> : <IconLabel text={step.icon} />}</div>
                             )}
 
                             <div style={{

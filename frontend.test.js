@@ -5,6 +5,88 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+
+function barcodeHarness(decodeSingle) {
+    const state = { busy: false, data: '', error: '', logs: [], toasts: [], timerCleared: false };
+    let timeout;
+    const context = {
+        imgSrc: 'data:image/png;base64,test',
+        Quagga: decodeSingle ? { decodeSingle } : undefined,
+        setBusy: value => { state.busy = value; },
+        setScannedData: value => { state.data = value; },
+        setError: value => { state.error = value; },
+        addToast: (...args) => state.toasts.push(args),
+        console: { error: (...args) => state.logs.push(args) },
+        setTimeout: callback => { timeout = callback; return 1; },
+        clearTimeout: () => { state.timerCleared = true; },
+    };
+    const start = source.indexOf('async function scanBarcode()');
+    vm.createContext(context);
+    vm.runInContext(source.slice(start, source.indexOf('function copyText()', start)), context);
+    return { state, scan: () => context.scanBarcode(), timeout: () => timeout() };
+}
+
+test('barcode scan uses valid Quagga 0.12.1 readers and returns the decoded value', async () => {
+    const h = barcodeHarness((config, callback) => {
+        assert.deepEqual(Array.from(config.decoder.readers), [
+            'code_128_reader', 'ean_reader', 'ean_8_reader', 'upc_reader', 'upc_e_reader',
+            'codabar_reader', 'code_39_reader', 'code_39_vin_reader', '2of5_reader',
+            'i2of5_reader', 'code_93_reader',
+        ]);
+        assert.equal(config.numOfWorkers, 0);
+        assert.equal(config.inputStream.size, 2000);
+        assert.equal(config.locator.halfSample, false);
+        assert.equal(config.locator.patchSize, 'medium');
+        callback({ codeResult: { code: 'DAILY123456' } });
+    });
+    await h.scan();
+    assert.equal(h.state.data, 'DAILY123456');
+    assert.equal(h.state.error, '');
+    assert.equal(h.state.busy, false);
+    assert.equal(h.state.timerCleared, true);
+});
+
+test('barcode scan reports missing decoder without calling an inaccessible loader', async () => {
+    const h = barcodeHarness();
+    await h.scan();
+    assert.match(h.state.error, /decoder not loaded/);
+    assert.equal(h.state.busy, false);
+    assert.equal(h.state.logs.length, 1);
+});
+
+test('barcode scan reports empty results instead of returning placeholder text', async () => {
+    for (const result of [null, {}, { codeResult: {} }, { codeResult: { code: '' } }]) {
+        const h = barcodeHarness((_, callback) => callback(result));
+        await h.scan();
+        assert.match(h.state.error, /No barcode detected/);
+        assert.equal(h.state.data, '');
+        assert.equal(h.state.busy, false);
+        assert.equal(h.state.timerCleared, true);
+    }
+});
+
+test('barcode scan catches decoder exceptions and clears the busy state', async () => {
+    const h = barcodeHarness(() => { throw new TypeError('Decoder failed'); });
+    await h.scan();
+    assert.match(h.state.error, /Decoder failed/);
+    assert.equal(h.state.busy, false);
+    assert.equal(h.state.timerCleared, true);
+    assert.equal(h.state.logs.length, 1);
+});
+
+test('barcode scan times out without accepting a late callback', async () => {
+    let complete;
+    const h = barcodeHarness((_, callback) => { complete = callback; });
+    const scan = h.scan();
+    assert.equal(h.state.busy, true);
+    h.timeout();
+    await scan;
+    assert.match(h.state.error, /timed out/);
+    assert.equal(h.state.busy, false);
+    complete({ codeResult: { code: 'LATE' } });
+    assert.equal(h.state.data, '');
+});
+
 const featureSource = source.slice(source.indexOf('const APP_FEATURES = ['), source.indexOf('function useGuideFocus'));
 const features = vm.runInNewContext(featureSource + '\nAPP_FEATURES');
 const actionSource = source.slice(source.indexOf('function runFeature(id)'), source.indexOf('function addToast(msg'));

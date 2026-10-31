@@ -1,225 +1,428 @@
-# Daily.
+# Daily. 📅
 
-A clean and minimal space for your daily workflow.
+> A clean, minimal, and powerful space for your daily workflow and team collaboration.
 
-Instead of writing plans, tasks, updates, and notes here & there — keep everything in one place.
+Instead of scattering plans, tasks, updates, and notes across multiple platforms — **keep everything in one place**. Daily. is your all-in-one productivity hub, designed for simplicity without sacrificing power.
 
 ---
 
 ## ✨ What is Daily.?
 
-Daily. is a lightweight productivity & daily tracking app that can be used as:
+Daily. is a lightweight yet feature-rich productivity and daily tracking application that adapts to your needs:
 
-- 📝 Personal daily diary
-- ✅ Task / work tracker
-- 📌 Planning board
-- 🚧 Blocker tracker
-- 📊 Progress manager
+- 📝 **Personal Daily Diary** – Capture thoughts, reflections, and daily insights
+- ✅ **Task & Work Tracker** – Organize and manage your to-do list with ease
+- 📌 **Planning Board** – Visualize your week, sprint, or project in one glance
+- 🚧 **Blocker Tracker** – Flag and monitor obstacles that need resolution
+- 📊 **Progress Manager** – Track what you've accomplished and stay motivated
+- 👥 **Team Collaboration Space** – Work together in real-time with your team
 
-Whether you're working solo, studying, freelancing, or managing a team — Daily. helps you stay organized without clutter.
-
----
-
-## 🚀 Features
-
-- Drag & drop workflow
-- Create custom statuses
-- Daily work updates
-- Markdown notes support
-- Blocker highlighting
-- Auto task aging
-- Priority management
-- Responsive board, adaptive tool panels, and mobile-friendly forms and navigation
-- Consistent [Lucide icons](https://lucide.dev/) (MIT licensed), labeled tools, and accessible action names
-- Local storage support
-- Multi-device sync with automatic additive merges and shared conflict/deletion review
-- Free self-hosted collaborative boards: host/invite, multi-person live card editing, presence, and follow-host card view
-- JSON syntax repair and partial recovery, with unresolved text and original input preserved in recovery reports
-- JSON diagnostics with source locations, fix hints, and warnings for duplicate keys, integer precision loss, and suspicious path escapes
-- Minimal & distraction-free design
-- First-use feature tour on desktop, tablet and mobile, with replay from Tools;
-  each description highlights its exact icon or column with a connecting arrow,
-  automatically revealing the matching Tools menu item when its icon is hidden
-- Keyboard shortcuts and a clickable feature launcher in Tools → Shortcuts
+Whether you're a **solo entrepreneur**, **student**, **freelancer**, or **team lead** — Daily. keeps you organized without the clutter.
 
 ---
 
-## 💡 Why Daily.?
+## 🚀 Core Features
 
-Most productivity tools become too heavy.
+### 📋 **Board & Card Management**
+- **Intuitive Drag & Drop Workflow** – Move cards between columns effortlessly
+- **Custom Status Columns** – Create columns that match your workflow perfectly
+- **Rich Card Details** – Add descriptions, attachments, comments, and metadata to cards
+- **Priority & Urgency Levels** – Highlight important tasks at a glance
+- **Auto Task Aging** – Automatically track how long tasks have been pending
 
-Daily. focuses on simplicity:
-write what you're doing, what’s pending, what’s blocked, and what’s next — all in one place.
+### 📝 **Content & Formatting**
+- **Markdown Notes Support** – Write formatted notes with full markdown syntax
+- **Image Upload & Text Recognition** – Convert images to text with integrated OCR
+- **Base64 Converter** – Encode/decode data directly in the app
+- **Diff Checker** – Compare text versions and track changes
+- **Drawing Board** – Sketch ideas and visualize concepts
+- **JSON Prettifier** – Format and validate JSON with one click
+
+### 🎨 **Design & UX**
+- **Minimal & Distraction-Free Design** – Focus on what matters
+- **Responsive Board Layout** – Adapts perfectly to desktop, tablet, and mobile
+- **Mobile-Friendly Forms & Navigation** – Full functionality on small screens
+- **Adaptive Tool Panels** – UI adjusts to your device and preferences
+- **Consistent [Lucide Icons](https://lucide.dev/)** – Beautiful, accessible, MIT-licensed icons
+- **Dark/Light Theme Toggle** – Easy on the eyes, day or night
+
+### ⌨️ **Productivity Shortcuts**
+- **Keyboard Shortcuts & Command Palette** – Navigate and execute actions lightning-fast
+- **Interactive Feature Tour** – Guided walkthrough on first use (desktop, tablet, mobile)
+- **Replay Tour Anytime** – Learn features at your own pace
+- **Tools Menu Launcher** – Access all features from one place
+- **Global Search** – Find cards across your entire board instantly
+
+### 🔄 **Sync & Collaboration**
+- **Multi-Device Sync** – Your board stays in sync across all devices
+- **Automatic Additive Merges** – Changes combine intelligently without data loss
+- **Shared Conflict Review** – Resolve conflicts transparently with your team
+- **Real-Time Collaborative Editing** – Multiple users editing cards simultaneously
+- **Live Presence Indicators** – See who's working on what, right now
+- **Follow-Host Card View** – Stay on the same page as your team lead
+- **Multi-Person Editing** – Edit the same card together seamlessly
+- **Host & Invite System** – Free self-hosted collaborative boards
+
+### 📦 **Data & Reliability**
+- **Local Storage Support** – Your data stays on your device when offline
+- **JSON Import/Export** – Backup and migrate your boards anytime
+- **JSON Syntax Repair** – Automatic recovery of malformed JSON data
+- **Partial Recovery** – Unresolved text preserved in recovery reports
+- **JSON Diagnostics** – Source locations, fix hints, and detailed warnings
+- **Duplicate Key Detection** – Warnings for data integrity issues
+- **Integer Precision Loss Detection** – Catch numerical data problems early
+- **Intelligent Path Escape Warnings** – Prevent data structure corruption
+
+### 🎯 **Additional Features**
+- **Time Machine History** – Review and revert changes from the past
+- **Calendar Integration** – Sync events and track deadlines
+- **AI Assistants Tool** – Get smart suggestions and assistance
+- **Diagram Generator** – Create visual representations of your ideas
+- **ZPL Code Generator** – Generate printer labels directly
+- **Task Comments** – Collaborate on individual cards with threaded comments
+- **Built-in Timers** – Track time spent on tasks
+- **Push Notifications** – Never miss important updates
+- **Progressive Web App** – Install as an app on your device
+- **Accessibility First** – Labeled tools and accessible action names throughout
 
 ---
 
-## 🛠 Built With
+## 💡 Why Choose Daily.?
 
-- React
-- Vanilla CSS
-- LocalStorage
-- Vercel Deployment
+In a world of bloated productivity tools, Daily. stands out:
+
+✅ **Simple, Not Simple-Minded** – All the power you need, none of the complexity  
+✅ **Privacy-First** – Your data stays local by default; sync is optional  
+✅ **No Account Required** – Start immediately, no sign-up friction  
+✅ **Free & Self-Hosted** – Run it yourself or use our Vercel deployment  
+✅ **Collaborative** – Team features without the enterprise bloat  
+✅ **Mobile Native** – Full-featured experience on every device  
+✅ **Zero Learning Curve** – Intuitive design that feels natural from day one  
+
+---
+
+## 🛠 Tech Stack
+
+Built with modern, lightweight technologies:
+
+| Layer | Technology |
+| --- | --- |
+| **Frontend** | React + Vanilla CSS |
+| **State & Sync** | Custom Sync Engine (Operational Transform Protocol) |
+| **Collaboration** | WebSocket (Real-time multiplayer) |
+| **Storage** | LocalStorage + Optional Relay Server |
+| **Deployment** | Vercel (Frontend) + Render (Relay Server) |
+| **Testing** | Node.js Built-in Test Runner |
+| **Package Manager** | npm |
+
+### Backend Dependencies
+- **ws** (^8.21.0) – WebSocket server for real-time sync
+- **diff** (^9.0.0) – Text diffing engine for conflict resolution
 
 ---
 
 ## 🌐 Live Demo
 
-[Open Daily.](https://daily-one-coral.vercel.app/)
+**Try Daily. right now:**  
+👉 [**Open Daily.**](https://daily-one-coral.vercel.app/)
 
 ---
 
-## Feature Tour & Keyboard Shortcuts
+## ⌨️ Keyboard Shortcuts & Feature Tour
 
-New browsers automatically show a guided walkthrough of the board and every
-tool. Next/Back (or arrow keys) navigate; Escape skips. Completion or skipping
-is remembered locally. Replay anytime with **H** or **Tools → Replay Tour**.
-The tour does not modify your board or request permissions.
+### Getting Started
+New browsers automatically show an **interactive guided tour** of every feature. Navigate with arrow keys or Next/Back buttons. Press **Escape** to skip anytime. Your progress is remembered automatically.
 
-Open **Tools → Shortcuts** (or **?**) for the full guide. Each feature row is
-clickable, including on touch devices. Keys are case-insensitive and work from
-the board, not while typing, composing text, or editing a tool/dialog.
-Ctrl/Cmd/Alt combinations are left to the browser and editor.
+**Replay anytime:** Press **H** or use **Tools → Replay Tour**
 
-| Key | Feature |
+### Global Shortcuts
+
+| Key(s) | Action | Description |
+| --- | --- | --- |
+| **N** | New Card | Create a new task or note |
+| **W** | New Column | Add a new status column |
+| **/** | Search | Find cards by title or content |
+| **E** | Scratch Pad | Quick note-taking space |
+| **D** | Drawing Board | Sketch and visualize ideas |
+| **A** | AI Assistants | Get intelligent suggestions |
+| **O** | Image → Text | Extract text from images (OCR) |
+| **F** | Diff Checker | Compare versions and track changes |
+| **B** | Base64 Converter | Encode/decode data |
+| **G** | Diagrams | Create flowcharts and visual diagrams |
+| **J** | JSON Prettifier | Format and validate JSON |
+| **Z** | ZPL Generator | Create printer labels |
+| **C** | Calendar Events | View and sync calendar |
+| **M** | Time Machine | Browse history and revert changes |
+| **S** | Collaborate & Sync | Set up multi-device sync |
+| **V** | Review Conflicts | Resolve sync conflicts |
+| **R** | Refresh Ages | Update task age counters |
+| **L** | Toggle Theme | Switch between light/dark mode |
+| **P** | Notifications | Enable push notifications |
+| **I** | Import Board | Load board JSON backup |
+| **X** | Export Board | Save board JSON backup |
+| **U** | Install App | Add to home screen (PWA) |
+| **K** | Tools Menu | Open all features |
+| **H** | Replay Tour | See guided tour again |
+| **?** | Shortcuts | View this shortcut guide |
+| **Escape** | Close/Clear | Exit dialogs and clear search |
+
+### Card-Specific Controls
+Inside an open card, you can:
+- Manage **Priority Levels** – Set task importance
+- Add **Comments** – Collaborate on card details
+- Start **Timers** – Track time spent
+- **Move Card** – Drag to another column
+- **Delete Card** – Remove from board
+
+💡 **Note:** Destructive operations (delete) are not assigned global shortcuts for safety.
+
+### Advanced Features
+- **Markdown Editor:** Use **Ctrl+M** / **Ctrl+Shift+M** for inline/block math
+- **Diff Checker:** Use **F7** / **Shift+F7** to navigate between changes
+- **Board Import:** Replaces current board — always export a backup first!
+
+---
+
+## 🔄 Multi-Device Sync & Collaboration
+
+### How It Works
+Daily.'s sync engine is built on **Operational Transform Protocol** for conflict-free merging:
+
+- **Boards, Cards, Comments & Scratch Pad** – Synced across all devices
+- **Local-Only Data** – Calendar events, timers, utility inputs, and panel positions stay on each device
+- **Automatic Merging** – Independent changes from different devices combine intelligently
+- **Conflict Resolution** – Competing edits are flagged for manual review with full context
+- **Real-Time Collaboration** – Multiple users editing the same card simultaneously
+- **Presence & Awareness** – See who's online and what they're working on
+- **Offline Support** – Changes queue locally and sync when you reconnect
+
+### Sync Behaviors
+
+| Scenario | Behavior |
 | --- | --- |
-| N / W | New card / New column |
-| / | Search cards |
-| E / D / A | Scratch Pad / Drawing Board / AI Assistants |
-| O / F / B | Image → Text / Diff Checker / Base64 Converter |
-| G / J / Z | Diagrams / JSON Prettifier / ZPL |
-| C / M | Calendar events / Time Machine history |
-| S / V | Collaborate and device sync / Review sync conflicts |
-| R / L / P | Refresh ages / Toggle theme / Enable notifications |
-| I / X / U | Import board JSON / Export board JSON / Install app |
-| K / H / ? | Tools menu / Replay tour / Shortcut guide |
-| Escape | Close tools/dialogs and clear search |
+| **New Cards (Both Devices)** | Both cards are kept; neither replaces the other |
+| **Text Insertions (Different Places)** | Merged automatically without dropping text |
+| **Text Deletions or Replacements** | Flagged for review — you choose which version wins |
+| **Simultaneous Field Edits** | Conflict dialog shows alternatives + line/word diff |
+| **Same Edit from Different Devices** | Automatically resolved (timestamp-independent) |
+| **Offline & Reconnect** | Pending changes re-sent; conflicts re-opened |
 
-Card-specific controls (priority, comments, timers, move/delete) are available
-inside an open card; destructive operations are not assigned global shortcuts.
-Use Ctrl+M / Ctrl+Shift+M in the Markdown editor for inline/block math, and
-F7 / Shift+F7 in Diff Checker to navigate changes. Importing board JSON replaces
-the current board: export a backup first. Board exports contain columns and
-cards, not Scratch Pad, events or timers; history has separate backup controls
-inside Time Machine.
+### Team Collaboration Setup
 
-Run the dependency-free frontend shortcut tests from the repository root:
+1. **Host invites team members** – Share your room ID
+2. **Members join the same room** – Live updates start immediately
+3. **See who's online** – Presence indicators show active users
+4. **Edit together** – Multiple people can work on the same card
+5. **Review conflicts** – Use the conflict dialog to merge edits manually
+
+💡 **No sign-up required** — just share your room ID and start collaborating!
+
+---
+
+## 🚀 Getting Started Locally
+
+### Prerequisites
+- **Node.js** (v16+)
+- **npm** (v8+)
+
+### Installation & Setup
+
+1. **Clone the repository:**
+   ```powershell
+   git clone https://github.com/ShubhamYadav25/Daily.git
+   cd Daily
+   ```
+
+2. **Install backend dependencies:**
+   ```powershell
+   npm ci --prefix Backend
+   ```
+
+3. **Run tests (optional):**
+   ```powershell
+   npm test --prefix Backend
+   ```
+
+4. **Start the sync relay:**
+   ```powershell
+   npm start --prefix Backend
+   ```
+   The relay server runs on `http://localhost:8080`
+
+5. **Open the app:**
+   - **Option A:** Navigate to `http://localhost:8080` (automatic relay connection)
+   - **Option B:** Open `index.html` and append `?syncServer=ws%3A%2F%2Flocalhost%3A8080` to use the local relay
+
+6. **Test multi-device sync:**
+   - Create a new room in Daily.
+   - On another device/browser, join the same room ID
+   - Watch changes sync in real-time!
+
+💡 **Local Network Testing:** Use your relay computer's actual IP address, not `localhost`, when testing from other physical devices.
+
+---
+
+## 📦 Deployment
+
+### Hosting & Deployment Options
+
+#### Option 1: Vercel (Recommended for Quick Start)
+- Frontend automatically deployed to Vercel
+- Zero configuration needed
+- Use default relay: `wss://daily-2.onrender.com`
+
+#### Option 2: Self-Hosted (Full Control)
+Deploy all components together:
+
+1. **Backend:** Deploy [Backend/server.js](Backend/server.js)
+2. **Sync Engine:** Include [sync-engine.js](sync-engine.js)
+3. **Frontend:** Deploy the React frontend
+4. **Reload Clients:** Update all connected clients after deployment
+
+### Architecture & Limitations
+
+**Relay Behavior:**
+- **No Content Authority** – Relay merges records, broadcasts decisions, doesn't control content
+- **In-Memory Storage** – Room state is held in memory while clients are connected
+- **No Persistent Database** – Recovery depends on at least one client's retained local history
+- **Always Export Backups** – Before clearing browser storage, export your board as JSON
+
+**Data Security:**
+- **No Account Authentication** – Room IDs are access tokens
+- **No End-to-End Encryption** – Use HTTPS/WSS for deployed sync
+- **Share Wisely** – Only share room IDs with trusted collaborators
+- **Storage Full Alerts** – App notifies you if local storage is exhausted
+
+### Testing
+
+Run frontend shortcut tests from the repository root:
 
 ```powershell
 node --test frontend.test.js
 ```
 
-## Device Sync
+---
 
-Boards, cards, comments, and Scratch Pad content are shared. Calendar events,
-timers, utility inputs, and panel positions remain local to each device.
+## 👥 Live Collaborative Boards (Teams & Groups)
 
-- Independent new cards and columns are combined; neither device replaces the other's board.
-- Recorded text insertions are merged without dropping existing text.
-- Removed text, replacement text, competing field edits, and deletions remain pending until explicitly reviewed.
-- The conflict dialog shows all alternatives and a line/word diff. Any device can choose an alternative or enter merged text.
-- Review Later preserves the alternatives. Reopen them using the conflict icon beside the header tools.
-- Different simultaneous decisions reopen a conflict instead of picking a timestamp winner.
-- Different initial text without shared history requires review, including prefix differences such as `abc` versus `ab`.
-- Offline changes, pending reviews, and deletion history are stored locally and sent again after reconnecting.
+### Getting Started with Collaboration
 
-### Local Setup
+1. **Open Daily.** and select **Collaborate** (desktop or mobile)
+2. **Enter your name** and sync server URL (optional)
+3. **Host a shared board** or **join an existing room**
+4. **Share the invite link** with teammates
 
-From the repository root:
+### How Live Collaboration Works
 
+**What's Shared:**
+- ✅ Columns and cards
+- ✅ Card content (title, notes, priority, color)
+- ✅ Comments and metadata
+- ✅ Scratch Pad
+
+**What Stays Local:**
+- 🔒 Calendar events
+- 🔒 Timers
+- 🔒 Utility inputs
+- 🔒 Panel positions
+
+### Live Features
+
+| Feature | Description |
+| --- | --- |
+| **Live Cursors** | See everyone's mouse pointer with their name labeled |
+| **Real-Time Editing** | Changes appear instantly while collaborators type |
+| **Presence Indicators** | Shows who's online and viewing which cards |
+| **Follow Host** | Automatically view the card the host is working on |
+| **Instant Sync** | 80ms batching + network latency; truly competitive edits get conflict review |
+| **No Subscriptions** | Completely free on self-hosted servers |
+| **Conflict Resolution** | Shared conflict dialog for competing edits |
+
+### Completely Free Local/LAN Setup
+
+**Single Network:**
 ```powershell
-npm ci --prefix Backend
-npm test --prefix Backend
 npm start --prefix Backend
+# On other devices: http://YOUR-LAN-IP:8080
 ```
 
-Open `http://localhost:8080` to load the app directly from the relay (it automatically
-uses that relay for sync). Alternatively, open [index.html](index.html) and append
-`?syncServer=ws%3A%2F%2Flocalhost%3A8080` to its URL to use the local relay.
-Create a room and join the same room ID on the other clients. When testing
-from another physical device, use the relay computer's reachable address,
-not that device's `localhost`. Include the same `syncServer` setting there.
+**Remote Internet Collaboration:**
+- Deploy relay on a reachable machine
+- Enter `wss://your-domain.com` as sync server
+- HTTPS pages require WSS connections
 
-### Deployment And Limits
-
-Deploy the updated [Backend/server.js](Backend/server.js), [sync-engine.js](sync-engine.js),
-and frontend together, then reload every client. The relay must be able to
-load the shared engine from the repository root. The hosted frontend uses
-`wss://daily-2.onrender.com` by default. Older clients/server versions cannot
-provide protocol-2 review guarantees; older snapshot messages are not applied
-by updated clients.
-
-The relay has no content authority: it combines causal records and broadcasts
-decisions. Room state is held in memory while clients are connected, not in a
-durable database. Recovery depends on at least one client's retained local
-history. Keep board exports, and do not clear browser storage before backing
-up. Storage-full failures are surfaced in the app.
-
-A room ID is access to that room; there is no account authentication or
-end-to-end encryption. Use HTTPS/WSS for deployed sync and share room IDs
-only with trusted collaborators.
-
-## Live Collaborative Boards
-
-Choose **Collaborate** (desktop or mobile), enter your name and relay URL, then
-click **Host shared board**. The host's current columns, cards, comments and Scratch
-Pad become a separate shared board. **Copy invite link** and send it to collaborators;
-they can open the link or paste it into **Join board**. No accounts, paid APIs,
-subscriptions, or per-person fees are required.
-
-- Guests load the host's board rather than merging in their personal cards.
-- Everyone can create, move, rename, edit and delete cards/columns. Card titles,
-  notes, priority and color update while editing, without pressing Save.
-- Changes are batched every 80 ms while connected, plus network latency. Ordinary
-  replacements and deletions apply immediately in collaboration mode. Truly
-  competing edits retain alternatives for shared conflict review instead of losing text.
-- The shared-board banner shows connection state and online participants. The
-  board displays colored live mouse pointers labeled with each person's name.
-  Pointers are anchored to cards/columns so they follow local scrolling and
-  different screen sizes. They disappear when someone leaves the board area,
-  hides their tab or disconnects. Cursor presence is temporary, not saved as board data.
-  Touch-only devices can see others' cursors but do not broadcast a mouse pointer.
-  Movement is batched every 40 ms plus network latency, without any paid service.
-  The invitation panel shows who has a card open. **Follow host card** opens/closes the
-  card the host is viewing; this is not video screen sharing or a full Miro canvas.
-- **Leave board & restore personal board** returns to your untouched personal data.
-  Shared edits and pending conflicts are cached separately per room; a reload or
-  reconnect replays that room's history. Legacy **device sync** remains available
-  separately and retains its stricter deletion/replacement review behavior.
-
-### Completely Free Local / LAN Use
-
-Run the backend using the setup commands above and open `http://localhost:8080`.
-Other devices on the same network should open `http://YOUR-LAN-IP:8080` instead.
-Open the host app through that LAN address before copying its invite link; a
-`localhost` link points to the recipient's own device. Allow the chosen port through
-your firewall only on trusted networks. The backend serves the app and WebSockets;
-no additional frontend server or paid infrastructure is needed. The first app
-load still needs internet access for its existing CDN assets.
-
-For remote internet collaboration, host the relay on your own reachable machine
-or a provider's free tier and enter its `wss://` URL. The code has no paid service
-dependency, but third-party free tiers can sleep, impose limits or change pricing;
-unlimited always-on public hosting cannot be guaranteed. HTTPS pages require WSS.
-Deploy the updated frontend, shared engine and backend together; the previously
-hosted relay must be updated before it can accept collaborative rooms.
-
-Shared rooms stay in relay memory even when everyone leaves, until the backend
-restarts. There is no server database or durable backup. After a restart, the host
-can reopen its cached session to restore the shared room; guests cannot join a
-missing room until the host restores it. Export important boards regularly.
-Anyone with a room ID can edit; the Host label indicates who started the board,
-not an administrator permission. There is no authentication or end-to-end encryption.
+💡 **Room Persistence:** Rooms stay in relay memory until backend restart. Export important boards regularly.
 
 ---
 
-## 📸 Preview
+## 🔐 Data Privacy & Security
 
-![alt text](image.png)
+✅ **Privacy by Default**  
+- No account required
+- No signup or login
+- Data stays on your device (LocalStorage)
+- Optional sync only when you enable it
+
+✅ **Export & Backup**  
+- Export your entire board as JSON anytime
+- Backup before clearing browser storage
+- Restore from JSON backup anytime
+
+⚠️ **Security Notes**  
+- Use HTTPS/WSS for sync over the internet
+- Room IDs grant full access — share only with trusted people
+- No end-to-end encryption — suitable for internal teams, not high-security use cases
+- Always keep local backups of important boards
 
 ---
 
-## ❤️ Feedback
+## 📸 Screenshots
 
-Would love feedback, ideas, and feature suggestions.
+![Daily. Board View](image.png)
 
-If you like the project, consider giving it a ⭐
+---
+
+## 🤝 Contributing
+
+Have ideas for improvements? Found a bug? We'd love your feedback!
+
+- **Report Issues** – Open an issue on GitHub
+- **Suggest Features** – Share your ideas in discussions
+- **Fork & Contribute** – Submit pull requests for bug fixes and features
+
+---
+
+## 📄 License
+
+[View License](LICENSE)
+
+---
+
+## ❤️ Support
+
+If Daily. helps you stay organized, consider:
+
+- **⭐ Star this repository** – Spread the word!
+- **📣 Share with friends** – Help others discover Daily.
+- **💬 Give feedback** – Your ideas make Daily. better
+- **🐛 Report bugs** – Help us improve reliability
+
+---
+
+## 🚀 What's Next?
+
+**Planned Features & Improvements:**
+- 📱 Native mobile apps (iOS, Android)
+- 🔗 Integrations (Slack, Teams, Zapier)
+- 📊 Advanced analytics & insights
+- 🎨 Custom themes & branding
+- 📲 Offline-first enhancements
+- 🤖 AI-powered features
+
+**Have a feature request?** Let us know! Your feedback shapes Daily.'s future.
+
+---
+
+**Built with ❤️ for makers, students, teams, and everyone in between.**
+
+Start using Daily. today and reclaim your productivity. 🚀
