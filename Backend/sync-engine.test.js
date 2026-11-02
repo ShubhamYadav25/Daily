@@ -299,8 +299,74 @@ test('shared board preserves simultaneous replacements and can restore an isolat
     desktop.capture(snapshot('abc'), snapshot('ab'));
     assert.ok(desktop.materialize().conflicts.length);
     desktop.replace({}, true);
-    assert.deepEqual(desktop.materialize(), { ...empty(), conflicts: [] });
+    assert.deepEqual(desktop.materialize(), { ...empty(), scratchTabs: [], conflicts: [] });
     assert.throws(() => desktop.replace({ invalid: {} }), /Invalid sync records/);
+});
+
+test('Scratch tabs migrate legacy notes, merge independent tabs and retain personal tabs after collaboration', () => {
+    const desktop = peer('desktop');
+    desktop.capture(empty(), { ...snapshot('abc'), scratch: 'Legacy notes' });
+    assert.equal(desktop.materialize().scratch, 'Legacy notes');
+    assert.deepEqual(desktop.materialize().scratchTabs, []);
+    const original = desktop.getRecords();
+    const mobile = peer('mobile');
+    mobile.merge(original);
+    const before = desktop.materialize();
+    desktop.capture(before, { ...before, scratchTabs: [{ id: 'a', label: 'Laptop', content: 'First note' }] });
+    mobile.capture(before, { ...before, scratchTabs: [{ id: 'b', label: 'Phone', content: 'Second note' }] });
+    desktop.merge(mobile.getRecords());
+    mobile.merge(desktop.getRecords());
+    assert.deepEqual(desktop.materialize().scratchTabs, mobile.materialize().scratchTabs);
+    assert.deepEqual(new Set(desktop.materialize().scratchTabs.map(tab => tab.id)), new Set(['a', 'b']));
+    assert.equal(desktop.materialize().scratch, 'Legacy notes');
+    assert.equal(desktop.materialize().conflicts.length, 0);
+    desktop.replace(original, true);
+    assert.deepEqual(desktop.materialize().scratchTabs, []);
+    assert.equal(desktop.materialize().scratch, 'Legacy notes');
+});
+
+test('Scratch tab edits and deletion follow collaboration and Device Sync conflict rules', () => {
+    const laptop = peer('laptop');
+    const initial = { ...empty(), scratchTabs: [{ id: 'a', label: 'Notes', content: 'abc' }] };
+    laptop.capture(empty(), initial);
+    const original = laptop.getRecords();
+    laptop.replace(original, true);
+    const phone = createEngine({ actor: 'phone', records: original, collaborative: true, diffChars });
+    laptop.capture(initial, { ...initial, scratchTabs: [{ id: 'a', label: 'Work', content: 'first' }] });
+    phone.capture(initial, { ...initial, scratchTabs: [{ id: 'a', label: 'Notes', content: 'second' }] });
+    laptop.merge(phone.getRecords());
+    const conflict = laptop.materialize().conflicts.find(item => item.entity === 'scratchTab' && item.field === 'content');
+    assert.ok(conflict);
+    const resolved = laptop.resolve(conflict, 'agreed');
+    phone.merge(laptop.getRecords());
+    assert.ok(resolved);
+    assert.equal(phone.materialize().scratchTabs[0].content, 'agreed');
+    assert.equal(phone.materialize().scratchTabs[0].label, 'Work');
+    const before = phone.materialize();
+    phone.capture(before, { ...before, scratchTabs: [] });
+    laptop.merge(phone.getRecords());
+    assert.deepEqual(laptop.materialize().scratchTabs, []);
+    laptop.replace(original);
+    laptop.capture(initial, { ...initial, scratchTabs: [] });
+    const deletion = laptop.materialize().conflicts.find(item => item.entity === 'scratchTab' && item.field === '__deleted');
+    assert.ok(deletion);
+    laptop.resolve(deletion, true);
+    assert.deepEqual(laptop.materialize().scratchTabs, []);
+});
+
+test('ordinary Scratch tab renames, replacements and closes persist across reload without artificial conflicts', () => {
+    const engine = peer('writer');
+    const initial = { ...empty(), scratch: 'Original text', scratchTabs: [{ id: 'tab', label: 'Untitled', content: 'abc' }] };
+    engine.capture(empty(), initial);
+    const edited = { ...initial, scratch: 'Replaced text', scratchTabs: [{ id: 'tab', label: 'Work notes', content: 'Replaced tab text' }] };
+    engine.capture(initial, edited, { reviewScratch: false });
+    const reloaded = createEngine({ actor: 'new-session', records: engine.getRecords(), diffChars });
+    assert.equal(reloaded.materialize().scratch, 'Replaced text');
+    assert.equal(reloaded.materialize().scratchTabs[0].label, 'Work notes');
+    assert.equal(reloaded.materialize().scratchTabs[0].content, 'Replaced tab text');
+    assert.equal(reloaded.materialize().conflicts.length, 0);
+    reloaded.capture(edited, { ...edited, scratchTabs: [] }, { reviewScratch: false });
+    assert.deepEqual(reloaded.materialize().scratchTabs, []);
 });
 
     test('Device Sync stages conflicts, rejects stale commits and confirms only after every device saves', { timeout: 10000 }, async context => {

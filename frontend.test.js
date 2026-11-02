@@ -98,7 +98,7 @@ function harness(overrides = {}) {
     let listener;
     const context = {
         APP_FEATURES: features, cols: [{ id: 'todo' }], activeRoom: '', conflicts: [],
-        showTour: false, openCard: null, addCardCol: null,
+        showTour: false, openCard: null, quickMove: null, addCardCol: null,
         showAddCol: false, showShortcuts: false, showEditor: false, showDraw: false,
         showAi: false, showKroki: false, showBase64: false, showZpl: false,
         showJson: false, showCalendar: false, showOcr: false, showDiff: false,
@@ -159,7 +159,7 @@ test('letter shortcuts are case-insensitive and cover every registered feature',
 });
 
 test('typing, modal editing, tour, composition, repeats and browser shortcuts do not launch features', () => {
-    for (const overrides of [{ showTour: true }, { openCard: {} }, { showEditor: true },
+    for (const overrides of [{ showTour: true }, { openCard: {} }, { quickMove: {} }, { showEditor: true },
         { showCalendar: true }, { showDraw: true }, { showSyncModal: true }, { showShortcuts: true }]) {
         const h = harness(overrides);
         h.press('n');
@@ -249,7 +249,8 @@ function finalBoardHarness(failKey) {
     const DailySync = require('./sync-engine');
     const { diffChars } = require('./Backend/node_modules/diff');
     const engine = DailySync.createEngine({ actor: 'test', diffChars });
-    const snapshot = { cols: [{ id: 'todo', label: 'Todo' }], cards: { todo: [{ id: 'a', task: 'Agreed final value' }] }, scratch: 'Shared final scratch' };
+    const snapshot = { cols: [{ id: 'todo', label: 'Todo' }], cards: { todo: [{ id: 'a', task: 'Agreed final value' }] }, scratch: 'Shared final scratch',
+        scratchTabs: [{ id: 'notes', label: 'Final notes', content: 'Agreed second tab' }] };
     engine.capture({ cols: [], cards: {}, scratch: '' }, snapshot);
     const data = new Map([['daily_v5', 'old board'], ['daily_scratch', 'old scratch'], ['daily_sync_v2', 'old records']]);
     let failed = false;
@@ -274,7 +275,105 @@ test('explicit final commit persists original board, scratch and causal records 
     assert.equal(JSON.parse(h.data.get('daily_v5')).cards.todo[0].task, 'Agreed final value');
     assert.equal(h.data.get('daily_scratch'), 'Shared final scratch');
     assert.deepEqual(JSON.parse(h.data.get('daily_sync_v2')).records, JSON.parse(JSON.stringify(h.records)));
+    const engine = require('./sync-engine').createEngine({ actor: 'reload', records: JSON.parse(h.data.get('daily_sync_v2')).records });
+    assert.equal(engine.materialize().scratchTabs[0].content, 'Agreed second tab');
     assert.equal(JSON.parse(h.data.get('daily_device_commit_backup')).daily_v5, 'old board');
+});
+
+const moveSource = source.slice(source.indexOf('function moveBoardColumn('), source.indexOf('function QuickMoveModal('));
+const moves = vm.runInNewContext(moveSource + '\n({ moveBoardColumn, moveBoardCard })');
+const moveColumns = [{ id: 'TODO', label: 'Todo' }, { id: 'DONE', label: 'Done' }, { id: 'OTHER', label: 'Other', locked: true }];
+const moveCards = { TODO: [{ id: 'a', task: 'A', comments: [{ id: 'note', text: 'Keep me' }] }, { id: 'b', task: 'B' }, { id: 'c', task: 'C' }], DONE: [{ id: 'd', task: 'D' }], OTHER: [] };
+const ids = cards => Array.from(cards, card => card.id);
+
+test('quick move inserts cards at exact first, middle and last positions without duplicates or mutation', () => {
+    for (const [position, expected] of [[0, ['c', 'a', 'b']], [1, ['a', 'c', 'b']], [2, ['a', 'b', 'c']]]) {
+        const next = moves.moveBoardCard(moveCards, moveColumns, 'c', 'TODO', 'TODO', position, 'now');
+        assert.deepEqual(ids(next.TODO), expected);
+        assert.equal(new Set(ids(next.TODO)).size, 3);
+    }
+    for (const [position, expected] of [[0, ['a', 'd']], [1, ['d', 'a']]]) {
+        const next = moves.moveBoardCard(moveCards, moveColumns, 'a', 'TODO', 'DONE', position, 'now');
+        assert.deepEqual(ids(next.DONE), expected);
+        assert.deepEqual(ids(next.TODO), ['b', 'c']);
+        assert.equal(next.DONE.find(card => card.id === 'a').comments[0].text, 'Keep me');
+        assert.equal(next.DONE.find(card => card.id === 'a').doneAt, 'now');
+        const back = moves.moveBoardCard(next, moveColumns, 'a', 'DONE', 'OTHER', 0, 'later');
+        assert.equal(back.OTHER[0].doneAt, undefined);
+    }
+    assert.deepEqual(ids(moveCards.TODO), ['a', 'b', 'c']);
+    assert.equal(moveCards.TODO[0].updatedAt, undefined);
+});
+
+test('quick move validates stale entities, bounds and column locks', () => {
+    for (const position of [-1, 4, 0.5, NaN]) {
+        assert.throws(() => moves.moveBoardCard(moveCards, moveColumns, 'a', 'TODO', 'DONE', position), /valid card position/);
+        assert.throws(() => moves.moveBoardColumn(moveColumns, 'TODO', position), /valid column position/);
+    }
+    assert.throws(() => moves.moveBoardCard(moveCards, moveColumns, 'missing', 'TODO', 'DONE', 0), /moved or was deleted/);
+    assert.throws(() => moves.moveBoardCard(moveCards, moveColumns, 'a', 'TODO', 'missing', 0), /no longer exists/);
+    assert.throws(() => moves.moveBoardColumn(moveColumns, 'OTHER', 0), /Unlock/);
+    assert.throws(() => moves.moveBoardColumn(moveColumns, 'missing', 0), /no longer exists/);
+    assert.deepEqual(Array.from(moves.moveBoardColumn(moveColumns, 'TODO', 2), column => column.id), ['DONE', 'OTHER', 'TODO']);
+    assert.deepEqual(Array.from(moves.moveBoardColumn(moveColumns, 'DONE', 0), column => column.id), ['DONE', 'TODO', 'OTHER']);
+    assert.deepEqual(moveColumns.map(column => column.id), ['TODO', 'DONE', 'OTHER']);
+});
+
+function scratchBackupHarness() {
+    let download, input;
+    const calls = [];
+    const context = {
+        cols: moveColumns, cards: moveCards, scratch: 'Main notes',
+        scratchTabs: [{ id: 'tab', label: 'Work', content: 'Extra notes' }],
+        Blob, URL: { createObjectURL: blob => { download = blob; return 'blob:test'; } },
+        document: { createElement: tag => {
+            const element = { click() {} };
+            if (tag === 'input') input = element;
+            return element;
+        } },
+        FileReader: class {
+            readAsText(text) { this.onload({ target: { result: text } }); }
+        },
+        setCols: value => calls.push(['cols', value]),
+        setCards: value => calls.push(['cards', value]),
+        setScratch: value => calls.push(['scratch', value]),
+        setScratchTabs: value => calls.push(['tabs', value]),
+        addToast: (...args) => calls.push(['toast', ...args]),
+    };
+    const backupSource = source.slice(source.indexOf('function exportJSON()'), source.indexOf('async function installPwa()'));
+    vm.createContext(context);
+    vm.runInContext(backupSource, context);
+    return {
+        calls,
+        export: async () => { context.exportJSON(); return JSON.parse(await download.text()); },
+        import: data => {
+            context.importJSON();
+            input.onchange({ target: { files: [JSON.stringify(data)] } });
+        },
+    };
+}
+
+test('JSON backup round-trips every Scratch tab while old board imports preserve current notes', async () => {
+    const h = scratchBackupHarness();
+    const exported = await h.export();
+    assert.equal(exported.scratch, 'Main notes');
+    assert.deepEqual(exported.scratchTabs, [{ id: 'tab', label: 'Work', content: 'Extra notes' }]);
+    h.import(exported);
+    assert.equal(h.calls.find(call => call[0] === 'tabs')[1][0].content, 'Extra notes');
+    const legacy = scratchBackupHarness();
+    legacy.import({ cols: moveColumns, cards: moveCards });
+    assert.ok(legacy.calls.some(call => call[0] === 'cols'));
+    assert.ok(!legacy.calls.some(call => ['scratch', 'tabs'].includes(call[0])));
+});
+
+test('invalid or duplicate imported Scratch tabs report an error before changing the board', () => {
+    for (const tabs of [{}, [null], [{ id: 'shared', label: 'Reserved', content: '' }],
+        [{ id: 'a', label: 'A', content: 3 }],
+        [{ id: 'a', label: 'A', content: '' }, { id: 'a', label: 'B', content: '' }]]) {
+        const h = scratchBackupHarness();
+        h.import({ cols: moveColumns, cards: moveCards, scratchTabs: tabs });
+        assert.deepEqual(h.calls, [['toast', 'Import failed: Invalid Scratch tabs', 'error']]);
+    }
 });
 
 test('failed final commit rolls back original data and never silently acknowledges success', () => {

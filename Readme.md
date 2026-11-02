@@ -25,6 +25,7 @@ Whether you're a **solo entrepreneur**, **student**, **freelancer**, or **team l
 
 ### 📋 **Board & Card Management**
 - **Intuitive Drag & Drop Workflow** – Move cards between columns effortlessly
+- **Quick Move** - Use the arrow button on any card or unlocked column to select its exact final position. Cards can move within a column or into another column; drag-and-drop remains available.
 - **Custom Status Columns** – Create columns that match your workflow perfectly
 - **Rich Card Details** – Add descriptions, attachments, comments, and metadata to cards
 - **Priority & Urgency Levels** – Highlight important tasks at a glance
@@ -32,6 +33,8 @@ Whether you're a **solo entrepreneur**, **student**, **freelancer**, or **team l
 
 ### 📝 **Content & Formatting**
 - **Markdown Notes Support** – Write formatted notes with full markdown syntax
+- **Scratch Tabs** - Open Scratch Pad (E), use **+** to add independent notes, and rename or delete added tabs. The original **Scratch** tab keeps existing notes. Use the sidebar button to switch between top and vertical tabs.
+- **Optional Line Numbers** - Toggle the numbered-list button in Scratch Pad to show a scrolling left gutter. Numbered editing uses unwrapped lines so each number matches one text line; turn it off to restore wrapping.
 - **Image Upload & Text Recognition** – Convert images to text with integrated OCR
 - **Base64 Converter** – Encode/decode data directly in the app
 - **Diff Checker** – Compare text versions and track changes
@@ -62,10 +65,12 @@ Whether you're a **solo entrepreneur**, **student**, **freelancer**, or **team l
 - **Follow-Host Card View** – Stay on the same page as your team lead
 - **Multi-Person Editing** – Edit the same card together seamlessly
 - **Host & Invite System** – Free self-hosted collaborative boards
+- **Synced Scratch Tabs** - Tab names and content participate in Device Sync conflict review/final commits and live collaboration. Personal Scratch tabs are restored when leaving a shared board. Tab layout and line-number preferences stay local.
 
 ### 📦 **Data & Reliability**
 - **Local Storage Support** – Your data stays on your device when offline
 - **JSON Import/Export** – Backup and migrate your boards anytime
+- **Scratch Backups** - JSON exports include Scratch text and all tabs. Older board-only JSON imports remain supported and leave existing Scratch notes untouched.
 - **JSON Syntax Repair** – Automatic recovery of malformed JSON data
 - **Partial Recovery** – Unresolved text preserved in recovery reports
 - **JSON Diagnostics** – Source locations, fix hints, and detailed warnings
