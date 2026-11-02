@@ -6,6 +6,44 @@ const WebSocket = require('ws');
 const { once } = require('node:events');
 const { createSyncServer } = require('./server');
 
+async function deviceRoom(context) {
+    const relay = createSyncServer();
+    const clients = [];
+    context.after(async () => {
+        clients.forEach(connection => connection.client.terminate());
+        await new Promise(resolve => relay.wss.close(resolve));
+        await new Promise(resolve => relay.server.close(resolve));
+    });
+    relay.server.listen(0, '127.0.0.1');
+    await once(relay.server, 'listening');
+    async function connect(id, mode = 'device', expectCapabilities = mode === 'device') {
+        const client = new WebSocket(`ws://127.0.0.1:${relay.server.address().port}/?room=devices&mode=${mode}`);
+        const messages = [], waiters = [];
+        client.on('message', raw => {
+            const message = JSON.parse(raw.toString());
+            const index = waiters.findIndex(waiter => waiter.predicate(message));
+            if (index >= 0) waiters.splice(index, 1)[0].resolve(message);
+            else messages.push(message);
+        });
+        const receive = predicate => {
+            const index = messages.findIndex(predicate);
+            return index >= 0 ? Promise.resolve(messages.splice(index, 1)[0])
+                : new Promise(resolve => waiters.push({ predicate, resolve }));
+        };
+        const send = message => client.send(JSON.stringify(message));
+        const connection = { client, send, receive };
+        clients.push(connection);
+        await once(client, 'open');
+        send({ _type: 'request_state', _sid: id, deviceCommit: 1 });
+        if (expectCapabilities) {
+            const capabilities = await receive(message => message._type === 'sync_capabilities');
+            assert.equal(capabilities.deviceCommit, 1);
+        }
+        return connection;
+    }
+    return { ...relay, connect };
+}
+
 const empty = () => ({ cols: [], cards: {}, scratch: '' });
 const snapshot = content => ({ cols: [{ id: 'TODO', label: 'Todo' }], cards: { TODO: [{ id: 'card-a', task: 'Card A', content }] }, scratch: '' });
 const peer = actor => createEngine({ actor, diffChars });
@@ -265,6 +303,94 @@ test('shared board preserves simultaneous replacements and can restore an isolat
     assert.throws(() => desktop.replace({ invalid: {} }), /Invalid sync records/);
 });
 
+    test('Device Sync stages conflicts, rejects stale commits and confirms only after every device saves', { timeout: 10000 }, async context => {
+        const { connect } = await deviceRoom(context);
+        const laptop = await connect('laptop');
+        const mobile = await connect('mobile');
+        const { desktop, mobile: phoneEngine } = paired();
+        phoneEngine.capture(snapshot('abc'), snapshot('different value'));
+        const publish = async (client, engine, id) => {
+            client.send({ _protocol: 2, _sync: { records: engine.getRecords() }, _messageId: id });
+            return client.receive(message => message._ack === id);
+        };
+        const first = await publish(laptop, desktop, 'initial');
+        const merged = await publish(mobile, phoneEngine, 'conflicting');
+        laptop.send({ _type: 'device_commit_request', revision: merged._revision, records: merged._sync.records });
+        assert.match((await laptop.receive(message => message._type === 'sync_error')).message, /Resolve all conflicts/);
+        desktop.merge(merged._sync.records);
+        const conflict = desktop.materialize().conflicts.find(item => item.field === 'content');
+        desktop.resolve(conflict, 'Agreed on laptop and mobile');
+        const resolved = await publish(laptop, desktop, 'resolved-final');
+        laptop.send({ _type: 'device_commit_request', revision: first._revision, records: first._sync.records });
+        assert.match((await laptop.receive(message => message._type === 'sync_error')).message, /preview changed/);
+        laptop.send({ _type: 'device_commit_request', revision: resolved._revision, records: resolved._sync.records });
+        const prepare = await laptop.receive(message => message._type === 'device_commit_prepare');
+        assert.equal((await mobile.receive(message => message._type === 'device_commit_prepare')).id, prepare.id);
+        laptop.send({ _type: 'device_commit_ready', id: prepare.id });
+        mobile.send({ _type: 'device_commit_ready', id: prepare.id });
+        const apply = await laptop.receive(message => message._type === 'device_commit_apply');
+        const phoneApply = await mobile.receive(message => message._type === 'device_commit_apply');
+        assert.deepEqual(apply.records, phoneApply.records);
+        phoneEngine.replace(phoneApply.records);
+        assert.equal(contentOf(phoneEngine), 'Agreed on laptop and mobile');
+        laptop.send({ _type: 'device_commit_applied', id: prepare.id });
+        const partial = await mobile.receive(message => message._type === 'device_commit_status' && message.applied === 1);
+        assert.equal(partial.phase, 'applying');
+        mobile.send({ _type: 'device_commit_applied', id: prepare.id });
+        const complete = await laptop.receive(message => message._type === 'device_commit_status' && message.phase === 'complete');
+        assert.equal(complete.expected, 2);
+        assert.equal(complete.applied, 2);
+        await mobile.receive(message => message._type === 'device_commit_status' && message.phase === 'complete');
+    });
+
+    test('Device Sync cancels preparation on new edits or disconnect and reports failed persistence honestly', { timeout: 10000 }, async context => {
+        const { connect } = await deviceRoom(context);
+        const laptop = await connect('laptop');
+        const mobile = await connect('mobile');
+        const engine = peer('laptop');
+        engine.capture(empty(), snapshot('base'));
+        laptop.send({ _protocol: 2, _sync: { records: engine.getRecords() }, _messageId: 'base' });
+        let update = await laptop.receive(message => message._ack === 'base');
+        const request = () => laptop.send({ _type: 'device_commit_request', revision: update._revision, records: update._sync.records });
+        request();
+        let prepare = await laptop.receive(message => message._type === 'device_commit_prepare');
+        engine.capture(snapshot('base'), snapshot('base plus unsent edit'));
+        mobile.send({ _protocol: 2, _sync: { records: engine.getRecords() }, _messageId: 'new-edit' });
+        assert.match((await laptop.receive(message => message._type === 'device_commit_status' && message.phase === 'aborted')).error, /preview changed/);
+        update = await mobile.receive(message => message._ack === 'new-edit');
+        request();
+        prepare = await laptop.receive(message => message._type === 'device_commit_prepare');
+        const closed = once(mobile.client, 'close');
+        mobile.client.close();
+        await closed;
+        assert.match((await laptop.receive(message => message._type === 'device_commit_status' && message.phase === 'aborted')).error, /disconnected/);
+        const replacement = await connect('mobile-reconnected');
+        request();
+        prepare = await laptop.receive(message => message._type === 'device_commit_prepare');
+        await replacement.receive(message => message._type === 'device_commit_prepare');
+        laptop.send({ _type: 'device_commit_ready', id: prepare.id });
+        replacement.send({ _type: 'device_commit_ready', id: prepare.id });
+        await laptop.receive(message => message._type === 'device_commit_apply');
+        laptop.send({ _type: 'device_commit_applied', id: prepare.id });
+        replacement.send({ _type: 'device_commit_reject', id: prepare.id });
+        const incomplete = await laptop.receive(message => message._type === 'device_commit_status' && message.phase === 'incomplete');
+        assert.match(incomplete.error, /could not accept or save/);
+        assert.equal(incomplete.applied, 1);
+        assert.equal(incomplete.expected, 2);
+    });
+
+    test('Device Sync requires two devices and cannot be joined as collaboration or legacy auto-sync', { timeout: 10000 }, async context => {
+        const { connect } = await deviceRoom(context);
+        const laptop = await connect('laptop');
+        laptop.send({ _type: 'device_commit_request', revision: 0, records: {} });
+        assert.match((await laptop.receive(message => message._type === 'sync_error')).message, /at least two/);
+        for (const mode of ['collaborate', 'legacy']) {
+            const incompatible = await connect('incompatible', mode);
+            const error = await incompatible.receive(message => message._type === 'sync_error');
+            assert.equal(error.fatal, true);
+            assert.match(error.message, /different sharing mode/);
+        }
+    });
 test('shared relay hosts, joins, tracks presence, replays edits and survives all clients leaving', { timeout: 10000 }, async context => {
     const { server, wss } = createSyncServer();
     const clients = [];
@@ -353,4 +479,31 @@ test('shared relay hosts, joins, tracks presence, replays edits and survives all
     const hostReturning = await connect('new-host-session', { host: true, records: hostEngine.getRecords() });
     const peers = await hostReturning.receive(message => message.participants?.some(person => person.id === 'new-host-session' && person.host));
     assert.equal(peers.host, 'new-host-session');
+});
+
+test('new participants invalidate preparation and cannot join midway through saving', { timeout: 10000 }, async context => {
+    const { connect } = await deviceRoom(context);
+    const first = await connect('first');
+    const second = await connect('second');
+    first.send({ _type: 'device_commit_request', revision: 0, records: {} });
+    await first.receive(message => message._type === 'device_commit_prepare');
+    const third = await connect('third');
+    const aborted = await first.receive(message => message._type === 'device_commit_status' && message.phase === 'aborted');
+    assert.match(aborted.error, /device joined/);
+    first.send({ _type: 'device_commit_request', revision: 0, records: {} });
+    const prepare = await first.receive(message => message._type === 'device_commit_prepare');
+    for (const connection of [first, second, third]) {
+        connection.send({ _type: 'device_commit_ready', id: prepare.id });
+    }
+    await first.receive(message => message._type === 'device_commit_apply');
+    const late = await connect('late', 'device', false);
+    const error = await late.receive(message => message._type === 'sync_error');
+    assert.equal(error.fatal, true);
+    assert.match(error.message, /Join again after/);
+    for (const connection of [first, second, third]) {
+        connection.send({ _type: 'device_commit_applied', id: prepare.id });
+    }
+    const complete = await first.receive(message => message._type === 'device_commit_status' && message.phase === 'complete');
+    assert.equal(complete.expected, 3);
+    assert.equal(complete.applied, 3);
 });

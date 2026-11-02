@@ -103,6 +103,7 @@ function harness(overrides = {}) {
         showAi: false, showKroki: false, showBase64: false, showZpl: false,
         showJson: false, showCalendar: false, showOcr: false, showDiff: false,
         showSyncModal: false, showConflicts: false,
+        commitRef: { current: null },
         document: { querySelector: () => null },
         window: { addEventListener: (_, fn) => { listener = fn; }, removeEventListener: () => {} },
         useEffect: fn => fn(), setTimeout: fn => fn(),
@@ -231,4 +232,59 @@ test('feature tour points to exact controls and menu entries, never a generic to
     assert.ok(source.includes('data-tour-connector'));
     assert.ok(source.includes('data-tour="add-column"'));
     assert.ok(!source.includes('target: `[data-tour="${feature.target || feature.id}"], [data-tour="mobile-menu"]'));
+});
+
+test('Device Sync and Collaborate have different launchers and keyboard shortcuts', () => {
+    const sync = harness();
+    sync.run('sync');
+    assert.ok(sync.calls.some(call => call[0] === 'setSyncDialog' && call[1] === 'device'));
+    const collab = harness();
+    collab.run('collaborate');
+    assert.ok(collab.calls.some(call => call[0] === 'setSyncDialog' && call[1] === 'collaborate'));
+    assert.notEqual(features.find(feature => feature.id === 'sync').key, features.find(feature => feature.id === 'collaborate').key);
+    assert.ok(!source.includes('Existing device sync (merge personal boards)'));
+});
+
+function finalBoardHarness(failKey) {
+    const DailySync = require('./sync-engine');
+    const { diffChars } = require('./Backend/node_modules/diff');
+    const engine = DailySync.createEngine({ actor: 'test', diffChars });
+    const snapshot = { cols: [{ id: 'todo', label: 'Todo' }], cards: { todo: [{ id: 'a', task: 'Agreed final value' }] }, scratch: 'Shared final scratch' };
+    engine.capture({ cols: [], cards: {}, scratch: '' }, snapshot);
+    const data = new Map([['daily_v5', 'old board'], ['daily_scratch', 'old scratch'], ['daily_sync_v2', 'old records']]);
+    let failed = false;
+    const storage = {
+        getItem: key => data.get(key) ?? null,
+        setItem: (key, value) => {
+            if (key === failKey && !failed) { failed = true; throw new Error('Storage full'); }
+            data.set(key, value);
+        },
+        removeItem: key => data.delete(key),
+    };
+    const helper = source.slice(source.indexOf('function saveFinalDeviceBoard('), source.indexOf('function DeviceSyncModal('));
+    const context = { DailySync, Diff: { diffChars }, console };
+    vm.createContext(context);
+    vm.runInContext(helper, context);
+    return { data, records: engine.getRecords(), save: records => context.saveFinalDeviceBoard(storage, records) };
+}
+
+test('explicit final commit persists original board, scratch and causal records together', () => {
+    const h = finalBoardHarness();
+    h.save(h.records);
+    assert.equal(JSON.parse(h.data.get('daily_v5')).cards.todo[0].task, 'Agreed final value');
+    assert.equal(h.data.get('daily_scratch'), 'Shared final scratch');
+    assert.deepEqual(JSON.parse(h.data.get('daily_sync_v2')).records, JSON.parse(JSON.stringify(h.records)));
+    assert.equal(JSON.parse(h.data.get('daily_device_commit_backup')).daily_v5, 'old board');
+});
+
+test('failed final commit rolls back original data and never silently acknowledges success', () => {
+    for (const key of ['daily_device_commit_backup', 'daily_v5', 'daily_scratch', 'daily_sync_v2']) {
+        const h = finalBoardHarness(key);
+        assert.throws(() => h.save(h.records), /Storage full/);
+        assert.equal(h.data.get('daily_v5'), 'old board');
+        assert.equal(h.data.get('daily_scratch'), 'old scratch');
+        assert.equal(h.data.get('daily_sync_v2'), 'old records');
+    }
+    const invalid = finalBoardHarness();
+    assert.throws(() => invalid.save({ broken: {} }), /Invalid final board/);
 });

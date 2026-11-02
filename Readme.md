@@ -153,7 +153,8 @@ New browsers automatically show an **interactive guided tour** of every feature.
 | **Z** | ZPL Generator | Create printer labels |
 | **C** | Calendar Events | View and sync calendar |
 | **M** | Time Machine | Browse history and revert changes |
-| **S** | Collaborate & Sync | Set up multi-device sync |
+| **S** | Device Sync | Preview, resolve conflicts and commit final values to original boards |
+| **Q** | Collaborate | Host/join a separate live board with named cursors |
 | **V** | Review Conflicts | Resolve sync conflicts |
 | **R** | Refresh Ages | Update task age counters |
 | **L** | Toggle Theme | Switch between light/dark mode |
@@ -183,20 +184,53 @@ Inside an open card, you can:
 
 ---
 
-## 🔄 Multi-Device Sync & Collaboration
+## 🔄 Device Sync: Agree and Commit Original Boards
 
 ### How It Works
-Daily.'s sync engine is built on **Operational Transform Protocol** for conflict-free merging:
+**Device Sync** and **Collaborate** are separate header buttons, Tools entries,
+dialogs and room modes. Device Sync combines your laptop/mobile boards in an
+isolated preview using causal field records. Collaboration shares the host's
+separate working board; it never commits over personal boards.
 
-- **Boards, Cards, Comments & Scratch Pad** – Synced across all devices
+- **Boards, Cards, Comments & Scratch Pad** – Combined in the device-sync preview
 - **Local-Only Data** – Calendar events, timers, utility inputs, and panel positions stay on each device
 - **Automatic Merging** – Independent changes from different devices combine intelligently
 - **Conflict Resolution** – Competing edits are flagged for manual review with full context
-- **Real-Time Collaboration** – Multiple users editing the same card simultaneously
-- **Presence & Awareness** – See who's online and what they're working on
-- **Offline Support** – Changes queue locally and sync when you reconnect
+- **Originals Preserved** – Preview edits and conflict choices do not replace original boards
+- **Explicit Final Commit** – Saves the reviewed board to each participating device's original storage
+- **Confirmed Completion** – Reports success only after every participating device confirms saving
+- **Offline Support** – Preview changes are cached separately and re-sent on reconnect
 
-### Sync Behaviors
+### Device Sync Steps
+
+1. Open **Device Sync (S)** on the laptop and select **Create device sync room**.
+2. Open **Device Sync** on the mobile and join using that room ID or device-sync invite.
+3. Close the setup dialog to inspect the combined preview. Resolve every conflict
+   using **Use This** or **Use Merged Text**. Choices are shared within the preview.
+4. Select **Commit final board**. At least two devices must be connected and no
+   conflicts may remain. Keep all participating devices online.
+5. The relay checks the preview revision, asks each device to confirm the same
+   records, then asks each to save. The UI shows completed/expected save counts.
+   Edits are paused during this confirmation.
+6. Only **Final board confirmed on N devices** means all N devices acknowledged
+   saving their originals. Leaving the preview returns to the newly committed board.
+   Leaving before commit restores each device's previous original instead.
+
+Changed previews or disconnects during preparation cancel the commit. If saving
+fails or a device disconnects during application, some originals may already be
+saved; the UI reports an **incomplete** commit, never all-device success. Reconnect,
+review and retry. A pre-commit local recovery copy is kept in
+`daily_device_commit_backup`; storage failures are reported and writes are rolled
+back when storage permits. There is no distributed database transaction.
+
+**Offline devices are not counted as saved.** They must reconnect and participate
+in another explicit commit. A newly joined device also needs another commit.
+Device rooms and acknowledgement state are in server memory, not a durable queue.
+Restarting the relay loses this state; originals and cached previews remain local.
+Use one active board tab per physical device to avoid independent tabs writing the
+same browser storage while a sync is in progress.
+
+### Preview Merge Behaviors
 
 | Scenario | Behavior |
 | --- | --- |
@@ -207,15 +241,10 @@ Daily.'s sync engine is built on **Operational Transform Protocol** for conflict
 | **Same Edit from Different Devices** | Automatically resolved (timestamp-independent) |
 | **Offline & Reconnect** | Pending changes re-sent; conflicts re-opened |
 
-### Team Collaboration Setup
-
-1. **Host invites team members** – Share your room ID
-2. **Members join the same room** – Live updates start immediately
-3. **See who's online** – Presence indicators show active users
-4. **Edit together** – Multiple people can work on the same card
-5. **Review conflicts** – Use the conflict dialog to merge edits manually
-
-💡 **No sign-up required** — just share your room ID and start collaborating!
+Update the frontend, shared sync engine and relay together. New Device Sync rooms
+require explicit-commit support; old auto-sync clients and collaboration clients
+cannot join these rooms. Existing old device-room links open the new preview
+workflow after updating every device. No account or paid API is required.
 
 ---
 
@@ -254,9 +283,9 @@ Daily.'s sync engine is built on **Operational Transform Protocol** for conflict
    - **Option B:** Open `index.html` and append `?syncServer=ws%3A%2F%2Flocalhost%3A8080` to use the local relay
 
 6. **Test multi-device sync:**
-   - Create a new room in Daily.
-   - On another device/browser, join the same room ID
-   - Watch changes sync in real-time!
+   - Open **Device Sync**, create a room and join it on the other device
+   - Review the combined preview and resolve conflicts
+   - Select **Commit final board** and wait for every device's save confirmation
 
 💡 **Local Network Testing:** Use your relay computer's actual IP address, not `localhost`, when testing from other physical devices.
 
@@ -283,7 +312,7 @@ Deploy all components together:
 
 **Relay Behavior:**
 - **No Content Authority** – Relay merges records, broadcasts decisions, doesn't control content
-- **In-Memory Storage** – Room state is held in memory while clients are connected
+- **In-Memory Storage** – Device-sync and collaboration rooms stay in memory until relay restart
 - **No Persistent Database** – Recovery depends on at least one client's retained local history
 - **Always Export Backups** – Before clearing browser storage, export your board as JSON
 
@@ -311,6 +340,15 @@ node --test frontend.test.js
 2. **Enter your name** and sync server URL (optional)
 3. **Host a shared board** or **join an existing room**
 4. **Share the invite link** with teammates
+
+This is **not Device Sync**. The host's current board is copied into a separate
+collaborative workspace. Joiners see that shared board rather than importing their
+own cards, and can edit it like the host. Live named cursors remain visible to the
+host and other participants. **Leave board & restore personal board** restores
+each person's untouched original. There is deliberately no final-commit control
+in collaboration; use **Device Sync** when you want to agree and update originals.
+Only one of these room sessions is active in a tab at a time; switching features
+leaves the previous workspace without silently committing its preview.
 
 ### How Live Collaboration Works
 

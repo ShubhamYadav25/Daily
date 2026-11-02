@@ -268,5 +268,12 @@
         return { capture, merge, replace, materialize, resolve, getRecords: () => state, inspect };
     }
 
-    return { createEngine, mergeRecords, validRecords };
+    function recordsEqual(left, right) {
+        const canonical = records => JSON.stringify(Object.entries(records).sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, register]) => [key, Object.entries(register.clock).sort(([a], [b]) => a.localeCompare(b)),
+                [...register.heads].sort((a, b) => dotKey(a).localeCompare(dotKey(b)))]));
+        return canonical(left) === canonical(right);
+    }
+
+    return { createEngine, mergeRecords, validRecords, recordsEqual };
 });
