@@ -2,7 +2,9 @@ const WebSocket = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { mergeRecords, validRecords } = require('../sync-engine');
+const { mergeRecords, validRecords, recordsEqual, createEngine } = require('../sync-engine');
+const { diffChars } = require('diff');
+const { randomUUID } = require('crypto');
 
 function createSyncServer() {
     const server = http.createServer((request, response) => {
@@ -39,10 +41,28 @@ function createSyncServer() {
             host: room.host || null, collaborative: !!room.collaborative }));
     }
 
+    function commitStatus(room, error) {
+        const commit = room.commit;
+        if (!commit) return;
+        if (error) commit.error = error;
+        commit.members.forEach(client => send(client, {
+            _type: 'device_commit_status', id: commit.id, phase: commit.phase,
+            expected: commit.members.size, applied: commit.applied.size, error: commit.error || null
+        }));
+    }
+
+    function failCommit(room, reason) {
+        if (!room.commit || !['preparing', 'applying'].includes(room.commit.phase)) return;
+        clearTimeout(room.commit.timer);
+        room.commit.phase = room.commit.phase === 'applying' ? 'incomplete' : 'aborted';
+        commitStatus(room, reason);
+    }
+
     wss.on('connection', (ws, request) => {
         const params = new URL(request.url, 'http://localhost').searchParams;
         const roomId = params.get('room');
         const collaborative = params.get('mode') === 'collaborate';
+        const deviceSync = params.get('mode') === 'device';
         if (!roomId || roomId.length > 128) {
             ws.close(1008, 'Room ID required');
             return;
@@ -52,12 +72,21 @@ function createSyncServer() {
             ws.close(1008, 'Shared board unavailable');
             return;
         }
-        if (!rooms.has(roomId)) rooms.set(roomId, { clients: new Map(), records: {}, collaborative, host: null });
+        if (!rooms.has(roomId)) rooms.set(roomId, { clients: new Map(), records: {}, collaborative, deviceSync,
+            revision: 0, host: null });
         const room = rooms.get(roomId);
-        if (!!room.collaborative !== collaborative) {
+        if (!!room.collaborative !== collaborative || !!room.deviceSync !== deviceSync) {
             send(ws, { _type: 'sync_error', fatal: true, message: 'This room uses a different sharing mode.' });
             ws.close(1008, 'Room mode mismatch');
             return;
+        }
+        if (deviceSync && room.commit?.phase === 'applying') {
+            send(ws, { _type: 'sync_error', fatal: true, message: 'A final commit is being saved. Join again after it completes.' });
+            ws.close(1008, 'Final commit in progress');
+            return;
+        }
+        if (deviceSync && room.commit?.phase === 'preparing') {
+            failCommit(room, 'A device joined. Review the updated participants and commit again.');
         }
         room.clients.set(ws, null);
         ws.isAlive = true;
@@ -92,11 +121,69 @@ function createSyncServer() {
                 broadcastPeers(room);
             }
             if (message._type === 'request_state') {
-                send(ws, { _type: 'sync_capabilities', protocol: 2, collaborative: !!room.collaborative });
-                send(ws, { _type: 'sync_state', _protocol: 2, initial: true, _sync: { records: room.records } });
+                if (deviceSync && message.deviceCommit !== 1) {
+                    send(ws, { _type: 'sync_error', fatal: true, message: 'Update this device to use explicit final commits.' });
+                    ws.close(1008, 'Device commit support required');
+                    return;
+                }
+                send(ws, { _type: 'sync_capabilities', protocol: 2, collaborative: !!room.collaborative, deviceCommit: deviceSync ? 1 : undefined });
+                send(ws, { _type: 'sync_state', _protocol: 2, initial: true, _revision: room.revision, _sync: { records: room.records } });
                 room.clients.forEach((sid, client) => {
                     if (client !== ws && !collaborative) send(client, message);
                 });
+                return;
+            }
+            if (deviceSync && message._type === 'device_commit_request') {
+                if (['preparing', 'applying'].includes(room.commit?.phase)) {
+                    send(ws, { _type: 'sync_error', message: 'A final commit is already in progress.' });
+                    return;
+                }
+                if (room.clients.size < 2 || [...room.clients.values()].some(sid => !sid)) {
+                    send(ws, { _type: 'sync_error', message: 'Connect at least two ready devices before committing.' });
+                    return;
+                }
+                if (message.revision !== room.revision || !validRecords(message.records) || !recordsEqual(message.records, room.records)) {
+                    send(ws, { _type: 'sync_error', message: 'The preview changed. Wait for sync, review it and commit again.' });
+                    return;
+                }
+                const engine = createEngine({ actor: 'relay-review', records: room.records, diffChars });
+                if (engine.materialize().conflicts.length) {
+                    send(ws, { _type: 'sync_error', message: 'Resolve all conflicts before committing the final board.' });
+                    return;
+                }
+                room.commit = { id: randomUUID(), phase: 'preparing', records: room.records,
+                    members: new Set(room.clients.keys()), prepared: new Set(), applied: new Set() };
+                const commit = room.commit;
+                commit.timer = setTimeout(() => failCommit(room, 'Some devices did not confirm the final commit. Reconnect them and retry.'), 15000);
+                commit.timer.unref();
+                commitStatus(room);
+                commit.members.forEach(client => send(client, { _type: 'device_commit_prepare', id: commit.id,
+                    records: commit.records, revision: room.revision }));
+                return;
+            }
+            if (deviceSync && ['device_commit_ready', 'device_commit_applied', 'device_commit_reject'].includes(message._type)) {
+                const commit = room.commit;
+                if (!commit || message.id !== commit.id || !commit.members.has(ws)) return;
+                if (message._type === 'device_commit_reject') {
+                    failCommit(room, 'A device could not accept or save this board. Its original data is preserved; review and retry.');
+                } else if (message._type === 'device_commit_ready' && commit.phase === 'preparing') {
+                    commit.prepared.add(ws);
+                    if (commit.prepared.size === commit.members.size) {
+                        commit.phase = 'applying';
+                        commitStatus(room);
+                        commit.members.forEach(client => send(client, { _type: 'device_commit_apply', id: commit.id,
+                            records: commit.records }));
+                    }
+                } else if (message._type === 'device_commit_applied' && ['applying', 'incomplete'].includes(commit.phase)) {
+                    commit.applied.add(ws);
+                    if (commit.applied.size === commit.members.size) {
+                        const unchanged = recordsEqual(commit.records, room.records);
+                        commit.phase = unchanged ? 'complete' : 'incomplete';
+                        commit.error = unchanged ? null : 'Devices saved the previous commit, but the preview changed. Review and commit the new preview again.';
+                        clearTimeout(commit.timer);
+                    }
+                    commitStatus(room);
+                }
                 return;
             }
             if (message._type === 'presence' && collaborative) {
@@ -123,9 +210,18 @@ function createSyncServer() {
                     send(ws, { _type: 'sync_error', message: 'Invalid sync records' });
                     return;
                 }
-                room.records = mergeRecords(room.records, message._sync.records);
+                const merged = mergeRecords(room.records, message._sync.records);
+                if (deviceSync && !recordsEqual(merged, room.records)) {
+                    if (room.commit?.phase === 'applying') {
+                        send(ws, { _type: 'sync_error', message: 'Wait for the final commit to finish before changing the preview.' });
+                        return;
+                    }
+                    failCommit(room, 'The preview changed during confirmation. Review and commit again.');
+                    room.revision++;
+                }
+                room.records = merged;
                 room.clients.forEach((sid, client) => send(client, {
-                    _type: 'sync_state', _protocol: 2, _sync: { records: room.records },
+                    _type: 'sync_state', _protocol: 2, _revision: room.revision, _sync: { records: room.records },
                     _ack: client === ws ? message._messageId : undefined
                 }));
                 return;
@@ -139,9 +235,10 @@ function createSyncServer() {
 
         ws.on('error', () => ws.terminate());
         ws.on('close', () => {
+            if (room.commit?.members.has(ws)) failCommit(room, 'A device disconnected. The final board is not confirmed on every device. Reconnect and retry.');
             room.clients.delete(ws);
             broadcastPeers(room);
-            if (!room.clients.size && !room.collaborative) rooms.delete(roomId);
+            if (!room.clients.size && !room.collaborative && !room.deviceSync) rooms.delete(roomId);
         });
     });
 
@@ -153,7 +250,10 @@ function createSyncServer() {
         });
     }, 30000);
     heartbeat.unref();
-    wss.on('close', () => clearInterval(heartbeat));
+    wss.on('close', () => {
+        clearInterval(heartbeat);
+        rooms.forEach(room => clearTimeout(room.commit?.timer));
+    });
     return { server, wss, rooms };
 }
 

@@ -959,7 +959,10 @@
         }
 
         .sync-input {
-            flex: 1;
+            flex: 0 0 auto;
+            width: 100%;
+            min-height: 44px;
+            box-sizing: border-box;
             background: var(--bg3);
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -967,6 +970,21 @@
             font-size: 14px;
             color: var(--text);
             outline: none
+        }
+
+        .sync-join-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .sync-join-row .sync-input {
+            flex: 1 1 220px;
+            width: auto;
+        }
+
+        .sync-join-row .btn {
+            flex: 0 0 auto;
         }
 
         .qr-box {
@@ -3226,6 +3244,87 @@
             min-height: 0;
         }
 
+        .scratch-tabs-layout {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            min-width: 0;
+            flex-direction: column;
+        }
+
+        .scratch-tabs-layout.vertical {
+            flex-direction: row;
+        }
+
+        .scratch-tabs {
+            display: flex;
+            flex-shrink: 0;
+            gap: 4px;
+            padding: 6px;
+            background: var(--bg4);
+            overflow: auto;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .vertical .scratch-tabs {
+            flex-direction: column;
+            width: 140px;
+            max-width: 35%;
+            min-height: 0;
+            border-right: 1px solid var(--border);
+        }
+
+        .scratch-tabs button {
+            flex-shrink: 0;
+            padding: 7px 10px;
+            background: var(--bg3);
+            color: var(--text2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 180px;
+            cursor: pointer;
+        }
+
+        .scratch-tabs button[aria-selected="true"] {
+            color: var(--blue);
+            border-color: var(--blue);
+        }
+
+        .scratch-tab-tools {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .scratch-tab-tools input {
+            flex: 1;
+            min-width: 80px;
+            width: 0;
+        }
+
+        .line-number-gutter {
+            flex-shrink: 0;
+            overflow: hidden;
+            color: var(--text3);
+            background: var(--bg4);
+            border-right: 1px solid var(--border);
+            user-select: none;
+        }
+
+        .line-number-gutter pre {
+            margin: 0;
+            padding: 10px 8px;
+            text-align: right;
+            font: 13px/1.7 'DM Mono', monospace;
+        }
+
         .scratch-window .fp-hdr button {
             display: inline-flex;
             align-items: center;
@@ -3289,6 +3388,10 @@
         }
 
         @media (max-width: 640px) {
+            .line-number-gutter pre {
+                font-size: 16px;
+            }
+
             .scratch-editor .md-editor-toolbar,
             .scratch-editor > div:last-child {
                 cursor: default !important;
@@ -3358,7 +3461,7 @@
         }
 
         @container daily-panel (max-width: 480px) {
-            .scratch-editor .md-editor-body > textarea:not(:last-child) {
+            .scratch-editor .md-editor-body > .md-editor-input:not(:last-child) {
                 border-right: none !important;
                 border-bottom: 1px solid var(--border) !important;
             }
@@ -3455,8 +3558,13 @@
                 font-size: 16px !important;
             }
 
-            .sync-input {
-                width: 0;
+            .sync-join-row {
+                flex-direction: column;
+            }
+
+            .sync-join-row .sync-input {
+                flex: 0 0 auto;
+                width: 100%;
             }
 
             .toasts {
@@ -3561,7 +3669,7 @@
 
         function HeaderTool({ icon, label, active, onClick, tour }) {
             const feature = APP_FEATURES.find(item => item.id === tour || item.label === label
-                || (label === 'Calendar' && item.id === 'calendar') || (label === 'Collaborate' && item.id === 'sync')
+                || (label === 'Calendar' && item.id === 'calendar')
                 || (label === 'Drawing' && item.id === 'drawing'));
             return <button className={'ibtn header-tool' + (active ? ' active' : '')}
                 title={label + (feature ? ` (${feature.key.toUpperCase()})` : '')}
@@ -4390,8 +4498,9 @@
         }
 
         /* ── MD EDITOR ── */
-        function MdEditor({ value, onChange, fill = false }) {
+        function MdEditor({ value, onChange, fill = false, lineNumbers = false }) {
             const ta = useRef();
+            const gutter = useRef();
             const mobile = useIsMobile();
             const [mode, setMode] = useState('write');
             const [edH, setEdH] = useState(isMobile() ? 160 : 220);
@@ -4404,6 +4513,16 @@
             const [menuPosition, setMenuPosition] = useState({ left: 8, top: 8 });
             const historyRef = useRef({ stack: [value], idx: 0 });
             const historyTimer = useRef(null);
+
+            function syncLineNumbers() {
+                if (!gutter.current || !ta.current) return;
+                gutter.current.firstElementChild.style.paddingBottom = (10 + ta.current.offsetHeight - ta.current.clientHeight) + 'px';
+                gutter.current.scrollTop = ta.current.scrollTop;
+            }
+
+            useEffect(() => {
+                syncLineNumbers();
+            }, [lineNumbers, value, mode]);
 
             useEffect(() => {
                 function onDoc(e) {
@@ -4952,11 +5071,18 @@
                         ...(fill ? { flex: 1, minHeight: 0 } : {})
                     }}>
                         {(mode === 'write' || mode === 'split') && (
+                            <div className="md-editor-input" style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden',
+                                borderRight: mode === 'split' ? '1px solid var(--border)' : 'none' }}>
+                            {lineNumbers && <div ref={gutter} className="line-number-gutter" aria-hidden="true">
+                                <pre>{Array.from({ length: value.split('\n').length }, (_, i) => i + 1).join('\n')}</pre>
+                            </div>}
                             <textarea ref={ta} onKeyDown={onKD} onPaste={onPaste}
+                                aria-label={fill ? 'Scratch tab content' : 'Notes'}
+                                wrap={lineNumbers ? 'off' : 'soft'}
+                                onScroll={syncLineNumbers}
                                 style={{
-                                    flex: 1, background: 'var(--bg3)', border: 'none',
-                                    borderRight: mode === 'split' ? '1px solid var(--border)' :
-                                        'none', padding: '10px', fontSize: 13,
+                                    flex: 1, minWidth: 0, background: 'var(--bg3)', border: 'none',
+                                    padding: '10px', fontSize: 13,
                                     fontFamily: "'DM Mono',monospace", color: 'var(--text)',
                                     resize: 'none', outline: 'none', lineHeight: 1.7,
                                     overflowY: 'auto', WebkitOverflowScrolling: 'touch'
@@ -4971,6 +5097,7 @@
                                 }}
                                 placeholder={"Notes, steps, blockers...\nPaste/🖼 images · 🚫 blocker · ☐ tasks · ∑ math ($...$)"}
                                 spellCheck={false} />
+                            </div>
                         )}
                         {(mode === 'preview' || mode === 'split') && (
                             <div className="md-render" style={{
@@ -5510,7 +5637,7 @@
         }
 
         /* ── CARD COMPONENT ── */
-        function Card({ card, onOpen, onDragStart, onDragOver, onDropOnCard, now, timer }) {
+        function Card({ card, onOpen, onDragStart, onDragOver, onDropOnCard, onQuickMove, now, timer }) {
             const [dragSide, setDragSide] = useState(null);
             const blocker = parseBlocker(card.content);
             const days = Math.floor(((now || Date.now()) - new Date(card.createdAt).getTime()) / 864e5);
@@ -5557,6 +5684,9 @@
                                 Math.max(0, timer.remaining))}</span>}
                         {card.content && !blocker && <span style={{ fontSize: 10, color: 'var(--text3)' }}><Icon name="NotebookPen" size="1em" /></span>}
                         <span className={`card-age ${ac}`}><Icon name="Clock" size="1em" /> {ageText}</span>
+                        <button className="chbtn" title="Move card to position" aria-label={'Move card: ' + card.task}
+                            onClick={e => { e.stopPropagation(); onQuickMove(card.id); }}>
+                            <Icon name="ArrowRightLeft" size={14} /></button>
                     </div>
                     {blocker && <div className="card-blocker"><div className="blocker-lbl"><Icon name="CircleAlert" size="1em" /> BLOCKER</div><div
                         style={{ lineHeight: 1.35 }}>{blocker.slice(0, 120)}{blocker.length > 120 ? '…' :
@@ -5568,7 +5698,7 @@
         /* ── COLUMN ── */
         function Column({ colData, cards, allCols, onCardDrop, onCardReorder, onColDragStart, onColDrop, onColDragOver,
             onOpen, onAddCard, onDeleteCol, onToggleLock, onRenameCol, dragCardId, isColDragging, isColDropTarget, now,
-            timers, onClearCards }) {
+            timers, onClearCards, onQuickMoveCard, onQuickMoveColumn }) {
             const [renaming, setRenaming] = useState(false);
             const [renameVal, setRenameVal] = useState(colData.label);
             const blockerCount = cards.filter(c => parseBlocker(c.content)).length;
@@ -5619,6 +5749,9 @@
                         {blockerCount > 0 && <span className="col-blocker-badge"><Icon name="CircleAlert" size="1em" />{blockerCount}</span>}
 
                         <div className="col-hdr-actions">
+                            <button className="chbtn" title={colData.locked ? 'Unlock column before moving' : 'Move column to position'}
+                                aria-label={'Move column: ' + colData.label} disabled={colData.locked}
+                                onClick={() => onQuickMoveColumn(colData.id)}><Icon name="ArrowRightLeft" size={14} /></button>
                             <button
                                 className="chbtn clear-col"
                                 title={cards.length === 0
@@ -5655,6 +5788,7 @@
                                     here</span></div>}
                         {cards.map(c => <Card key={c.id} card={c} now={now} timer={timers[c.id] || null}
                             onOpen={onOpen}
+                            onQuickMove={onQuickMoveCard}
                             onDragStart={id => { onCardDrop._setDrag(id, colData.id); }}
                             onDragOver={(tid, pos) => { }}
                             onDropOnCard={(tid, pos) => {
@@ -5664,6 +5798,74 @@
                         <button className="col-add-btn" title="Add card" onClick={() => onAddCard(colData.id)} aria-label="Add card">
                             <Icon name="Plus" size={14} />
                         </button>
+                    </div>
+                </div>
+            );
+        }
+
+        function moveBoardColumn(columns, id, position) {
+            const column = columns.find(item => item.id === id);
+            if (!column) throw new Error('This column no longer exists.');
+            if (column.locked) throw new Error('Unlock this column before moving it.');
+            if (!Number.isInteger(position) || position < 0 || position >= columns.length) throw new Error('Choose a valid column position.');
+            const next = columns.filter(item => item.id !== id);
+            next.splice(position, 0, column);
+            return next;
+        }
+
+        function moveBoardCard(cards, columns, id, fromColumn, toColumn, position, now = new Date().toISOString()) {
+            const card = (cards[fromColumn] || []).find(item => item.id === id);
+            if (!card) throw new Error('This card moved or was deleted. Reopen Move and try again.');
+            if (!columns.some(column => column.id === toColumn)) throw new Error('The destination column no longer exists.');
+            const source = cards[fromColumn].filter(item => item.id !== id);
+            const destination = fromColumn === toColumn ? [...source] : [...(cards[toColumn] || [])];
+            const index = position === undefined ? destination.length : position;
+            if (!Number.isInteger(index) || index < 0 || index > destination.length) throw new Error('Choose a valid card position.');
+            const isDone = columnId => columnId === 'DONE' || columns.find(column => column.id === columnId)?.label?.toLowerCase() === 'done';
+            const updated = { ...card, updatedAt: now };
+            if (isDone(toColumn) && !card.doneAt) updated.doneAt = now;
+            if (isDone(fromColumn) && !isDone(toColumn)) delete updated.doneAt;
+            destination.splice(index, 0, updated);
+            return { ...cards, [fromColumn]: source, [toColumn]: destination };
+        }
+
+        function QuickMoveModal({ target, cols, cards, onClose, onMove }) {
+            const isCard = target.type === 'card';
+            const source = isCard ? cols.find(column => (cards[column.id] || []).some(card => card.id === target.id)) : null;
+            const item = isCard ? (cards[source?.id] || []).find(card => card.id === target.id) : cols.find(column => column.id === target.id);
+            const [destination, setDestination] = useState(source?.id || cols[0]?.id || '');
+            const [position, setPosition] = useState(0);
+            const available = isCard ? (cards[destination] || []).filter(card => card.id !== target.id) : cols.filter(column => column.id !== target.id);
+            const validPosition = Math.min(position, available.length);
+            return (
+                <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+                    <div className="modal" role="dialog" aria-modal="true" aria-label={isCard ? 'Move card' : 'Move column'} style={{ maxWidth: 420 }}>
+                        <div className="modal-hdr"><div className="modal-title">Move {isCard ? 'card' : 'column'}</div>
+                            <button className="ibtn" aria-label="Close move" onClick={onClose}><Icon name="X" /></button></div>
+                        <div className="modal-body">
+                            <p style={{ marginBottom: 12, overflowWrap: 'anywhere' }}>{item?.task || item?.label || 'Item no longer exists'}</p>
+                            {isCard && <div className="fgroup">
+                                <label className="flabel" htmlFor="move-destination">Destination column</label>
+                                <select id="move-destination" className="fselect" value={destination}
+                                    onChange={e => { setDestination(e.target.value); setPosition(0); }}>
+                                    {cols.map(column => <option key={column.id} value={column.id}>{column.label}</option>)}
+                                </select>
+                            </div>}
+                            <label className="flabel" htmlFor="move-position">Final position</label>
+                            <select id="move-position" className="fselect" value={validPosition} onChange={e => setPosition(Number(e.target.value))}>
+                                {Array.from({ length: available.length + 1 }, (_, index) => (
+                                    <option key={index} value={index}>{index + 1}{index === 0 ? ' - First' : index === available.length ? ' - Last' : ''}
+                                        {available[index] ? ' - Before ' + (available[index].task || available[index].label) : ''}</option>
+                                ))}
+                            </select>
+                            {!isCard && item?.locked && <p>Unlock this column before moving it.</p>}
+                            <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 10 }}>Positions include all cards, even when search is filtering the board. Drag-and-drop is still available.</p>
+                        </div>
+                        <div className="modal-foot">
+                            <button className="btn" onClick={onClose}>Cancel</button>
+                            <button className="btn primary" disabled={!item || (!isCard && item.locked) || (isCard && !cols.some(column => column.id === destination))}
+                                onClick={() => { if (onMove(source?.id, destination, validPosition)) onClose(); }}>Move</button>
+                        </div>
                     </div>
                 </div>
             );
@@ -5813,8 +6015,61 @@
             );
         }
         /* ── SCRATCH PAD ── */
-        function ScratchPad({ content, onChange, onClose }) {
+        function ScratchPad({ content, onChange, tabs, onTabsChange, activeTab, onActiveTabChange, onClose, addToast }) {
             const confirm = useConfirm();
+            const [vertical, setVertical] = useState(() => loadLS('daily_scratch_vertical') === 'true');
+            const [lineNumbers, setLineNumbers] = useState(() => loadLS('daily_scratch_lines') === 'true');
+            const tab = tabs.find(item => item.id === activeTab);
+            const selectedId = tab?.id || 'shared';
+            const tabList = useRef();
+            const allTabs = [{ id: 'shared', label: 'Scratch' }, ...tabs];
+            const selectedContent = tab ? tab.content : content;
+            const changeContent = value => tab
+                ? onTabsChange(current => current.map(item => item.id === tab.id ? { ...item, content: value } : item))
+                : onChange(value);
+
+            useEffect(() => {
+                tabList.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }, [selectedId, vertical]);
+
+            function navigateTabs(event, index) {
+                const nextKey = vertical ? 'ArrowDown' : 'ArrowRight';
+                const previousKey = vertical ? 'ArrowUp' : 'ArrowLeft';
+                let next;
+                if (event.key === nextKey) next = (index + 1) % allTabs.length;
+                else if (event.key === previousKey) next = (index + allTabs.length - 1) % allTabs.length;
+                else if (event.key === 'Home') next = 0;
+                else if (event.key === 'End') next = allTabs.length - 1;
+                else return;
+                event.preventDefault();
+                onActiveTabChange(allTabs[next].id);
+                tabList.current.children[next].focus();
+            }
+
+            function togglePreference(key, value, setter) {
+                setter(value);
+                try { localStorage.setItem(key, JSON.stringify(value)); }
+                catch (error) {
+                    console.warn('Scratch preference could not be saved', error);
+                    addToast('Scratch preference could not be saved.', 'error');
+                }
+            }
+
+            function addTab() {
+                const id = uid();
+                onTabsChange(current => [...current, { id, label: 'Untitled ' + (current.length + 1), content: '' }]);
+                onActiveTabChange(id);
+            }
+
+            async function closeTab() {
+                if (!tab) return;
+                if (tab.content.trim() && !await confirm({
+                    title: `Close "${tab.label}"?`, message: 'This deletes the tab and its text. This cannot be undone.',
+                    confirmText: 'Delete tab'
+                })) return;
+                onTabsChange(current => current.filter(item => item.id !== tab.id));
+                onActiveTabChange('shared');
+            }
 
             return (
                 <div id="scratch-fp">
@@ -5822,15 +6077,22 @@
                         storageKey="scratch" className="scratch-window" dragSurface minHeight={320}
                         extraHeaderContent={
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 4 }}>
-                                <button title="Clear scratch pad" aria-label="Clear scratch pad" disabled={!content.trim()} onClick={async () => {
-                                    if (!content.trim()) return;
+                                <button title="New Scratch tab" aria-label="New Scratch tab" onClick={addTab}><Icon name="Plus" size={14} /></button>
+                                <button title={vertical ? 'Show tabs horizontally' : 'Show tabs vertically'} aria-label="Vertical Scratch tabs"
+                                    aria-pressed={vertical} onClick={() => togglePreference('daily_scratch_vertical', !vertical, setVertical)}>
+                                    <Icon name="PanelLeft" size={14} /></button>
+                                <button title="Toggle line numbers (unwrapped lines)" aria-label="Scratch line numbers"
+                                    aria-pressed={lineNumbers} onClick={() => togglePreference('daily_scratch_lines', !lineNumbers, setLineNumbers)}>
+                                    <Icon name="ListOrdered" size={14} /></button>
+                                <button title="Clear scratch pad" aria-label="Clear scratch pad" disabled={!selectedContent.trim()} onClick={async () => {
+                                    if (!selectedContent.trim()) return;
                                     const ok = await confirm({
                                         title: 'Clear scratch pad?',
-                                        message: 'All text in the scratch pad will be erased. This cannot be undone.',
+                                        message: 'All text in the current tab will be erased. This cannot be undone.',
                                         confirmText: 'Clear',
                                         icon: '🧹',
                                     });
-                                    if (ok) onChange('');
+                                    if (ok) changeContent('');
                                 }} style={{
                                     fontSize: 10, padding: '2px 8px',
                                     borderRadius: 5, border: '1px solid var(--red-dim)',
@@ -5839,8 +6101,23 @@
                                 }}><Icon name="Eraser" size={14} /></button>
                             </div>
                         }>
-                        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                            <MdEditor value={content} onChange={onChange} fill />
+                        <div className={'scratch-tabs-layout' + (vertical ? ' vertical' : '')}>
+                            <div ref={tabList} className="scratch-tabs" role="tablist" aria-label="Scratch tabs" aria-orientation={vertical ? 'vertical' : 'horizontal'}>
+                                {allTabs.map((item, index) => (
+                                    <button key={item.id} id={'scratch-tab-' + item.id} role="tab" aria-selected={selectedId === item.id}
+                                        tabIndex={selectedId === item.id ? 0 : -1} onKeyDown={event => navigateTabs(event, index)}
+                                        aria-controls="scratch-tab-panel" onClick={() => onActiveTabChange(item.id)}>{item.label || 'Untitled'}</button>
+                                ))}
+                            </div>
+                            <div id="scratch-tab-panel" role="tabpanel" aria-labelledby={'scratch-tab-' + selectedId}
+                                style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                                {tab && <div className="scratch-tab-tools">
+                                    <input className="finput" aria-label="Scratch tab name" maxLength={60} value={tab.label}
+                                        onChange={e => onTabsChange(current => current.map(item => item.id === tab.id ? { ...item, label: e.target.value } : item))} />
+                                    <button className="btn" aria-label="Delete Scratch tab" onClick={closeTab}><Icon name="Trash2" size={14} /></button>
+                                </div>}
+                                <MdEditor key={selectedId} value={selectedContent} onChange={changeContent} lineNumbers={lineNumbers} fill />
+                            </div>
                         </div>
                     </FloatingPanel>
                 </div>
@@ -6133,8 +6410,7 @@
 
             function insertToScratch() {
                 if (!text) return;
-                const cur = loadLS('daily_scratch', '');
-                saveLS('daily_scratch', cur + (cur ? '\n\n' : '') + text.trim());
+                window.dispatchEvent(new CustomEvent('daily:append-scratch', { detail: text.trim() }));
                 addToast('Added to Scratch Pad — open 📝 to see it', 'success');
             }
 
@@ -7277,7 +7553,7 @@
             { id: 'card', key: 'n', label: 'New card', icon: 'Plus', target: 'fab', body: 'Add a task to a workflow column. Open a card to edit its title, priority, color and notes, move it, or add comments. Cards support blockers, aging and optional auto-delete after completion.' },
             { id: 'column', key: 'w', label: 'New column', icon: 'Columns3', target: 'add-column', body: 'Create your own workflow stages. Drag cards to move or reorder them, and drag a column grip to reorder columns. Column controls let you rename, lock, clear or delete a stage.' },
             { id: 'search', key: '/', label: 'Search', icon: 'Search', body: 'Find cards by their title or notes. Clear the search to see your entire board again.' },
-            { id: 'scratch', key: 'e', label: 'Scratch Pad', icon: 'NotebookPen', body: 'Keep quick notes and code in a floating notebook. Markdown, checkboxes, images and math are supported in notes; click a checkbox in preview to toggle it.' },
+            { id: 'scratch', key: 'e', label: 'Scratch Pad', icon: 'NotebookPen', body: 'Keep notes in multiple tabs. Use + for a new tab, the sidebar button for vertical tabs, and the numbered-list button for line numbers. Markdown, checkboxes, images and math are supported.' },
             { id: 'drawing', key: 'd', label: 'Drawing Board', icon: 'Paintbrush', body: 'Open the full-screen drawing workspace for sketches and visual thinking. Close it or press Escape to return to your board.' },
             { id: 'ai', key: 'a', label: 'AI Assistants', icon: 'Bot', body: 'Open the assistant directory to visit external AI tools. These links leave Daily; check a provider before sharing any private information.' },
             { id: 'ocr', key: 'o', label: 'Image → Text', icon: 'ScanText', body: 'Extract text from an image and copy the result instead of typing it again.' },
@@ -7288,7 +7564,8 @@
             { id: 'zpl', key: 'z', label: 'ZPL', icon: 'Barcode', body: 'Work with ZPL label commands and preview labels. Remote rendering may require an internet connection.' },
             { id: 'calendar', key: 'c', label: 'Calendar & Time Machine', icon: 'CalendarDays', body: 'Schedule events and reminders in Events. Switch to Time Machine to browse automatic board snapshots and manage history backups. Events and history stay on this device.' },
             { id: 'history', key: 'm', label: 'Time Machine', icon: 'History', body: 'Go directly to board history. Pick a date and snapshot to inspect earlier work, and use the history import/export controls to back up snapshots separately from your board.' },
-            { id: 'sync', key: 's', label: 'Collaborate / Device sync', icon: 'Users', body: 'Host a shared board and copy an invite, or join a host. Live edits, presence and follow-host card viewing help you work together. Leave to restore your personal board. Separate device sync merges your own devices; share room IDs only with trusted people.' },
+            { id: 'sync', key: 's', label: 'Device Sync', icon: 'RefreshCw', body: 'Connect your laptop and mobile, preview the combined board and resolve every conflict. Commit final board explicitly saves the agreed values to each connected original board. Success requires each device to confirm saving; offline devices must rejoin and commit again.' },
+            { id: 'collaborate', key: 'q', label: 'Collaborate', icon: 'Users', body: 'Host a separate shared board and invite others to edit it live with named mouse pointers. Guests can add, edit and move cards like the host. Leaving restores your personal board; collaboration never commits over your original board.' },
             { id: 'conflicts', key: 'v', label: 'Review sync conflicts', icon: 'GitMerge', body: 'When sync finds competing edits or deletions, review alternatives and choose or merge the content. Review Later keeps unresolved alternatives available.' },
             { id: 'ages', key: 'r', label: 'Refresh Ages', icon: 'RefreshCw', body: 'Refresh the elapsed-time labels on cards. Card timers can be set, started and paused from an open card; timer alarms and event reminders remain local to this device.' },
             { id: 'theme', key: 'l', label: 'Toggle light / dark mode', icon: 'Sun', body: 'Choose a light or dark workspace. Your theme choice is remembered on this device.' },
@@ -8217,9 +8494,9 @@
         }
 
         /* ── SYNC MODAL ── */
-        function SyncModal({ onClose, peerStatus, peerCount, roomId, setRoomId, createRoom, joinRoom, disconnectRoom,
+        function CollaborationModal({ onClose, peerStatus, peerCount, roomId, setRoomId, disconnectRoom,
             myPeerId, activeRoom, broadcastWebSocket, hostBoard, joinBoard, collaborative, participants,
-            displayName, setDisplayName, serverUrl, setServerUrl, addToast }) {
+            displayName, setDisplayName, serverUrl, setServerUrl, addToast, deviceSync }) {
             const online = useOnline();
             const shareUrl = (() => {
                 if (!activeRoom) return '';
@@ -8245,7 +8522,7 @@
                 <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
                     <div className="sync-modal" onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Collaborate & Sync</h3>
+                            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Collaborate - shared board</h3>
                             <button className="ibtn" onClick={onClose} style={{ width: 28, height: 28 }} aria-label="Close" title="Close"><Icon name="X" size="1em" /></button>
                         </div>
 
@@ -8261,6 +8538,10 @@
 
                         {!activeRoom ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {deviceSync && <p style={{ fontSize: 12, color: 'var(--amber)' }}>
+                                    Starting collaboration will leave the Device Sync preview without committing it.
+                                    Your original board will be restored before hosting or joining.
+                                </p>}
                                 <label className="flabel" htmlFor="collab-name">Your name</label>
                                 <input id="collab-name" className="sync-input" maxLength={40} value={displayName}
                                     onChange={e => setDisplayName(e.target.value)} placeholder="Guest" />
@@ -8273,33 +8554,13 @@
                                 </p>
                                 <button className="btn primary" disabled={!online} onClick={hostBoard}>
                                     <Icon name="Users" size="1em" /> Host shared board</button>
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                    <input className="sync-input" style={{ flex: 1 }} placeholder="Shared board ID or invite link"
+                                <div className="sync-join-row">
+                                    <input className="sync-input" placeholder="Shared board ID or invite link"
                                         aria-label="Shared board ID or invite link" value={roomId}
                                         onChange={e => setRoomId(e.target.value)}
                                         onKeyDown={e => e.key === 'Enter' && online && joinBoard()} />
                                     <button className="btn" disabled={!online || !roomId.trim()} onClick={joinBoard}>Join board</button>
                                 </div>
-                                <details>
-                                    <summary style={{ cursor: 'pointer', fontSize: 12 }}>Existing device sync (merge personal boards)</summary>
-                                <button className="btn primary" style={{ padding: '9px', fontSize: 13 }}
-                                    disabled={!online} onClick={createRoom}><Icon name="Sparkles" size="1em" /> Create new room</button>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{
-                                    flex: 1,
-                                    height: 1, background: 'var(--border)'
-                                }} /><span style={{
-                                    fontSize: 11,
-                                    color: 'var(--text3)', flexShrink: 0
-                                }}>or join existing</span><div
-                                        style={{ flex: 1, height: 1, background: 'var(--border)' }} /></div>
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                    <input className="sync-input" style={{ flex: 1 }} placeholder="Paste Room ID…"
-                                        value={roomId} onChange={e => setRoomId(e.target.value)} onKeyDown={e =>
-                                            e.key === 'Enter' && online && joinRoom()} />
-                                    <button className="btn" onClick={joinRoom}
-                                        disabled={!roomId.trim() || !online}>Join</button>
-                                </div>
-                                </details>
                             </div>
                         ) : (
                             <div style={{
@@ -8364,6 +8625,83 @@
                     </div>
                 </div>
             );
+        }
+
+        function saveFinalDeviceBoard(storage, records) {
+            if (!DailySync.validRecords(records)) throw new Error('Invalid final board');
+            const engine = DailySync.createEngine({ actor: 'commit-validation', records, diffChars: Diff.diffChars });
+            const result = engine.materialize();
+            if (result.conflicts.length) throw new Error('Resolve every conflict before saving the final board');
+            const updates = {
+                daily_v5: JSON.stringify({ cols: result.cols, cards: result.cards }),
+                daily_scratch: result.scratch,
+                daily_sync_v2: JSON.stringify({ records, pending: false })
+            };
+            const before = Object.fromEntries(Object.keys(updates).map(key => [key, storage.getItem(key)]));
+            storage.setItem('daily_device_commit_backup', JSON.stringify(before));
+            try {
+                Object.entries(updates).forEach(([key, value]) => storage.setItem(key, value));
+            } catch (error) {
+                Object.entries(before).forEach(([key, value]) => {
+                    try {
+                        if (value === null) storage.removeItem(key);
+                        else storage.setItem(key, value);
+                    } catch (rollbackError) { console.error('Device commit rollback failed; restore daily_device_commit_backup', rollbackError); }
+                });
+                throw error;
+            }
+        }
+
+        function DeviceSyncModal({ onClose, roomId, setRoomId, serverUrl, setServerUrl, createRoom, joinRoom,
+            activeRoom, deviceSync, peerStatus, peerCount, conflicts, commitStatus, commitFinalBoard,
+            disconnectRoom, addToast }) {
+            const online = useOnline();
+            const busy = ['preparing', 'applying'].includes(commitStatus?.phase);
+            const invite = new URL(location.href);
+            invite.searchParams.set('room', activeRoom);
+            invite.searchParams.set('syncServer', serverUrl);
+            invite.searchParams.set('deviceSync', '1');
+            invite.searchParams.delete('collaborate');
+            return <div className="overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+                <div className="sync-modal" role="dialog" aria-modal="true" aria-label="Device Sync">
+                    <h3>Device Sync - laptop & mobile</h3>
+                    <p style={{ fontSize: 12, color: 'var(--text2)' }}>
+                        Merge your original boards in a preview. Resolve conflicts, then Commit final board to save
+                        the same values on every connected device. Nothing in the preview replaces your originals until commit.
+                    </p>
+                    {!deviceSync && activeRoom && <p style={{ fontSize: 12, color: 'var(--amber)' }}>
+                        Starting Device Sync will leave the current collaboration and restore your original board first.
+                    </p>}
+                    {!deviceSync ? <>
+                        <label className="flabel" htmlFor="device-relay">Relay URL</label>
+                        <input id="device-relay" className="sync-input" value={serverUrl} onChange={event => setServerUrl(event.target.value)} />
+                        <button className="btn primary" disabled={!online} onClick={createRoom}>Create device sync room</button>
+                        <input className="sync-input" aria-label="Device sync room ID or link" placeholder="Device sync room ID or invite link"
+                            value={roomId} onChange={event => setRoomId(event.target.value)}
+                            onKeyDown={event => event.key === 'Enter' && online && joinRoom()} />
+                        <button className="btn" disabled={!online || !roomId.trim()} onClick={joinRoom}>Join device sync</button>
+                    </> : <>
+                        <code style={{ overflowWrap: 'anywhere' }}>{activeRoom}</code>
+                        <a href={invite.href} style={{ overflowWrap: 'anywhere', fontSize: 11 }}>{invite.href}</a>
+                        <button className="btn" onClick={async () => {
+                            try { await navigator.clipboard.writeText(invite.href); addToast('Device sync invite copied', 'success'); }
+                            catch { addToast('Copy unavailable. Select and copy the invite link manually.', 'error'); }
+                        }}>Copy device sync invite</button>
+                        <div role="status">{peerStatus === 'connected' ? `${peerCount} devices connected` : 'Connecting / offline'}; {conflicts.length} unresolved conflicts</div>
+                        <p style={{ fontSize: 12 }}>Close this dialog to review the preview board. Use the conflict review button to agree on final values.</p>
+                        <button className="btn primary" onClick={commitFinalBoard}
+                            disabled={busy || conflicts.length > 0 || peerCount < 2 || peerStatus !== 'connected'}>
+                            {busy ? 'Confirming final board...' : 'Commit final board to connected devices'}</button>
+                        {commitStatus && <div role="status">
+                            {commitStatus.phase === 'complete' ? `Final board saved and confirmed on all ${commitStatus.expected} participating devices.`
+                                : commitStatus.error || `${commitStatus.phase}: ${commitStatus.applied || 0}/${commitStatus.expected} devices saved`}
+                        </div>}
+                        <p style={{ fontSize: 11, color: 'var(--text3)' }}>Only connected devices can confirm. Offline devices must rejoin and commit again. Keep the relay running until every device confirms.</p>
+                        <button className="btn" disabled={busy} onClick={disconnectRoom}>Leave preview / return to original board</button>
+                    </>}
+                    <button className="btn" onClick={onClose}>Close</button>
+                </div>
+            </div>;
         }
 
         /* ── KROKI DIAGRAM PANEL ── */
@@ -8448,8 +8786,7 @@
             }
             function insertToScratch() {
                 if (!imgUrl) return;
-                const cur = loadLS('daily_scratch', '');
-                saveLS('daily_scratch', cur + `\n\n![diagram](${imgUrl})\n`);
+                window.dispatchEvent(new CustomEvent('daily:append-scratch', { detail: `![diagram](${imgUrl})\n` }));
             }
 
             const curType = KROKI_TYPES.find(t => t.id === type);
@@ -8724,8 +9061,7 @@
                 fetch(imgUrl).then(r => r.blob()).then(blob => {
                     const reader = new FileReader();
                     reader.onload = () => {
-                        const cur = loadLS('daily_scratch', '');
-                        saveLS('daily_scratch', cur + `\n\n![Label](${reader.result})\n`);
+                        window.dispatchEvent(new CustomEvent('daily:append-scratch', { detail: `![Label](${reader.result})\n` }));
                     };
                     reader.readAsDataURL(blob);
                 });
@@ -9406,8 +9742,7 @@
 
             function insertToScratch() {
                 if (!result?.ok) return;
-                const cur = loadLS('daily_scratch', '');
-                saveLS('daily_scratch', cur + '\n\n```json\n' + exportResult() + '\n```\n');
+                window.dispatchEvent(new CustomEvent('daily:append-scratch', { detail: '```json\n' + exportResult() + '\n```\n' }));
             }
 
             function highlight(json) {
@@ -11199,6 +11534,12 @@
             const hostRef = useRef(false);
             const joiningRef = useRef(false);
             const personalRecords = useRef(null);
+            const deviceSyncRef = useRef(false);
+            const [deviceSync, setDeviceSync] = useState(false);
+            const [syncDialog, setSyncDialog] = useState('device');
+            const [commitStatus, setCommitStatus] = useState(null);
+            const commitRef = useRef(null);
+            const roomRevision = useRef(0);
 
             const savedLocal = loadData();
             const hasLocal = !!(savedLocal
@@ -11259,8 +11600,24 @@
                 };
             }, []);
             const [scratch, setScratch] = useState(() => syncEngine.materialize().scratch);
+            const [scratchTabs, setScratchTabs] = useState(() => syncEngine.materialize().scratchTabs);
+            const [activeScratchTab, setActiveScratchTab] = useState('shared');
             useEffect(() => {
-                if (!collaborationRef.current) saveLS('daily_scratch', scratch);
+                const append = event => {
+                    if (['preparing', 'applying'].includes(commitRef.current?.phase)) {
+                        addToast('Wait for the final commit before adding Scratch Pad content.', 'error');
+                        return;
+                    }
+                    if (scratchTabsRef.current.some(tab => tab.id === activeScratchTab)) {
+                        setScratchTabs(current => current.map(tab => tab.id === activeScratchTab
+                            ? { ...tab, content: tab.content + (tab.content ? '\n\n' : '') + event.detail } : tab));
+                    } else setScratch(current => current + (current ? '\n\n' : '') + event.detail);
+                };
+                window.addEventListener('daily:append-scratch', append);
+                return () => window.removeEventListener('daily:append-scratch', append);
+            }, [activeScratchTab]);
+            useEffect(() => {
+                if (!collaborationRef.current && !deviceSyncRef.current) saveLS('daily_scratch', scratch);
             }, [scratch]);
             useEffect(() => saveLS('daily_collab_name', displayName), [displayName]);
 
@@ -11279,13 +11636,14 @@
             const reconnectTimer = useRef(null);
             const reconnectAttempt = useRef(0);
             const connectionGeneration = useRef(0);
-            const syncBaseline = useRef({ cols, cards, scratch });
+            const syncBaseline = useRef({ cols, cards, scratch, scratchTabs });
             const syncDirty = useRef(true);
             const inFlightMessage = useRef(null);
             const [showConflicts, setShowConflicts] = useState(true);
             const colsRef = useRef(cols);
             const cardsRef = useRef(cards);
             const scratchRef = useRef(scratch);
+            const scratchTabsRef = useRef(scratchTabs);
             const openCardRef = useRef(null);
             const activeRoomRef = useRef('');
             const [showBase64, setShowBase64] = useState(false);
@@ -11310,7 +11668,7 @@
                     target: '[data-tour="board"] .col-hdr, [data-tour="board"]',
                     icon: '📋',
                     title: 'Your board',
-                    body: 'Columns are your workflow stages. Drag cards between them to change status, or drag the ⠿ grip on a column header to reorder columns.',
+                    body: 'Columns are your workflow stages. Drag cards or column grips to reorder them, or use the arrow button on a card or column to choose its exact destination and position.',
                     placement: 'auto',
                 },
                 ...APP_FEATURES.map(feature => ({
@@ -11333,6 +11691,7 @@
             useEffect(() => { colsRef.current = cols; }, [cols]);
             useEffect(() => { cardsRef.current = cards; }, [cards]);
             useEffect(() => { scratchRef.current = scratch; }, [scratch]);
+            useEffect(() => { scratchTabsRef.current = scratchTabs; }, [scratchTabs]);
             useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
 
             useEffect(() => {
@@ -11365,19 +11724,26 @@
 
             function persistSync() {
                 try {
-                    const key = collaborationRef.current ? 'daily_collab_' + activeRoomRef.current : 'daily_sync_v2';
-                    localStorage.setItem(key, JSON.stringify({ records: syncEngine.getRecords(), pending: syncDirty.current }));
+                    const key = collaborationRef.current ? 'daily_collab_' + activeRoomRef.current
+                        : deviceSyncRef.current ? 'daily_device_draft' : 'daily_sync_v2';
+                    localStorage.setItem(key, JSON.stringify({ records: syncEngine.getRecords(), pending: syncDirty.current,
+                        ...(deviceSyncRef.current ? { room: activeRoomRef.current, relay: relayRef.current } : {}) }));
                 } catch {
                     addToast('Sync history could not be saved. Export your board before closing this tab.', 'error');
                 }
             }
 
             function captureSyncChanges() {
-                const next = { cols: colsRef.current, cards: cardsRef.current, scratch: scratchRef.current };
+                if (['preparing', 'applying'].includes(commitRef.current?.phase)) return;
+                const next = { cols: colsRef.current, cards: cardsRef.current, scratch: scratchRef.current, scratchTabs: scratchTabsRef.current };
                 if (joiningRef.current && JSON.stringify(next) === JSON.stringify(syncBaseline.current)) return;
-                const changed = syncEngine.capture(syncBaseline.current, next);
+                const changed = syncEngine.capture(syncBaseline.current, next, { reviewScratch: deviceSyncRef.current });
                 syncBaseline.current = next;
                 if (Object.keys(changed).length) {
+                    if (deviceSyncRef.current && commitRef.current?.phase === 'complete') {
+                        commitRef.current = null;
+                        setCommitStatus(null);
+                    }
                     syncDirty.current = true;
                     persistSync();
                 }
@@ -11386,13 +11752,15 @@
 
             function applySyncView() {
                 const result = syncEngine.materialize();
-                syncBaseline.current = { cols: result.cols, cards: result.cards, scratch: result.scratch };
+                syncBaseline.current = { cols: result.cols, cards: result.cards, scratch: result.scratch, scratchTabs: result.scratchTabs };
                 colsRef.current = result.cols;
                 cardsRef.current = result.cards;
                 scratchRef.current = result.scratch;
+                scratchTabsRef.current = result.scratchTabs;
                 setCols(result.cols);
                 setCards(result.cards);
                 setScratch(result.scratch);
+                setScratchTabs(result.scratchTabs);
                 setConflicts(result.conflicts);
                 if (openCardRef.current) {
                     const location = Object.entries(result.cards).flatMap(([column, list]) => list.map(card => ({ column, card })))
@@ -11405,6 +11773,7 @@
 
             function handleIncoming(message) {
                 if (message._protocol !== 2 || !message._sync) return;
+                if (deviceSyncRef.current && Number.isSafeInteger(message._revision)) roomRevision.current = message._revision;
                 if (joiningRef.current && message.initial) {
                     if (!DailySync.validRecords(message._sync.records)) throw new Error('Invalid shared board');
                     captureSyncChanges();
@@ -11421,6 +11790,10 @@
                 }
                 captureSyncChanges();
                 const changed = syncEngine.merge(message._sync.records);
+                if (deviceSyncRef.current && changed && commitRef.current?.phase === 'complete') {
+                    commitRef.current = null;
+                    setCommitStatus(null);
+                }
                 if (message._ack === inFlightMessage.current && message._ack) {
                     syncDirty.current = Object.entries(syncEngine.getRecords()).some(([key, register]) => register.heads.some(version =>
                         version.sequence > (message._sync.records[key]?.clock[version.actor] || 0)));
@@ -11431,6 +11804,10 @@
             }
 
             function resolveConflict(conflict, value) {
+                if (['preparing', 'applying'].includes(commitRef.current?.phase)) {
+                    addToast('Wait for the final commit to finish.', 'error');
+                    return;
+                }
                 captureSyncChanges();
                 const decision = syncEngine.resolve(conflict, value);
                 if (!decision) {
@@ -11441,6 +11818,77 @@
                 syncDirty.current = true;
                 applySyncView();
                 broadcastWebSocket(activeRoomRef.current);
+            }
+
+            function commitFinalBoard() {
+                if (!deviceSyncRef.current || !wsConnected.current || peerCount < 2) {
+                    addToast('Connect at least two devices before committing.', 'error');
+                    return;
+                }
+                captureSyncChanges();
+                if (syncEngine.materialize().conflicts.length) {
+                    setShowConflicts(true);
+                    addToast('Resolve all conflicts before committing.', 'error');
+                    return;
+                }
+                if (syncDirty.current || inFlightMessage.current) {
+                    broadcastWebSocket(activeRoomRef.current);
+                    addToast('Sending the latest preview. Wait a moment, then commit again.', 'error');
+                    return;
+                }
+                wsClient.current.send(JSON.stringify({ _type: 'device_commit_request', revision: roomRevision.current,
+                    records: syncEngine.getRecords() }));
+            }
+
+            function handleDeviceCommit(message) {
+                if (!deviceSyncRef.current) return;
+                if (message._type === 'device_commit_status') {
+                    commitRef.current = { ...commitRef.current, ...message };
+                    setCommitStatus(message);
+                    if (message.phase === 'complete') addToast(`Final board confirmed on ${message.expected} devices.`, 'success');
+                    if (message.error) addToast(message.error, 'error');
+                    return;
+                }
+                if (message._type === 'device_commit_prepare') {
+                    // Capture before freezing so an unsent local change cannot be overwritten by a commit.
+                    const status = commitRef.current;
+                    commitRef.current = null;
+                    captureSyncChanges();
+                    commitRef.current = status;
+                    if (!DailySync.validRecords(message.records) || !DailySync.recordsEqual(syncEngine.getRecords(), message.records)
+                        || syncEngine.materialize().conflicts.length) {
+                        wsClient.current.send(JSON.stringify({ _type: 'device_commit_reject', id: message.id }));
+                        commitRef.current = null;
+                        broadcastWebSocket(activeRoomRef.current);
+                        return;
+                    }
+                    commitRef.current = { ...status, id: message.id, records: message.records, phase: 'preparing' };
+                    setOpenCard(null);
+                    setAddCardCol(null);
+                    setShowAddCol(false);
+                    setShowEditor(false);
+                    setQuickMove(null);
+                    wsClient.current.send(JSON.stringify({ _type: 'device_commit_ready', id: message.id }));
+                    return;
+                }
+                if (message._type === 'device_commit_apply') {
+                    try {
+                        const prepared = commitRef.current;
+                        commitRef.current = null;
+                        captureSyncChanges();
+                        commitRef.current = prepared;
+                        if (commitRef.current?.id !== message.id || !commitRef.current.records
+                            || !DailySync.recordsEqual(commitRef.current.records, message.records)
+                            || !DailySync.recordsEqual(syncEngine.getRecords(), message.records)) throw new Error('The preview changed or this final commit was not prepared on this device');
+                        saveFinalDeviceBoard(localStorage, message.records);
+                        personalRecords.current = message.records;
+                        wsClient.current.send(JSON.stringify({ _type: 'device_commit_applied', id: message.id }));
+                    } catch (error) {
+                        console.error('Final device commit failed', error);
+                        addToast('Final board could not be saved on this device. Commit is not confirmed; originals and a recovery backup are retained.', 'error');
+                        wsClient.current.send(JSON.stringify({ _type: 'device_commit_reject', id: message.id }));
+                    }
+                }
             }
 
             function broadcastWebSocket(room) {
@@ -11486,6 +11934,9 @@
                 }
                 url.protocol = url.protocol === 'http:' || url.protocol === 'ws:' ? 'ws:' : 'wss:';
                 url.searchParams.set('room', r);
+                url.searchParams.delete('mode');
+                url.searchParams.delete('host');
+                if (deviceSyncRef.current) url.searchParams.set('mode', 'device');
                 if (collaborationRef.current) {
                     url.searchParams.set('mode', 'collaborate');
                     if (hostRef.current) url.searchParams.set('host', '1');
@@ -11498,6 +11949,7 @@
                     if (generation !== connectionGeneration.current) return;
                     setMyPeerId(SESSION_ID.current);
                     ws.send(JSON.stringify({ _type: 'request_state', _protocol: 2, _sid: SESSION_ID.current,
+                        ...(deviceSyncRef.current ? { deviceCommit: 1 } : {}),
                         name: displayName, ...(collaborationRef.current && hostRef.current
                             ? { _sync: { records: syncEngine.getRecords() } } : {}) }));
                 };
@@ -11506,12 +11958,21 @@
                     if (generation !== connectionGeneration.current) return;
                     try {
                         const msg = JSON.parse(event.data);
+                        if (deviceSyncRef.current && msg._type?.startsWith('device_commit_')) {
+                            handleDeviceCommit(msg);
+                            return;
+                        }
                         if (msg._type === 'sync_capabilities' && msg.protocol === 2) {
                             if (collaborationRef.current) {
                                 if (!msg.collaborative) {
                                     addToast('Update the relay backend to support shared boards.', 'error');
                                     disconnectRoom();
                                 }
+                                return;
+                            }
+                            if (deviceSyncRef.current && msg.deviceCommit !== 1) {
+                                addToast('Update the backend: explicit Device Sync commits are not supported by this relay.', 'error');
+                                disconnectRoom();
                                 return;
                             }
                             wsConnected.current = true;
@@ -11572,6 +12033,12 @@
                     setPeerStatus('disconnected');
                     setPeerCount(0);
                     setParticipants([]);
+                    if (deviceSyncRef.current && ['preparing', 'applying'].includes(commitRef.current?.phase)) {
+                        const interrupted = { ...commitRef.current, phase: 'incomplete',
+                            error: 'Connection lost. Final commit is not confirmed on all devices. Reconnect and retry.' };
+                        commitRef.current = interrupted;
+                        setCommitStatus(interrupted);
+                    }
                     if (activeRoomRef.current && navigator.onLine !== false) {
                         const delay = Math.min(30000, 1000 * 2 ** Math.min(reconnectAttempt.current++, 5));
                         reconnectTimer.current = setTimeout(() => wsConnect(activeRoomRef.current), delay);
@@ -11580,18 +12047,57 @@
             }
 
             function createRoom() {
-                const r = 'daily-' + Math.random().toString(36).slice(2, 8);
-                setRoomId(r);
-                wsConnect(r);
+                enterDeviceSync('devices-' + crypto.randomUUID());
             }
 
             function joinRoom() {
                 if (!roomId.trim()) return;
-                wsConnect(roomId);
+                let room = roomId.trim(), relay = serverUrl;
+                if (/^https?:|^file:/.test(room)) {
+                    try {
+                        const invite = new URL(room);
+                        if (invite.searchParams.get('collaborate') === '1') throw new Error('This is a collaboration invite. Open Collaborate instead.');
+                        room = invite.searchParams.get('room') || '';
+                        relay = invite.searchParams.get('syncServer') || relay;
+                        if (!room) throw new Error('Invite link does not include a device sync room.');
+                    } catch (error) { addToast(error.message, 'error'); return; }
+                }
+                if (room.length > 128) { addToast('Room ID is too long.', 'error'); return; }
+                enterDeviceSync(room, relay);
+            }
+
+            function enterDeviceSync(room, relay = serverUrl) {
+                if (activeRoomRef.current && disconnectRoom() === false) return;
+                captureSyncChanges();
+                personalRecords.current = syncEngine.getRecords();
+                let records = personalRecords.current;
+                try {
+                    const cached = JSON.parse(localStorage.getItem('daily_device_draft') || 'null');
+                    if (cached?.room === room && DailySync.validRecords(cached.records)) records = DailySync.mergeRecords(records, cached.records);
+                } catch (error) {
+                    console.warn('Device preview could not be restored', error);
+                    addToast('Could not restore the device preview; starting from your original board.', 'error');
+                }
+                deviceSyncRef.current = true;
+                setDeviceSync(true);
+                setSyncDialog('device');
+                commitRef.current = null;
+                setCommitStatus(null);
+                roomRevision.current = 0;
+                inFlightMessage.current = null;
+                syncDirty.current = true;
+                relayRef.current = relay;
+                setServerUrl(relay);
+                activeRoomRef.current = room;
+                setRoomId(room);
+                setOpenCard(null);
+                syncEngine.replace(records, false);
+                applySyncView();
+                wsConnect(room, relay);
             }
 
             function enterSharedBoard(room, host, relay = serverUrl) {
-                if (activeRoomRef.current) disconnectRoom();
+                if (activeRoomRef.current && disconnectRoom() === false) return;
                 captureSyncChanges();
                 personalRecords.current = syncEngine.getRecords();
                 let records = host ? personalRecords.current : {};
@@ -11605,6 +12111,7 @@
                     }
                 }
                 collaborationRef.current = true;
+                setSyncDialog('collaborate');
                 relayRef.current = relay;
                 setServerUrl(relay);
                 hostRef.current = host;
@@ -11634,6 +12141,7 @@
                 if (/^https?:|^file:/.test(room)) {
                     try {
                         const invite = new URL(room);
+                        if (invite.searchParams.get('deviceSync') === '1') throw new Error('This is a Device Sync invite. Open Device Sync instead.');
                         room = invite.searchParams.get('room') || '';
                         relay = invite.searchParams.get('syncServer') || relay;
                         if (!room) throw new Error('Invite link does not include a board ID.');
@@ -11651,11 +12159,16 @@
             }
 
             function disconnectRoom() {
+                if (['preparing', 'applying'].includes(commitRef.current?.phase)) {
+                    addToast('Wait for final commit confirmation before leaving or switching features.', 'error');
+                    return false;
+                }
                 captureSyncChanges();
                 if (syncDirty.current && wsConnected.current) broadcastWebSocket(activeRoomRef.current);
                 clearTimeout(broadcastTimer.current);
                 broadcastTimer.current = null;
                 const wasCollaborative = collaborationRef.current;
+                const wasDeviceSync = deviceSyncRef.current;
                 activeRoomRef.current = '';
                 joiningRef.current = false;
                 connectionGeneration.current++;
@@ -11671,8 +12184,12 @@
                 setPeerCount(0);
                 setParticipants([]);
                 setFollowHost(false);
-                if (wasCollaborative) {
+                if (wasCollaborative || wasDeviceSync) {
                     collaborationRef.current = false;
+                    deviceSyncRef.current = false;
+                    setDeviceSync(false);
+                    commitRef.current = null;
+                    setCommitStatus(null);
                     hostRef.current = false;
                     setCollaborative(false);
                     localStorage.removeItem('daily_collab_session');
@@ -11684,8 +12201,10 @@
                 const url = new URL(location.href);
                 url.searchParams.delete('room');
                 url.searchParams.delete('collaborate');
+                url.searchParams.delete('deviceSync');
                 history.replaceState(null, '', url.href);
                 addToast(wasCollaborative ? 'Left shared board. Personal board restored.' : 'Disconnected from sync');
+                return true;
             }
 
             /* ── connection awareness ── */
@@ -11719,7 +12238,7 @@
                     if (params.get('collaborate') === '1' || (!params.get('room') && session?.room === room)) {
                         const host = session?.room === room && session.host;
                         enterSharedBoard(room, !!host, params.get('syncServer') || session?.relay || serverUrl);
-                    } else wsConnect(room);
+                    } else enterDeviceSync(room, params.get('syncServer') || serverUrl);
                 }, 500);
                 return () => clearTimeout(timer);
             }, []);
@@ -11733,14 +12252,14 @@
             }, [activeRoom]);
 
             useEffect(() => {
-                if (!collaborationRef.current) saveData({ cols, cards });
+                if (!collaborationRef.current && !deviceSyncRef.current) saveData({ cols, cards });
                 captureSyncChanges();
                 if (!activeRoomRef.current || !wsConnected.current || !syncDirty.current) return;
                 if (!broadcastTimer.current) broadcastTimer.current = setTimeout(() => {
                     broadcastTimer.current = null;
                     broadcastWebSocket(activeRoomRef.current);
                 }, collaborationRef.current ? 80 : 300);
-            }, [cols, cards, scratch]);
+            }, [cols, cards, scratch, scratchTabs]);
 
             useEffect(() => {
                 persistSync();
@@ -11833,6 +12352,7 @@
             const [dragColId, setDragColId] = useState(null);
             const [colDropTarget, setColDropTarget] = useState(null);
             const [openCard, setOpenCard] = useState(null);
+            const [quickMove, setQuickMove] = useState(null);
             const [openCardCol, setOpenCardCol] = useState(null);
             useEffect(() => { openCardRef.current = openCard; }, [openCard]);
             useEffect(() => {
@@ -11941,7 +12461,7 @@
                     captureSyncChanges();
                     persistSync();
                     if (syncDirty.current && wsConnected.current) broadcastWebSocket(activeRoomRef.current);
-                    if (!collaborationRef.current) {
+                    if (!collaborationRef.current && !deviceSyncRef.current) {
                         try {
                             localStorage.setItem('daily_v5', JSON.stringify({ cols: colsRef.current, cards: cardsRef.current }));
                         } catch (error) {
@@ -12078,6 +12598,7 @@
 
             const lastSnapshot = useRef({ cols: null, cards: null });
             useEffect(() => {
+                if (deviceSyncRef.current || collaborationRef.current) return;
                 if (!lastSnapshot.current.cols) {
                     lastSnapshot.current = { cols: JSON.stringify(cols), cards: JSON.stringify(cards) };
                     createSnapshot(cols, cards, 'auto');
@@ -12117,6 +12638,7 @@
     - broadcasts change through the existing sync effect */
             useEffect(() => {
                 function purgeExpired() {
+                    if (['preparing', 'applying'].includes(commitRef.current?.phase)) return;
                     const current = cardsRef.current || {};
                     const next = { ...current };
                     let removed = 0;
@@ -12158,6 +12680,7 @@
                 function onKey(e) {
                     if (showTour || e.defaultPrevented || e.isComposing || e.repeat
                         || document.querySelector('.confirm-overlay')) return;
+                    if (['preparing', 'applying'].includes(commitRef.current?.phase)) return;
                     if (e.key === 'Escape') {
                         e.preventDefault();
                         closeFeaturePanels();
@@ -12167,7 +12690,7 @@
                     }
                     if (e.ctrlKey || e.metaKey || e.altKey) return;
                     if (e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return;
-                    if (openCard || addCardCol || showAddCol || showShortcuts || showEditor || showDraw
+                    if (quickMove || openCard || addCardCol || showAddCol || showShortcuts || showEditor || showDraw
                         || showAi || showKroki || showBase64 || showZpl || showJson || showCalendar
                         || showOcr || showDiff || showSyncModal || (activeRoom && conflicts.length && showConflicts)) return;
                     const feature = APP_FEATURES.find(item => item.key === e.key.toLowerCase());
@@ -12180,6 +12703,7 @@
             });
 
             function closeFeaturePanels() {
+                setQuickMove(null);
                 setOpenCard(null);
                 setFollowHost(false);
                 setAddCardCol(null);
@@ -12229,7 +12753,8 @@
                     zpl: () => setShowZpl(true),
                     calendar: () => { setCalendarInitialTab('events'); setShowCalendar(true); },
                     history: () => { setCalendarInitialTab('timemachine'); setShowCalendar(true); },
-                    sync: () => setShowSyncModal(true),
+                    sync: () => { setSyncDialog('device'); setShowSyncModal(true); },
+                    collaborate: () => { setSyncDialog('collaborate'); setShowSyncModal(true); },
                     conflicts: () => {
                         if (!activeRoom || !conflicts.length) addToast('No pending sync conflicts.');
                         else setShowConflicts(true);
@@ -12481,21 +13006,37 @@
                 addToast('Deleted');
             }
 
-            function onMoveCard(id, fromCol, toCol) {
-                if (fromCol === toCol) return;
-                setCards(c => {
-                    const card = (c[fromCol] || []).find(x => x.id === id); if (!card) return c;
-                    const updated = { ...card, updatedAt: new Date().toISOString() }; const isDone = cols.find(cl => cl.id === toCol)?.label?.toLowerCase() ===
-                        'done' || toCol === 'DONE'; const wasDone = cols.find(cl => cl.id === fromCol)?.label
-                            ?.toLowerCase() === 'done' || fromCol === 'DONE'; if (isDone && !card.doneAt) updated
-                                .doneAt = new Date().toISOString(); if (wasDone && !isDone) updated.doneAt = undefined;
-                    return {
-                        ...c, [fromCol]: (c[fromCol] || []).filter(x => x.id !== id), [toCol]: [...(c[
-                            toCol] || []), updated]
-                    };
-                });
-                setOpenCardCol(toCol);
+            function onMoveCard(id, fromCol, toCol, position) {
+                if (fromCol === toCol && position === undefined) return true;
+                try {
+                    const next = moveBoardCard(cardsRef.current, colsRef.current, id, fromCol, toCol, position);
+                    cardsRef.current = next;
+                    setCards(next);
+                } catch (error) {
+                    addToast(error.message, 'error');
+                    return false;
+                }
+                if (openCard?.id === id) setOpenCardCol(toCol);
                 addToast('Moved to ' + cols.find(x => x.id === toCol)?.label, 'success');
+                return true;
+            }
+
+            function onQuickMove(fromColumn, destination, position) {
+                if (['preparing', 'applying'].includes(commitRef.current?.phase)) {
+                    addToast('Wait for the final commit before moving items.', 'error');
+                    return false;
+                }
+                if (quickMove.type === 'card') return onMoveCard(quickMove.id, fromColumn, destination, position);
+                try {
+                    const next = moveBoardColumn(colsRef.current, quickMove.id, position);
+                    colsRef.current = next;
+                    setCols(next);
+                    addToast('Column moved', 'success');
+                    return true;
+                } catch (error) {
+                    addToast(error.message, 'error');
+                    return false;
+                }
             }
 
             function onAddCard(col, card) {
@@ -12505,7 +13046,7 @@
 
             function exportJSON() {
                 const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([JSON.stringify({ cols, cards }, null, 2)], { type: 'application/json' }));
+                a.href = URL.createObjectURL(new Blob([JSON.stringify({ cols, cards, scratch, scratchTabs }, null, 2)], { type: 'application/json' }));
                 a.download = 'daily-export.json';
                 a.click();
                 addToast('Exported!', 'success');
@@ -12520,11 +13061,18 @@
                     r.onload = ev => {
                         try {
                             const d = JSON.parse(ev.target.result); if (d.cols && d.cards) {
+                                if (d.scratch !== undefined && typeof d.scratch !== 'string') throw new Error('Invalid Scratch text');
+                                if (d.scratchTabs !== undefined && (!Array.isArray(d.scratchTabs)
+                                    || d.scratchTabs.some(tab => !tab || typeof tab.id !== 'string' || !tab.id || tab.id === 'shared'
+                                        || typeof tab.label !== 'string' || typeof tab.content !== 'string')
+                                    || new Set(d.scratchTabs.map(tab => tab.id)).size !== d.scratchTabs.length)) throw new Error('Invalid Scratch tabs');
                                 setCols(d.cols);
                                 setCards(d.cards);
+                                if (d.scratch !== undefined) setScratch(d.scratch);
+                                if (d.scratchTabs !== undefined) setScratchTabs(d.scratchTabs);
                                 addToast('Board imported!', 'success');
                             } else addToast('Invalid format', 'error');
-                        } catch { addToast('Failed to parse', 'error'); }
+                        } catch (error) { addToast('Import failed: ' + error.message, 'error'); }
                     };
                     r.readAsText(f);
                 };
@@ -12567,6 +13115,8 @@
             const activeTimers = Object.values(timers).filter(t => t.running && t.remaining > 0).length;
 
             const overflowItems = [
+                { icon: 'RefreshCw', label: 'Device Sync', action: () => runFeature('sync') },
+                { icon: 'Users', label: 'Collaborate', action: () => runFeature('collaborate') },
                 {
                     icon: '🔍', label: 'Search', action: () => {
                         setSearchOpen(o => !o); if (!searchOpen)
@@ -12687,8 +13237,10 @@
                         {renderFeatureShortcuts()}
                         <HeaderTool icon="CalendarDays" label="Calendar" tour="calendar" active={showCalendar}
                             onClick={() => { if (showCalendar) setShowCalendar(false); else runFeature('calendar'); }} />
-                        <HeaderTool icon="Users" label="Collaborate" tour="sync" active={peerStatus === 'connected'}
-                            onClick={() => setShowSyncModal(true)} />
+                        <HeaderTool icon="RefreshCw" label="Device Sync" tour="sync" active={deviceSync}
+                            onClick={() => runFeature('sync')} />
+                        <HeaderTool icon="Users" label="Collaborate" tour="collaborate" active={collaborative}
+                            onClick={() => runFeature('collaborate')} />
                         <div style={{ position: 'relative' }}>
                             <HeaderTool icon="Wrench" label="Tools" active={showOverflow}
                                 onClick={() => setShowOverflow(o => !o)} />
@@ -12733,9 +13285,10 @@
                                 !o); if (!searchOpen) setTimeout(() => searchRef.current?.focus(), 80);
                         }}><Icon name="Search" /></button>
                         {!mobile && renderFeatureShortcuts()}
-                        <button className={`ibtn${(peerStatus === 'connected' || peerStatus === 'hosting') ? ' active' : ''}`}
-                            aria-label="Collaborate" title="Collaborate and sync (S)" data-tour="sync" onClick={() => setShowSyncModal(true)} style={{ position: 'relative' }}><Icon name="Users" size={14} />{(peerStatus ===
-                                            'connected' || peerStatus === 'hosting') && <div className={`sync-dot ${peerStatus === 'connected' ? 'connected' : 'connecting'}`}
+                        <HeaderTool icon="RefreshCw" label="Device Sync" tour="sync" active={deviceSync} onClick={() => runFeature('sync')} />
+                        <button className={`ibtn${collaborative ? ' active' : ''}`}
+                            aria-label="Collaborate" title="Collaborate (Q)" data-tour="collaborate" onClick={() => runFeature('collaborate')} style={{ position: 'relative' }}><Icon name="Users" size={14} />{(collaborative && peerStatus ===
+                                            'connected') && <div className={`sync-dot ${peerStatus === 'connected' ? 'connected' : 'connecting'}`}
                                                 style={{ position: 'absolute', bottom: -2, right: -2, width: 8, height: 8 }} />}</button>
                         <div data-tour="mobile-menu" style={{ position: 'relative' }}><button className={`ibtn header-tool${showOverflow ? ' active' : ''}`}
                             aria-label="Tools" title="Tools (K)" data-tour="tools" onClick={() => setShowOverflow(o => !o)}><Icon name="Wrench" /></button>{showOverflow &&
@@ -12787,10 +13340,23 @@
                         <span style={{ flex: 1 }}>{participants.map(person => person.name + (person.host ? ' (Host)' : '')).join(', ')}</span>
                         {!hostRef.current && <button className={`btn${followHost ? ' primary' : ''}`}
                             onClick={() => setFollowHost(value => !value)}>{followHost ? 'Stop following host' : 'Follow host card'}</button>}
-                        <button className="btn" onClick={() => setShowSyncModal(true)}>Invite / Leave</button>
+                        <button className="btn" onClick={() => runFeature('collaborate')}>Invite / Leave</button>
+                    </div>}
+                    {deviceSync && <div role="status" style={{ display: 'flex', gap: 8, flexWrap: 'wrap',
+                        alignItems: 'center', padding: '8px 14px', background: 'var(--amber-dim)', fontSize: 12 }}>
+                        <strong>{commitStatus?.phase === 'complete' ? 'Device Sync - final board committed'
+                            : 'Device Sync preview - originals unchanged until commit'}</strong>
+                        <span>{peerCount} connected; {conflicts.length} conflicts</span>
+                        {commitStatus?.phase === 'complete' && <span>Final board confirmed on {commitStatus.expected} devices.</span>}
+                        {commitStatus?.error && <span style={{ color: 'var(--red)' }}>{commitStatus.error}</span>}
+                        {conflicts.length > 0 && <button className="btn" onClick={() => setShowConflicts(true)}>Resolve conflicts</button>}
+                        <button className="btn primary" disabled={conflicts.length > 0 || peerCount < 2 || peerStatus !== 'connected'
+                            || ['preparing', 'applying'].includes(commitStatus?.phase)} onClick={commitFinalBoard}>Commit final board</button>
+                        <button className="btn" onClick={() => runFeature('sync')}>Device Sync details</button>
                     </div>}
                     <div className="board-wrap">
-                        <div className="board" ref={boardRef} data-tour="board" onDragEnd={() => {
+                        <div className="board" ref={boardRef} data-tour="board"
+                            inert={deviceSync && ['preparing', 'applying'].includes(commitStatus?.phase) ? '' : undefined} onDragEnd={() => {
 
                             setDragCardId(null);
                             setDragCardFrom(null);
@@ -12812,6 +13378,8 @@
                                     onAddCard={setAddCardCol} onDeleteCol={onDeleteCol} onToggleLock={onToggleLock}
                                     onRenameCol={onRenameCol}
                                     onClearCards={onClearCards}
+                                    onQuickMoveCard={id => setQuickMove({ type: 'card', id })}
+                                    onQuickMoveColumn={id => setQuickMove({ type: 'column', id })}
                                 />
                             ))}
                             <button className="add-col-btn" title="Add column" onClick={() => setShowAddCol(true)} aria-label="Add column">
@@ -12834,10 +13402,13 @@
                     {addCardCol && <AddCardModal defaultCol={addCardCol} cols={cols} onClose={() => setAddCardCol(
                         null)} onAdd={onAddCard} />}
                     {showAddCol && <AddColModal onClose={() => setShowAddCol(false)} onAdd={onAddCol} />}
+                    {quickMove && <QuickMoveModal key={quickMove.type + quickMove.id} target={quickMove} cols={cols} cards={cards}
+                        onClose={() => setQuickMove(null)} onMove={onQuickMove} />}
                     {showShortcuts && <ShortcutsPanel onClose={() => setShowShortcuts(false)} onAction={id => {
                         closeFeaturePanels(); runFeature(id);
                     }} />}
-                    {showEditor && <ScratchPad content={scratch} onChange={setScratch} onClose={() => setShowEditor(
+                    {showEditor && <ScratchPad content={scratch} onChange={setScratch} tabs={scratchTabs} onTabsChange={setScratchTabs}
+                        activeTab={activeScratchTab} onActiveTabChange={setActiveScratchTab} addToast={addToast} onClose={() => setShowEditor(
                         false)} />}
                     {showAi && <AiPanel onClose={() => setShowAi(false)} />}
                     {showKroki && <KrokiPanel onClose={() => setShowKroki(false)} />}
@@ -12849,15 +13420,31 @@
                     {showDiff && <DiffPanel onClose={() => setShowDiff(false)} addToast={addToast} />}
 
                     {showBase64 && <Base64Converter onClose={() => setShowBase64(false)} />}
-                    {showSyncModal && <SyncModal
+                    {showSyncModal && syncDialog === 'device' && <DeviceSyncModal
+                        onClose={() => setShowSyncModal(false)} roomId={roomId} setRoomId={setRoomId}
+                        serverUrl={serverUrl} setServerUrl={setServerUrl} createRoom={createRoom} joinRoom={joinRoom}
+                        activeRoom={activeRoom} deviceSync={deviceSync} peerStatus={peerStatus} peerCount={peerCount}
+                        conflicts={conflicts} commitStatus={commitStatus} commitFinalBoard={commitFinalBoard}
+                        disconnectRoom={disconnectRoom} addToast={addToast} />}
+                    {showSyncModal && syncDialog === 'collaborate' && <CollaborationModal
                         onClose={() => setShowSyncModal(false)} peerStatus={peerStatus} peerCount={peerCount}
-                        roomId={roomId} setRoomId={setRoomId} createRoom={createRoom} joinRoom={joinRoom}
-                        disconnectRoom={disconnectRoom} myPeerId={myPeerId} activeRoom={activeRoom}
+                        roomId={roomId} setRoomId={setRoomId}
+                        disconnectRoom={disconnectRoom} myPeerId={myPeerId} activeRoom={collaborative ? activeRoom : ''}
                         broadcastWebSocket={broadcastWebSocket} hostBoard={hostBoard} joinBoard={joinBoard}
                         collaborative={collaborative} participants={participants} displayName={displayName}
-                        setDisplayName={setDisplayName} serverUrl={serverUrl} setServerUrl={setServerUrl} addToast={addToast} />}
+                        setDisplayName={setDisplayName} serverUrl={serverUrl} setServerUrl={setServerUrl} addToast={addToast}
+                        deviceSync={deviceSync} />}
                     {activeRoom && conflicts.length > 0 && showConflicts && <ConflictModal conflicts={conflicts} onResolve={resolveConflict}
                         onClose={() => setShowConflicts(false)} />}
+                    {deviceSync && ['preparing', 'applying'].includes(commitStatus?.phase) && <div className="overlay"
+                        style={{ zIndex: 6000 }} role="dialog" aria-modal="true" aria-label="Committing final device board">
+                        <div className="sync-modal" role="status">
+                            <h3>Confirming final board</h3>
+                            <p>{commitStatus.phase === 'preparing' ? 'Checking that every participating device has the same conflict-free preview.'
+                                : `Saving originals: ${commitStatus.applied || 0}/${commitStatus.expected} devices confirmed.`}</p>
+                            <p>Keep all devices connected until confirmation completes.</p>
+                        </div>
+                    </div>}
                     {confetti && <Confetti key={confettiKey.current} />}
                     <Toast toasts={toasts} />
                     {showNotifPrompt && (

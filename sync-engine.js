@@ -70,6 +70,12 @@
             add('card', card.id, '__deleted', false);
         }));
         add('scratch', 'shared', 'content', snapshot.scratch || '');
+        (snapshot.scratchTabs || []).forEach((tab, position) => {
+            add('scratchTab', tab.id, 'label', tab.label);
+            add('scratchTab', tab.id, 'content', tab.content);
+            add('scratchTab', tab.id, 'position', position);
+            add('scratchTab', tab.id, '__deleted', false);
+        });
         return fields;
     }
 
@@ -168,11 +174,11 @@
             return { value, alternatives, conflict: true };
         }
 
-        function write(key, value, { resolve = false, initialize = false } = {}) {
+        function write(key, value, { resolve = false, initialize = false, review = true } = {}) {
             const current = state[key];
             const inspected = inspect(key, current);
             const guarded = current && (inspected.conflict
-                || (!collaborative && ((JSON.parse(key)[2] === '__deleted' && value === true)
+                || (!collaborative && review && ((JSON.parse(key)[2] === '__deleted' && value === true)
                     || (textField(key) && additions(inspected.value ?? '', value) === null))));
             const previous = !resolve && guarded ? inspected.alternatives.filter(other => !same(other, value)) : [];
             sequence++;
@@ -186,17 +192,18 @@
             return register;
         }
 
-        function capture(before, after) {
+        function capture(before, after, { reviewScratch = true } = {}) {
             const oldFields = flatten(before);
             const newFields = flatten(after);
             const changed = {};
+            const options = key => ({ review: reviewScratch || !['scratch', 'scratchTab'].includes(JSON.parse(key)[0]) });
             newFields.forEach((value, key) => {
-                if (!state[key] || !same(value, oldFields.get(key))) changed[key] = write(key, value, { initialize: !state[key] });
+                if (!state[key] || !same(value, oldFields.get(key))) changed[key] = write(key, value, { ...options(key), initialize: !state[key] });
             });
             oldFields.forEach((value, key) => {
                 const [entity, id, field] = JSON.parse(key);
-                if (field === '__deleted' && !newFields.has(key)) changed[key] = write(key, true);
-                else if (newFields.has(keyOf(entity, id, '__deleted')) && !newFields.has(key)) changed[key] = write(key, null);
+                if (field === '__deleted' && !newFields.has(key)) changed[key] = write(key, true, options(key));
+                else if (newFields.has(keyOf(entity, id, '__deleted')) && !newFields.has(key)) changed[key] = write(key, null, options(key));
             });
             return changed;
         }
@@ -217,7 +224,7 @@
         }
 
         function materialize() {
-            const entities = Object.fromEntries(['column', 'card', 'comment', 'scratch'].map(entity => [entity, Object.create(null)]));
+            const entities = Object.fromEntries(['column', 'card', 'comment', 'scratch', 'scratchTab'].map(entity => [entity, Object.create(null)]));
             const conflicts = [];
             Object.entries(state).sort(([left], [right]) => left.localeCompare(right)).forEach(([key, register]) => {
                 const [entity, id, field] = JSON.parse(key);
@@ -233,6 +240,7 @@
             });
             const order = (left, right) => (left.position || 0) - (right.position || 0) || left.id.localeCompare(right.id);
             const cols = Object.values(entities.column).filter(column => !column.__deleted).sort(order);
+            const scratchTabs = Object.values(entities.scratchTab).filter(tab => !tab.__deleted).sort(order);
             const cards = {};
             cols.forEach(column => cards[column.id] = []);
             Object.values(entities.card).filter(card => !card.__deleted).sort(order).forEach(card => {
@@ -256,7 +264,7 @@
                 delete item.__deleted;
                 delete item.position;
             }));
-            return { cols, cards, scratch: entities.scratch.shared?.content || '', conflicts };
+            return { cols, cards, scratch: entities.scratch.shared?.content || '', scratchTabs, conflicts };
         }
 
         function resolve(conflict, value) {
@@ -268,5 +276,12 @@
         return { capture, merge, replace, materialize, resolve, getRecords: () => state, inspect };
     }
 
-    return { createEngine, mergeRecords, validRecords };
+    function recordsEqual(left, right) {
+        const canonical = records => JSON.stringify(Object.entries(records).sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, register]) => [key, Object.entries(register.clock).sort(([a], [b]) => a.localeCompare(b)),
+                [...register.heads].sort((a, b) => dotKey(a).localeCompare(dotKey(b)))]));
+        return canonical(left) === canonical(right);
+    }
+
+    return { createEngine, mergeRecords, validRecords, recordsEqual };
 });
