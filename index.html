@@ -53,6 +53,7 @@
             var OPTIONAL_SCRIPTS = [
                 { id: 'tesseract', url: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js' },
                 { id: 'jsonrepair', url: 'https://cdn.jsdelivr.net/npm/jsonrepair@3.13.1/lib/umd/jsonrepair.min.js' },
+                { id: 'json5', url: 'https://cdn.jsdelivr.net/npm/json5@2.2.3/dist/index.min.js' },
                 { id: 'jsonlint', url: 'https://cdn.jsdelivr.net/npm/@jsonlint/core@0.1.1/src/index.js', module: true, global: 'JSONLint' },
                 { id: 'jsqr', url: 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js' },
                 { id: 'quagga', url: 'https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js' }
@@ -4154,12 +4155,15 @@
             const s = el.selectionStart,
                 e = el.selectionEnd;
             const sel = el.value.slice(s, e) || el.value;
-            try {
-                const p = JSON.parse(sel.trim()); return {
-                    result: JSON.stringify(p, null, 2), start: s, end: e,
-                    full: !el.value.slice(s, e)
-                };
-            } catch { return null; }
+            const normalized = normalizeJson(sel);
+            if (!normalized.ok) return null;
+            return {
+                result: normalized.status === 'partial' ? JSON.stringify({
+                    status: 'partial', recovered: normalized.parsed,
+                    unparsed: normalized.issues, original: normalized.original
+                }, null, 2) : normalized.result,
+                start: s, end: e, full: !el.value.slice(s, e)
+            };
         }
 
         function escH(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
@@ -9523,13 +9527,31 @@
             const issues = [];
             const repair = window.JSONRepair?.jsonrepair;
 
+            function strictParse(text, path) {
+                const value = JSON.parse(text);
+                const validation = validateJsonInput(text);
+                validation.diagnostics.filter(diagnostic => diagnostic.code === 'W060' || diagnostic.code === 'W050')
+                    .forEach(diagnostic => retain(text, path, diagnostic.message));
+                return { value };
+            }
+
             function parse(text, path) {
-                try { return { value: JSON.parse(text) }; } catch { }
+                try { return strictParse(text, path); } catch { }
+                if (window.JSON5?.parse) {
+                    try {
+                        const value = window.JSON5.parse(text);
+                        const validation = validateJsonInput(text);
+                        validation.diagnostics.filter(diagnostic => diagnostic.code === 'W060' || diagnostic.code === 'W050')
+                            .forEach(diagnostic => retain(text, path, diagnostic.message));
+                        steps.push('Parsed JSON5 syntax at ' + path);
+                        return { value };
+                    } catch { }
+                }
                 if (!repair) return null;
                 try {
-                    const value = JSON.parse(repair(text));
+                    const parsed = strictParse(repair(text), path);
                     steps.push('Repaired syntax at ' + path);
-                    return { value };
+                    return parsed;
                 } catch { return null; }
             }
 
@@ -9604,25 +9626,61 @@
             }
 
             let source = raw.trim();
-            let strict;
-            try { strict = { value: JSON.parse(source) }; } catch { }
-            if (strict) {
-                if (typeof strict.value !== 'string' || !/^\s*[\[{]/.test(strict.value)) {
-                    return { ok: true, status: 'valid', original: raw, parsed: strict.value, result: JSON.stringify(strict.value, null, 2), steps, issues };
-                }
-                source = strict.value;
-                steps.push('Unwrapped serialized JSON');
-            } else if (/^[\[{]\s*\\(?:n|r|t|u0022|")/i.test(source)) {
+            let stringFallback;
+            function formatted(value, status) {
                 try {
-                    source = JSON.parse('"' + source.replace(/"/g, '\\"') + '"');
+                    let replacedNumber = false;
+                    const result = JSON.stringify(value, (key, member) => {
+                        if (typeof member === 'number' && !Number.isFinite(member)) {
+                            replacedNumber = true;
+                            return retain(String(member), '$[' + JSON.stringify(key) + ']', 'Non-finite number is not JSON; retained as text');
+                        }
+                        return member;
+                    }, 2);
+                    return { ok: true, status: issues.length ? 'partial' : status, original: raw,
+                        parsed: replacedNumber ? JSON.parse(result) : value, result, steps, issues };
+                } catch {
+                    retain(raw, '$', 'Output exceeds the renderer nesting limit; original text retained');
+                    return { ok: true, status: 'partial', original: raw, parsed: raw, result: JSON.stringify(raw), steps, issues };
+                }
+            }
+            function originalString() {
+                steps.splice(stringFallback.stepCount);
+                return formatted(stringFallback.value, issues.length ? 'partial' : steps.length ? 'repaired' : 'valid');
+            }
+            let layer = 0;
+            for (; layer < 16; layer++) {
+                if (/^```(?:json|jsonc|json5)?\s/i.test(source) && /```$/.test(source)) {
+                    source = source.replace(/^```(?:json|jsonc|json5)?\s+/i, '').replace(/```$/, '').trim();
+                    steps.push('Removed Markdown fence');
+                    continue;
+                }
+                let strict;
+                try { strict = strictParse(source, '$'); } catch { }
+                if (strict) {
+                    if (typeof strict.value === 'string' && /^\s*(?:[\[{"\\]|```)/.test(strict.value)) {
+                        if (!stringFallback) stringFallback = { value: strict.value, stepCount: steps.length };
+                        source = strict.value.trim();
+                        steps.push('Unwrapped serialized JSON');
+                        continue;
+                    }
+                    if (stringFallback && (!strict.value || typeof strict.value !== 'object')) return originalString();
+                    return formatted(strict.value, issues.length ? 'partial' : steps.length ? 'repaired' : 'valid');
+                }
+                if (!/^(?:[\[{]\s*\\(?:n|r|t|u[0-9a-f]{4}|")|\\(?:"|\\|u[0-9a-f]{4}))/i.test(source)) break;
+                try {
+                    source = JSON.parse('"' + source.replace(/[\u0000-\u001f]/g, character =>
+                        '\\u' + character.charCodeAt(0).toString(16).padStart(4, '0')) + '"').trim();
                     steps.push('Decoded serialized JSON escapes');
-                } catch { }
+                } catch { break; }
             }
-            if (/^```(?:json)?\s/i.test(source) && /```$/.test(source)) {
-                source = source.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '');
-                steps.push('Removed Markdown fence');
+            if (layer === 16) {
+                retain(source, '$', 'Serialization limit reached; remaining text retained');
+                return formatted(source, 'partial');
             }
-            const whole = /^[\[{]/.test(source.trim()) ? parse(source, '$') : null;
+            if (stringFallback) return originalString();
+            const candidate = parse(source, '$');
+            const whole = candidate && (typeof candidate.value !== 'string' || /^["']/.test(source)) ? candidate : null;
             const documents = [];
             if (!whole) {
                 let cursor = 0;
@@ -9667,10 +9725,7 @@
             const parsed = whole ? whole.value : documents.length
                 ? (documents.length === 1 ? recover(documents[0], '$') : documents.map((text, index) => recover(text, '$[' + index + ']')))
                 : retain(source, '$', 'No JSON structure recognized; original text retained');
-            return {
-                ok: true, status: issues.length ? 'partial' : 'repaired', original: raw, parsed,
-                result: JSON.stringify(parsed, null, 2), steps, issues
-            };
+            return formatted(parsed, issues.length ? 'partial' : 'repaired');
         }
 
         function validateJsonInput(raw) {
