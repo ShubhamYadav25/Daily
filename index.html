@@ -3627,7 +3627,7 @@
         const FEATURE_ICONS = {
             'Search': 'Search', 'Scratch Pad': 'NotebookPen', 'Drawing Board': 'Paintbrush',
             'Drawing': 'Paintbrush', 'AI Assistants': 'Bot', 'Image → Text': 'ScanText',
-            'Diff Checker': 'Files', 'Base64 Converter': 'Binary', 'Diagrams': 'Workflow',
+            'Diff Checker': 'Files', 'Converter': 'Binary', 'Diagrams': 'Workflow',
             'JSON Prettifier': 'Braces', 'ZPL': 'Barcode', 'Label Preview': 'Barcode',
             'Calendar': 'CalendarDays', 'Refresh Ages': 'RefreshCw', 'Shortcuts': 'Keyboard',
             'Import JSON': 'FileInput', 'Export JSON': 'FileOutput', 'Install App': 'Download'
@@ -6188,11 +6188,77 @@
             const [dragOver, setDragOver] = useState(false);
             const [scannedData, setScannedData] = useState('');
             const [barcodeCopied, setBarcodeCopied] = useState(false);
+            const [cameraOpen, setCameraOpen] = useState(false);
+            const [cameraFacing, setCameraFacing] = useState('environment');
+            const [cameraDevice, setCameraDevice] = useState('');
+            const [cameraDevices, setCameraDevices] = useState([]);
+            const [cameraReady, setCameraReady] = useState(false);
+            const [cameraError, setCameraError] = useState('');
+            const videoRef = useRef();
 
             const fileRef = useRef();
             const canvasRef = useRef();
             const loggerRef = useRef(() => { });
             const workerCache = useRef({});
+
+            useEffect(() => {
+                if (!cameraOpen) return;
+                let cancelled = false;
+                let stream;
+                setCameraReady(false);
+                setCameraError('');
+                async function openCamera() {
+                    try {
+                        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+                            throw new Error('Camera access requires HTTPS or localhost and a browser with camera support.');
+                        }
+                        stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
+                            ...(cameraDevice ? { deviceId: { exact: cameraDevice } } : { facingMode: { ideal: cameraFacing } }),
+                            width: { ideal: 1920 }, height: { ideal: 1080 }
+                        } });
+                        if (cancelled) { stream.getTracks().forEach(track => track.stop()); return; }
+                        videoRef.current.srcObject = stream;
+                        await videoRef.current.play();
+                        if (cancelled) return;
+                        setCameraReady(true);
+                        try {
+                            const devices = await navigator.mediaDevices.enumerateDevices();
+                            if (!cancelled) setCameraDevices(devices.filter(device => device.kind === 'videoinput'));
+                        } catch { }
+                    } catch (error) {
+                        stream?.getTracks().forEach(track => track.stop());
+                        if (cancelled) return;
+                        const messages = {
+                            NotAllowedError: 'Camera permission denied. Allow camera access in your browser settings, then retry.',
+                            NotFoundError: 'No camera found. Connect a camera or choose an image instead.',
+                            NotReadableError: 'Camera is unavailable or in use by another application.',
+                            OverconstrainedError: 'The selected camera is unavailable. Choose another camera.'
+                        };
+                        setCameraError(messages[error.name] || error.message || 'Could not open the camera.');
+                    }
+                }
+                openCamera();
+                return () => {
+                    cancelled = true;
+                    stream?.getTracks().forEach(track => track.stop());
+                };
+            }, [cameraOpen, cameraFacing, cameraDevice]);
+
+            function captureAndScan() {
+                const video = videoRef.current;
+                if (!video?.videoWidth || !cameraReady || busy) return;
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                const image = canvas.toDataURL('image/png');
+                setImgName('Camera capture');
+                setText(''); setScannedData(''); setError(''); setConfidence(null);
+                setImgSrc(image);
+                if (mode === 'ocr') run(image);
+                else if (mode === 'qr') scanQRCode(image);
+                else scanBarcode(image);
+            }
 
             useEffect(() => {
                 return () => {
@@ -6238,8 +6304,8 @@
                 }
             }
 
-            async function run() {
-                if (!imgSrc) { addToast('Load an image first', 'error'); return; }
+            async function run(image = imgSrc) {
+                if (!image) { addToast('Load an image first', 'error'); return; }
                 if (typeof Tesseract === 'undefined') {
                     setError('OCR engine not loaded. Connect to the internet once so it can be cached, then reload.');
                     return;
@@ -6253,7 +6319,7 @@
                 };
 
                 try {
-                    const prepared = await prepOcrImage(imgSrc);
+                    const prepared = await prepOcrImage(image);
                     const worker = await getWorker(lang);
                     const { data } = await worker.recognize(prepared);
                     const out = (data && data.text) ? data.text : '';
@@ -6269,8 +6335,8 @@
                 setProgress(1);
             }
 
-            async function scanQRCode() {
-                if (!imgSrc) {
+            async function scanQRCode(image = imgSrc) {
+                if (!image) {
                     addToast('Load an image first', 'error');
                     return;
                 }
@@ -6305,7 +6371,7 @@
                         setError('Failed to load image');
                         setBusy(false);
                     };
-                    img.src = imgSrc;
+                    img.src = image;
                 } catch (e) {
                     console.error('[QR Scan]', e);
                     setError('QR scan failed: ' + ((e && e.message) || e));
@@ -6313,8 +6379,8 @@
                 }
             }
 
-            async function scanBarcode() {
-                if (!imgSrc) {
+            async function scanBarcode(image = imgSrc) {
+                if (!image) {
                     addToast('Load an image first', 'error');
                     return;
                 }
@@ -6331,7 +6397,7 @@
                         const timer = setTimeout(() => reject(new Error('Barcode scan timed out. Try a smaller or clearer image.')), 15000);
                         try {
                             Quagga.decodeSingle({
-                                src: imgSrc,
+                                src: image,
                                 numOfWorkers: 0,
                                 inputStream: { size: 2000 },
                                 locator: { halfSample: false, patchSize: 'medium' },
@@ -6429,7 +6495,7 @@
                         display: 'flex', gap: 0, padding: '0', background: 'var(--bg4)',
                         borderBottom: '1px solid var(--border)', flexShrink: 0
                     }}>
-                        <button onClick={() => { setMode('ocr'); setText(''); setScannedData(''); setError(''); setImgSrc(''); }}
+                        <button disabled={busy} onClick={() => { setMode('ocr'); setText(''); setScannedData(''); setError(''); setImgSrc(''); }}
                             style={{
                                 flex: 1, padding: '10px 16px', background: mode === 'ocr' ? 'var(--bg2)' : 'transparent',
                                 border: 'none', borderBottom: mode === 'ocr' ? '3px solid var(--blue)' : 'none',
@@ -6438,7 +6504,7 @@
                             }}>
                             <Icon name="ScanText" size="1em" style={{ marginRight: 6 }} /> Extract Text
                         </button>
-                        <button onClick={() => { setMode('qr'); setScannedData(''); setText(''); setError(''); setImgSrc(''); }}
+                        <button disabled={busy} onClick={() => { setMode('qr'); setScannedData(''); setText(''); setError(''); setImgSrc(''); }}
                             style={{
                                 flex: 1, padding: '10px 16px', background: mode === 'qr' ? 'var(--bg2)' : 'transparent',
                                 border: 'none', borderBottom: mode === 'qr' ? '3px solid var(--blue)' : 'none',
@@ -6447,7 +6513,7 @@
                             }}>
                             <Icon name="QrCode" size="1em" style={{ marginRight: 6 }} /> QR Code
                         </button>
-                        <button onClick={() => { setMode('barcode'); setScannedData(''); setText(''); setError(''); setImgSrc(''); }}
+                        <button disabled={busy} onClick={() => { setMode('barcode'); setScannedData(''); setText(''); setError(''); setImgSrc(''); }}
                             style={{
                                 flex: 1, padding: '10px 16px', background: mode === 'barcode' ? 'var(--bg2)' : 'transparent',
                                 border: 'none', borderBottom: mode === 'barcode' ? '3px solid var(--blue)' : 'none',
@@ -6472,13 +6538,17 @@
                         )}
 
                         <button className="btn primary" style={{ padding: '5px 16px', fontSize: 12 }}
-                            onClick={mode === 'ocr' ? run : mode === 'qr' ? scanQRCode : scanBarcode} disabled={busy || !imgSrc}>
+                            onClick={() => mode === 'ocr' ? run() : mode === 'qr' ? scanQRCode() : scanBarcode()} disabled={busy || !imgSrc}>
                             {busy ? <IconLabel text={"⏳ Working…"} /> : <IconLabel text={"▶ " + (mode === 'ocr' ? 'Extract text' : mode === 'qr' ? 'Scan QR' : 'Scan Barcode')} />}
                         </button>
 
                         <button className="btn" style={{ padding: '5px 12px', fontSize: 12 }}
                             onClick={() => fileRef.current && fileRef.current.click()}>
                             <Icon name="FolderOpen" size="1em" /> Choose image
+                        </button>
+                        <button className={'btn' + (cameraOpen ? ' active' : '')} aria-pressed={cameraOpen}
+                            onClick={() => { setCameraReady(false); setCameraOpen(open => !open); }}>
+                            <Icon name={cameraOpen ? 'CameraOff' : 'Camera'} />{cameraOpen ? 'Close camera' : 'Open camera'}
                         </button>
 
                         {imgSrc && (
@@ -6552,6 +6622,33 @@
                                 <span style={{ marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{imgName || '—'}</span>
                             </div>
                             <div style={{ flex: 1, overflow: 'auto', padding: 12, minHeight: mobile ? 140 : 0 }}>
+                                {cameraOpen && <div style={{ marginBottom: 12 }}>
+                                    <video ref={videoRef} autoPlay playsInline muted aria-label="Camera preview"
+                                        onLoadedData={() => setCameraReady(true)}
+                                        style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'contain',
+                                            background: '#000', borderRadius: 8 }} />
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                        <select className="fselect" aria-label="Camera direction" value={cameraFacing}
+                                            style={{ flex: '1 1 120px', width: 'auto' }} onChange={event => {
+                                                setCameraReady(false); setCameraDevice(''); setCameraFacing(event.target.value);
+                                            }}>
+                                            <option value="environment">Back camera</option>
+                                            <option value="user">Front camera</option>
+                                        </select>
+                                        {cameraDevices.length > 0 && <select className="fselect" aria-label="Camera device" value={cameraDevice}
+                                            style={{ flex: '1 1 160px', width: 'auto' }} onChange={event => {
+                                                setCameraReady(false); setCameraDevice(event.target.value);
+                                            }}>
+                                            <option value="">Automatic camera</option>
+                                            {cameraDevices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>
+                                                {device.label || 'Camera ' + (index + 1)}</option>)}
+                                        </select>}
+                                        <button className="btn primary" disabled={!cameraReady || busy} onClick={captureAndScan}>
+                                            <Icon name="ScanLine" />Capture &amp; scan</button>
+                                    </div>
+                                    {cameraError ? <p role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+                                        {cameraError}</p> : !cameraReady && <p role="status" style={{ fontSize: 12, marginTop: 8 }}>Opening camera...</p>}
+                                </div>}
                                 {!imgSrc ? (
                                     <div
                                         className={'ocr-drop' + (dragOver ? ' over' : '')}
@@ -7562,10 +7659,9 @@
             { id: 'ai', key: 'a', label: 'AI Assistants', icon: 'Bot', body: 'Open the assistant directory to visit external AI tools. These links leave Daily; check a provider before sharing any private information.' },
             { id: 'ocr', key: 'o', label: 'Image → Text', icon: 'ScanText', body: 'Extract text from an image and copy the result instead of typing it again.' },
             { id: 'diff', key: 'f', label: 'Diff Checker', icon: 'Files', body: 'Compare two texts or files and inspect additions and removals. Use F7 and Shift+F7 inside the checker to navigate changes.' },
-            { id: 'base64', key: 'b', label: 'Base64 Converter', icon: 'Binary', body: 'Encode or decode Base64 content with the converter.' },
+            { id: 'base64', key: 'b', label: 'Converter', icon: 'Binary', body: 'Convert Base64 to images, PDF or files, decode Base64 to ZPL, and render Base64 or ZPL labels in one tabbed workspace.' },
             { id: 'diagrams', key: 'g', label: 'Diagrams', icon: 'Workflow', body: 'Write diagram source and preview it visually. Diagram rendering uses an external service; avoid submitting confidential content.' },
             { id: 'json', key: 'j', label: 'JSON Prettifier', icon: 'Braces', body: 'Format and validate JSON, inspect source diagnostics, and recover malformed input. Review recovery warnings and unresolved text before using repaired output.' },
-            { id: 'zpl', key: 'z', label: 'ZPL', icon: 'Barcode', body: 'Work with ZPL label commands and preview labels. Remote rendering may require an internet connection.' },
             { id: 'calendar', key: 'c', label: 'Calendar & Time Machine', icon: 'CalendarDays', body: 'Schedule events and reminders in Events. Switch to Time Machine to browse automatic board snapshots and manage history backups. Events and history stay on this device.' },
             { id: 'history', key: 'm', label: 'Time Machine', icon: 'History', body: 'Go directly to board history. Pick a date and snapshot to inspect earlier work, and use the history import/export controls to back up snapshots separately from your board.' },
             { id: 'sync', key: 's', label: 'Device Sync', icon: 'RefreshCw', body: 'Connect your laptop and mobile, preview the combined board and resolve every conflict. Commit final board explicitly saves the agreed values to each connected original board. Success requires each device to confirm saving; offline devices must rejoin and commit again.' },
@@ -8305,7 +8401,30 @@
             );
         }
         /* ── BASE64 CONVERTER ── */
-        function Base64Converter({ onClose }) {
+        function Converter({ onClose }) {
+            const [tab, setTab] = useState('files');
+            return <FloatingPanel title="Converter" icon="Binary" onClose={onClose}
+                initW={960} initH={640} storageKey="converter">
+                <div role="tablist" aria-label="Conversion type" style={{ display: 'flex', flexShrink: 0,
+                    overflowX: 'auto', borderBottom: '1px solid var(--border)', background: 'var(--bg4)' }}>
+                    {[['files', 'Base64 to file'], ['decode', 'Base64 to ZPL'],
+                        ['base64', 'Base64 to label'], ['zpl', 'ZPL to label']].map(([id, label]) =>
+                        <button key={id} role="tab" id={'converter-tab-' + id} aria-selected={tab === id}
+                            aria-controls="converter-content" onClick={() => setTab(id)} style={{
+                                padding: '12px', flexShrink: 0, borderBottom: '2px solid ' + (tab === id ? 'var(--blue)' : 'transparent'),
+                                color: tab === id ? 'var(--text)' : 'var(--text2)' }}>{label}</button>)}
+                </div>
+                <div id="converter-content" role="tabpanel" aria-labelledby={'converter-tab-' + tab}
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'auto' }}>
+                    <div style={{ display: tab === 'files' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                        <Base64Converter />
+                    </div>
+                    {tab !== 'files' && <ZplPanel mode={tab === 'decode' ? 'base64' : tab} decodeOnly={tab === 'decode'} />}
+                </div>
+            </FloatingPanel>;
+        }
+
+        function Base64Converter() {
             const [input, setInput] = useState('');
             const [result, setResult] = useState(null);
             const [error, setError] = useState(null);
@@ -8403,16 +8522,6 @@
             const isPdf = detectedType === 'pdf';
 
             return (
-                <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-                    <div className="modal" style={{ maxWidth: 700 }} onClick={e => e.stopPropagation()}>
-                        <div className="modal-hdr">
-                            <span style={{ fontSize: 16 }}><Icon name="RefreshCw" size="1em" /></span>
-                            <div className="modal-title">Base64 Converter</div>
-                            <button className="ibtn" onClick={onClose} style={{
-                                width: 28, height: 28,
-                                marginLeft: 'auto', border: 'none'
-                            }} aria-label="Close" title="Close"><Icon name="X" size="1em" /></button>
-                        </div>
                         <div className="modal-body">
                             <div className="fgroup">
                                 <label className="flabel">Paste Base64 or Data URL</label>
@@ -8492,8 +8601,6 @@
                                 <Icon name="Lightbulb" size="1em" /> Supports: images (JPEG/PNG/GIF/WebP/SVG), PDF, and raw Base64
                             </div>
                         </div>
-                    </div>
-                </div>
             );
         }
 
@@ -8921,13 +9028,12 @@
             }
         }
 
-        function ZplPanel({ onClose }) {
+        function ZplPanel({ mode = 'zpl', decodeOnly = false }) {
             const confirm = useConfirm();
 
             const { compact: mobile, panelRef } = usePanelLayout();
             const online = useOnline();
 
-            const [mode, setMode] = useState('zpl');
             const [src, setSrc] = useState(() => loadLS('daily_zpl_src',
                 `^XA
 ^FO50,50^ADN,36,20^FDHello World^FS
@@ -8955,7 +9061,7 @@
 
             function decodeB64ToZpl(b64) {
                 try {
-                    const clean = b64.trim().replace(/\s/g, '');
+                    const clean = b64.trim().replace(/^data:[^,]*;base64,/i, '').replace(/\s/g, '');
                     const decoded = atob(clean);
                     return decoded;
                 } catch (e) {
@@ -9048,11 +9154,11 @@
             }
 
             useEffect(() => {
-                if (!autoRender || !online) return;
+                if (decodeOnly || !autoRender || !online) return;
                 clearTimeout(debounceRef.current);
                 debounceRef.current = setTimeout(() => render(), 1000);
                 return () => clearTimeout(debounceRef.current);
-            }, [src, b64Input, dpmm, width, height, labelIdx, autoRender, outputFmt, mode, online]);
+            }, [src, b64Input, dpmm, width, height, labelIdx, autoRender, outputFmt, mode, online, decodeOnly]);
 
             function downloadImg() {
                 if (!imgUrl) return;
@@ -9094,36 +9200,37 @@
                 try { return decodeB64ToZpl(b64Input); } catch { return '[Invalid Base64]'; }
             }, [b64Input, mode]);
 
+            if (decodeOnly) return <div ref={panelRef} className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <label className="flabel" htmlFor="base64-zpl-input">Base64 input</label>
+                <textarea id="base64-zpl-input" className="finput" value={b64Input} onChange={event => setB64Input(event.target.value)}
+                    spellCheck={false} style={{ minHeight: 140, resize: 'vertical', fontFamily: "'DM Mono',monospace" }} />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <button className="btn" disabled={!decodedPreview || decodedPreview === '[Invalid Base64]'}
+                        onClick={() => navigator.clipboard?.writeText(decodedPreview)}><Icon name="Clipboard" />Copy ZPL</button>
+                    <button className="btn" disabled={!decodedPreview || decodedPreview === '[Invalid Base64]'} onClick={() => {
+                        const url = URL.createObjectURL(new Blob([decodedPreview], { type: 'text/plain' }));
+                        const anchor = document.createElement('a');
+                        anchor.href = url; anchor.download = 'label.zpl'; anchor.click();
+                        setTimeout(() => URL.revokeObjectURL(url), 0);
+                    }}><Icon name="Download" />Download ZPL</button>
+                </div>
+                <label className="flabel" htmlFor="decoded-zpl-output">Decoded ZPL</label>
+                <textarea id="decoded-zpl-output" className="finput" readOnly value={decodedPreview} spellCheck={false}
+                    style={{ flex: 1, minHeight: 180, resize: 'vertical', fontFamily: "'DM Mono',monospace" }} />
+            </div>;
+
             return (
-                <FloatingPanel title="Label Preview" onClose={onClose}
-                    initW={960} initH={640} storageKey="zpl" panelRef={panelRef}>
+                <div ref={panelRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
 
                     <div style={{
                         display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
                         background: 'var(--bg4)', borderBottom: '1px solid var(--border)',
                         flexWrap: 'wrap', rowGap: 5, flexShrink: 0
                     }}>
-                        <div style={{
-                            display: 'flex', background: 'var(--bg3)', borderRadius: 7,
-                            border: '1px solid var(--border)', overflow: 'hidden', flexShrink: 0
-                        }}>
-                            {[['zpl', 'ZPL Code'], ['base64', 'Base64 → Label']].map(([id, lbl]) => (
-                                <button key={id} onClick={() => { setMode(id); setError(''); setImgUrl(''); }}
-                                    style={{
-                                        padding: '4px 12px', fontSize: 11, border: 'none', cursor: 'pointer', fontWeight: 600,
-                                        background: mode === id ? 'var(--blue)' : 'transparent',
-                                        color: mode === id ? '#fff' : 'var(--text3)', whiteSpace: 'nowrap'
-                                    }}>
-                                    <IconLabel text={lbl} />
-                                </button>
-                            ))}
-                        </div>
-
                         <select value={dpmm} onChange={e => setDpmm(e.target.value)}
-                            className="fselect" style={{ width: 130, padding: '3px 7px', fontSize: 11 }}>
-                            {DPMM_OPTS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                            className="fselect" aria-label="Label resolution" style={{ width: 130, padding: '3px 7px', fontSize: 11 }}>
+                            {DPMM_OPTS.map(option => <option key={option.v} value={option.v}>{option.l}</option>)}
                         </select>
-
                         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                             <input type="number" value={width} min="1" max="15" step="0.5"
                                 onChange={e => setWidth(e.target.value)} title="Width (inches)"
@@ -9517,7 +9624,7 @@
                             </div>
                         </div>
                     </div>
-                </FloatingPanel>
+                </div>
             );
         }
 
@@ -11702,7 +11809,6 @@
             const openCardRef = useRef(null);
             const activeRoomRef = useRef('');
             const [showBase64, setShowBase64] = useState(false);
-            const [showZpl, setShowZpl] = useState(false);
             const [showJson, setShowJson] = useState(false);
             const [showCalendar, setShowCalendar] = useState(false);
             const [calendarInitialTab, setCalendarInitialTab] = useState('events');
@@ -12746,7 +12852,7 @@
                     if (e.ctrlKey || e.metaKey || e.altKey) return;
                     if (e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return;
                     if (quickMove || openCard || addCardCol || showAddCol || showShortcuts || showEditor || showDraw
-                        || showAi || showKroki || showBase64 || showZpl || showJson || showCalendar
+                        || showAi || showKroki || showBase64 || showJson || showCalendar
                         || showOcr || showDiff || showSyncModal || (activeRoom && conflicts.length && showConflicts)) return;
                     const feature = APP_FEATURES.find(item => item.key === e.key.toLowerCase());
                     if (!feature) return;
@@ -12769,7 +12875,6 @@
                 setShowAi(false);
                 setShowKroki(false);
                 setShowBase64(false);
-                setShowZpl(false);
                 setShowJson(false);
                 setShowCalendar(false);
                 setShowOcr(false);
@@ -12805,7 +12910,6 @@
                     base64: () => setShowBase64(true),
                     diagrams: () => setShowKroki(true),
                     json: () => setShowJson(true),
-                    zpl: () => setShowZpl(true),
                     calendar: () => { setCalendarInitialTab('events'); setShowCalendar(true); },
                     history: () => { setCalendarInitialTab('timemachine'); setShowCalendar(true); },
                     sync: () => { setSyncDialog('device'); setShowSyncModal(true); },
@@ -13184,10 +13288,9 @@
                 null,
                 { icon: '🔎', label: 'Image → Text', action: () => setShowOcr(true) },
                 { icon: '⚖️', label: 'Diff Checker', action: () => setShowDiff(true) },
-                { icon: '🔄', label: 'Base64 Converter', action: () => setShowBase64(true) },
+                { icon: 'Binary', label: 'Converter', action: () => setShowBase64(true) },
                 { icon: '📐', label: 'Diagrams', action: () => setShowKroki(true) },
                 { icon: '✨', label: 'JSON Prettifier', action: () => setShowJson(true) },
-                { icon: '🏷️', label: 'ZPL', action: () => setShowZpl(true) },
 
                 null,
                 { icon: '📅', label: 'Calendar', action: () => runFeature('calendar') },
@@ -13241,14 +13344,12 @@
                         onClick={() => setShowOcr(o => !o)} />
                     <HeaderTool icon="Files" label="Diff Checker" active={showDiff}
                         onClick={() => setShowDiff(o => !o)} />
-                    <HeaderTool icon="Binary" label="Base64 Converter" active={showBase64}
+                    <HeaderTool icon="Binary" label="Converter" active={showBase64}
                         onClick={() => setShowBase64(o => !o)} />
                     <HeaderTool icon="Workflow" label="Diagrams" active={showKroki}
                         onClick={() => setShowKroki(o => !o)} />
                     <HeaderTool icon="Braces" label="JSON Prettifier" active={showJson}
                         onClick={() => setShowJson(o => !o)} />
-                    <HeaderTool icon="Barcode" label="ZPL" active={showZpl}
-                        onClick={() => setShowZpl(o => !o)} />
                 </>
             );
 
@@ -13467,14 +13568,13 @@
                         false)} />}
                     {showAi && <AiPanel onClose={() => setShowAi(false)} />}
                     {showKroki && <KrokiPanel onClose={() => setShowKroki(false)} />}
-                    {showZpl && <ZplPanel onClose={() => setShowZpl(false)} />}
                     {showJson && <JsonPanel onClose={() => setShowJson(false)} />}
                     {showCalendar && <CalendarPanel onClose={() => setShowCalendar(false)} addToast={addToast}
                         initialTab={calendarInitialTab} />}
                     {showOcr && <OcrPanel onClose={() => setShowOcr(false)} addToast={addToast} />}
                     {showDiff && <DiffPanel onClose={() => setShowDiff(false)} addToast={addToast} />}
 
-                    {showBase64 && <Base64Converter onClose={() => setShowBase64(false)} />}
+                    {showBase64 && <Converter onClose={() => setShowBase64(false)} />}
                     {showSyncModal && syncDialog === 'device' && <DeviceSyncModal
                         onClose={() => setShowSyncModal(false)} roomId={roomId} setRoomId={setRoomId}
                         serverUrl={serverUrl} setServerUrl={setServerUrl} createRoom={createRoom} joinRoom={joinRoom}
