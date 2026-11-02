@@ -6,6 +6,167 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 
+function jsonHarness(repair, json5) {
+    const context = { window: { JSONRepair: repair ? { jsonrepair: repair } : undefined, JSON5: json5 } };
+    vm.createContext(context);
+    const start = source.indexOf('function normalizeJson(raw)');
+    vm.runInContext(source.slice(start, source.indexOf('function JsonPanel', start)), context);
+    const formatStart = source.indexOf('function formatJSON(el)');
+    vm.runInContext(source.slice(formatStart, source.indexOf('function escH', formatStart)), context);
+    return context;
+}
+
+test('JSON recovery decodes shipment escapes without changing field types or string contents', () => {
+    const value = {
+        costCenterCode: 'CDC-00066928', paperless: 'false', shipmentDate: '2026-11-02',
+        waybills: [{ data: { declared: [{ weight: 9940, height: '30' }], services: {},
+            receiver: { address: 'via bruno buozzi 44/46', note1: null,
+                note2: 'Line one\nLine two', path: 'C:\\labels\\new', quote: 'Say "hello"' } } }]
+    };
+    const escaped = JSON.stringify(JSON.stringify(value)).slice(1, -1).replace('44/46', '44\\/46');
+    const result = jsonHarness().normalizeJson(escaped);
+    assert.equal(result.status, 'repaired');
+    assert.equal(result.issues.length, 0);
+    assert.deepEqual(JSON.parse(result.result), value);
+});
+
+test('JSON recovery handles repeated serialization and Markdown wrappers', () => {
+    const value = { nested: [true, null, { text: 'hello' }] };
+    const h = jsonHarness();
+    let text = JSON.stringify(value);
+    for (let layer = 0; layer < 5; layer++) {
+        text = JSON.stringify(text);
+        assert.deepEqual(JSON.parse(h.normalizeJson(text).result), value);
+    }
+    assert.deepEqual(JSON.parse(h.normalizeJson('```jsonc\n' + text + '\n```').result), value);
+    const escaped = JSON.stringify(JSON.stringify(value)).slice(1, -1);
+    assert.deepEqual(JSON.parse(h.normalizeJson(JSON.stringify(escaped)).result), value);
+});
+
+test('JSON recovery preserves valid JSON primitives and ordinary escaped strings', () => {
+    const h = jsonHarness();
+    for (const value of [null, true, false, 42, -1.5, 'hello', 'C:\\new\\labels', 'line\nnext', {}, []]) {
+        const result = h.normalizeJson(JSON.stringify(value));
+        assert.equal(result.status, 'valid');
+        assert.deepEqual(JSON.parse(result.result), value);
+    }
+});
+
+test('JSON recovery preserves JSON-looking strings unless they encode a complete container', () => {
+    const h = jsonHarness();
+    for (const value of ['{not JSON', '[unfinished', '"quoted"', '\\network\\share', '```json\nnot JSON\n```', '{"unfinished":']) {
+        const result = h.normalizeJson(JSON.stringify(value));
+        assert.equal(result.status, 'valid', value);
+        assert.equal(JSON.parse(result.result), value);
+        assert.equal(result.steps.length, 0);
+    }
+});
+
+test('JSON recovery round-trips generated nested values and serialization variants', () => {
+    const h = jsonHarness();
+    const strings = ['', '{unfinished', '[unfinished', '"quoted"', '\\path', '\n\t\r', '44/46', '<script>', '雪', 'true'];
+    for (let index = 0; index < 200; index++) {
+        const value = { index, text: strings[index % strings.length], nested: [null, index % 2 === 0, index / 10,
+            { text: strings[(index + 3) % strings.length], empty: {} }] };
+        let text = JSON.stringify(value);
+        for (let layer = 0; layer < 4; layer++) {
+            const result = h.normalizeJson(text);
+            assert.deepEqual(JSON.parse(result.result), value, 'case ' + index + ', layer ' + layer);
+            assert.equal(result.issues.length, 0);
+            text = JSON.stringify(text);
+        }
+        const escaped = JSON.stringify(JSON.stringify(value)).slice(1, -1);
+        assert.deepEqual(JSON.parse(h.normalizeJson(escaped).result), value);
+    }
+});
+
+test('JSON recovery attempts library repair for every root syntax, not just selected prefixes', () => {
+    const cases = new Map([
+        ['/* comment */ true', true], ['// comment\n42', 42], ['+2', 2], ['.5', 0.5],
+        ['undefined', null], ['NaN', null], ['FALSE', false], ['/* comment */ {a:1}', { a: 1 }]
+    ]);
+    const h = jsonHarness(text => {
+        if (!cases.has(text)) throw new Error('Unrecognized input');
+        return JSON.stringify(cases.get(text));
+    });
+    for (const [text, expected] of cases) {
+        const result = h.normalizeJson(text);
+        assert.deepEqual(JSON.parse(result.result), expected, text);
+    }
+});
+
+test('JSON recovery falls back to original input when output nesting exceeds serialization limits', () => {
+    const raw = '['.repeat(8000) + '0' + ']'.repeat(8000);
+    const result = jsonHarness().normalizeJson(raw);
+    assert.equal(result.status, 'partial');
+    assert.equal(result.original, raw);
+    assert.equal(JSON.parse(result.result), raw);
+});
+
+test('JSON recovery supports a JSON5 parser and retains non-finite numbers as reported text', () => {
+    const values = new Map([['+2', 2], ['.5', 0.5], ['0xff', 255], ['NaN', NaN], ['Infinity', Infinity],
+        ['{value:NaN}', { value: NaN }]]);
+    const h = jsonHarness(undefined, { parse: text => {
+        if (!values.has(text)) throw new Error('Unrecognized JSON5');
+        return values.get(text);
+    } });
+    for (const [text, expected] of values) {
+        const result = h.normalizeJson(text);
+        const nonFinite = text.includes('NaN') || text.includes('Infinity');
+        assert.equal(result.status, nonFinite ? 'partial' : 'repaired', text);
+        assert.deepEqual(JSON.parse(result.result), text === '{value:NaN}' ? { value: 'NaN' } : nonFinite ? text : expected);
+        assert.deepEqual(JSON.parse(JSON.stringify(result.parsed)), JSON.parse(result.result));
+        if (nonFinite) assert.equal(result.original, text);
+    }
+});
+
+test('JSON recovery retains the source when validation detects data loss', () => {
+    const h = jsonHarness();
+    for (const [text, code] of [['{"a":1,"a":2}', 'W060'], ['{"id":9007199254740993}', 'W050']]) {
+        h.window.JSONLint = { validate: () => ({ diagnostics: [
+            { code, severity: 'warning', start: 0, message: 'Potential data loss' }
+        ] }), lineColumn: () => ({ line: 1, column: 1 }) };
+        const result = h.normalizeJson(text);
+        assert.equal(result.status, 'partial');
+        assert.equal(result.original, text);
+        assert.equal(result.issues[0].raw, text);
+    }
+});
+
+test('JSON recovery bounds serialization layers without discarding the remainder', () => {
+    let text = '{"ok":true}';
+    for (let layer = 0; layer < 17; layer++) text = JSON.stringify(text);
+    const result = jsonHarness().normalizeJson(text);
+    assert.equal(result.status, 'partial');
+    assert.match(result.issues[0].reason, /Serialization limit/);
+    assert.equal(result.original, text);
+    assert.equal(JSON.parse(result.result), result.parsed);
+});
+
+test('JSON recovery retains unrecognized fragments and separates multiple documents', () => {
+    const h = jsonHarness();
+    const partial = h.normalizeJson('{"good":1, broken, "tail":true}');
+    assert.equal(partial.status, 'partial');
+    assert.deepEqual(JSON.parse(partial.result), { good: 1, tail: true });
+    assert.ok(partial.issues.some(issue => issue.raw.includes('broken')));
+    const documents = h.normalizeJson('log entry {"first":1}\n{"second":2} trailing');
+    assert.equal(documents.status, 'partial');
+    assert.deepEqual(JSON.parse(documents.result), [{ first: 1 }, { second: 2 }]);
+    assert.equal(documents.original, 'log entry {"first":1}\n{"second":2} trailing');
+});
+
+test('JSON editor formatting uses recovery and includes a report for uncertain data', () => {
+    const h = jsonHarness();
+    const result = h.formatJSON({ value: String.raw`{\"ok\":true}`, selectionStart: 0, selectionEnd: 0 });
+    assert.deepEqual(JSON.parse(result.result), { ok: true });
+    assert.equal(result.full, true);
+    const partial = h.formatJSON({ value: '{"good":1, broken}', selectionStart: 0, selectionEnd: 0 });
+    const report = JSON.parse(partial.result);
+    assert.equal(report.status, 'partial');
+    assert.equal(report.original, '{"good":1, broken}');
+    assert.ok(report.unparsed.length);
+});
+
 function barcodeHarness(decodeSingle) {
     const state = { busy: false, data: '', error: '', logs: [], toasts: [], timerCleared: false };
     let timeout;
