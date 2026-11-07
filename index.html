@@ -3603,6 +3603,8 @@
     <script src="./sync-engine.js"></script>
     <link rel="stylesheet" href="./pdf-editor.css" />
     <script src="./pdf-editor.js"></script>
+    <link rel="stylesheet" href="./image-editor.css" />
+    <script src="./image-editor.js"></script>
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
@@ -6211,7 +6213,7 @@
 
             if (mobile) return (
                 <div ref={ref} className={'fp ' + className}>
-                    <div className="fp-hdr">
+                    <div key="header" className="fp-hdr">
                         <Icon name={FEATURE_ICONS[title] || icon} /><span className="fp-title">{title}</span>
                         {extraHeaderContent}
                         <button onClick={onClose} aria-label="Close panel" style={{
@@ -6220,7 +6222,7 @@
                             marginLeft: extraHeaderContent ? 0 : 'auto'
                         }}><Icon name="X" size="1em" /></button>
                     </div>
-                    <div className="fp-content" style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                    <div key="content" className="fp-content" style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                         {children}</div>
                 </div>
             );
@@ -6234,7 +6236,7 @@
                         <div key={d} className={`fp-resize ${d}`} style={{ touchAction: 'none' }}
                             onPointerDown={e => startResize(d, e)} />
                     ))}
-                    <div className="fp-hdr" onPointerDown={dragSurface ? undefined : startPanelDrag}
+                    <div key="header" className="fp-hdr" onPointerDown={dragSurface ? undefined : startPanelDrag}
                         style={{ cursor: maximized ? 'default' : 'move', touchAction: 'none' }}>
                         <Icon name={FEATURE_ICONS[title] || icon} /><span className="fp-title">{title}</span>
                         {extraHeaderContent}
@@ -6264,7 +6266,7 @@
                         }}><Icon name="X" size="1em" /></button>
 
                     </div>
-                    <div className="fp-content" style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                    <div key="content" className="fp-content" style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                         {children}</div>
                 </div>
             );
@@ -7912,6 +7914,7 @@
             { id: 'diff', key: 'f', label: 'Diff Checker', icon: 'Files', body: 'Compare two texts or files and inspect additions and removals. Use F7 and Shift+F7 inside the checker to navigate changes.' },
             { id: 'base64', key: 'b', label: 'Converter', icon: 'Binary', body: 'Convert Base64 to images, PDF or files, decode Base64 to ZPL, and render Base64 or ZPL labels in one tabbed workspace.' },
             { id: 'pdf', key: 't', label: 'PDF Editor', icon: 'FilePenLine', body: 'Annotate PDFs locally, manage pages, merge documents, extract text, run OCR and export a new PDF. Annotations do not rewrite original text or securely redact it.' },
+            { id: 'image', key: 'z', label: 'Image Editor', icon: 'Image', body: 'Edit images locally: crop, resize, retouch, remove backgrounds, add text and build collages. Convert PNG, JPEG, WebP and imported HEIC, or convert images to PDF and PDF pages to images. Export below a chosen file-size limit.' },
             { id: 'diagrams', key: 'g', label: 'Diagrams', icon: 'Workflow', body: 'Write diagram source and preview it visually. Diagram rendering uses an external service; avoid submitting confidential content.' },
             { id: 'json', key: 'j', label: 'JSON Prettifier', icon: 'Braces', body: 'Format and validate JSON, inspect source diagnostics, and recover malformed input. Review recovery warnings and unresolved text before using repaired output.' },
             { id: 'calendar', key: 'c', label: 'Calendar & Time Machine', icon: 'CalendarDays', body: 'Schedule events and reminders in Events. Switch to Time Machine to browse automatic board snapshots and manage history backups. Events and history stay on this device.' },
@@ -12062,6 +12065,7 @@
             const activeRoomRef = useRef('');
             const [showBase64, setShowBase64] = useState(false);
             const [showPdf, setShowPdf] = useState(false);
+            const [showImage, setShowImage] = useState(false);
             const [showJson, setShowJson] = useState(false);
             const [showCalendar, setShowCalendar] = useState(false);
             const [calendarInitialTab, setCalendarInitialTab] = useState('events');
@@ -13105,7 +13109,7 @@
                     if (e.ctrlKey || e.metaKey || e.altKey) return;
                     if (e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return;
                     if (quickMove || openCard || addCardCol || showAddCol || showShortcuts || showEditor || showDraw
-                        || showAi || showKroki || showBase64 || showPdf || showJson || showCalendar
+                        || showAi || showKroki || showBase64 || showPdf || showImage || showJson || showCalendar
                         || showOcr || showDiff || showSyncModal || (activeRoom && conflicts.length && showConflicts)) return;
                     const feature = APP_FEATURES.find(item => item.key === e.key.toLowerCase());
                     if (!feature) return;
@@ -13129,6 +13133,7 @@
                 setShowKroki(false);
                 setShowBase64(false);
                 setShowPdf(false);
+                setShowImage(false);
                 setShowJson(false);
                 setShowCalendar(false);
                 setShowOcr(false);
@@ -13163,6 +13168,7 @@
                     diff: () => setShowDiff(true),
                     base64: () => setShowBase64(true),
                     pdf: () => setShowPdf(true),
+                    image: () => setShowImage(true),
                     diagrams: () => setShowKroki(true),
                     json: () => setShowJson(true),
                     calendar: () => { setCalendarInitialTab('events'); setShowCalendar(true); },
@@ -13545,6 +13551,7 @@
                 { icon: '⚖️', label: 'Diff Checker', action: () => setShowDiff(true) },
                 { icon: 'Binary', label: 'Converter', action: () => setShowBase64(true) },
                 { icon: 'FilePenLine', label: 'PDF Editor', action: () => setShowPdf(true) },
+                { icon: 'Image', label: 'Image Editor', action: () => setShowImage(true) },
                 { icon: '📐', label: 'Diagrams', action: () => setShowKroki(true) },
                 { icon: '✨', label: 'JSON Prettifier', action: () => setShowJson(true) },
 
@@ -13604,6 +13611,8 @@
                         onClick={() => setShowBase64(o => !o)} />
                     <HeaderTool icon="FilePenLine" label="PDF Editor" active={showPdf}
                         onClick={() => setShowPdf(o => !o)} />
+                    <HeaderTool icon="Image" label="Image Editor" active={showImage}
+                        onClick={() => setShowImage(true)} />
                     <HeaderTool icon="Workflow" label="Diagrams" active={showKroki}
                         onClick={() => setShowKroki(o => !o)} />
                     <HeaderTool icon="Braces" label="JSON Prettifier" active={showJson}
@@ -13834,6 +13843,7 @@
 
                     {showBase64 && <Converter onClose={() => setShowBase64(false)} />}
                     {showPdf && <window.DailyPdfEditor Panel={FloatingPanel} Icon={Icon} MdEditor={MdEditor} onClose={() => setShowPdf(false)} />}
+                    {showImage && <window.DailyImageEditor Panel={FloatingPanel} Icon={Icon} onClose={() => setShowImage(false)} />}
                     {showSyncModal && syncDialog === 'device' && <DeviceSyncModal
                         onClose={() => setShowSyncModal(false)} roomId={roomId} setRoomId={setRoomId}
                         serverUrl={serverUrl} setServerUrl={setServerUrl} createRoom={createRoom} joinRoom={joinRoom}

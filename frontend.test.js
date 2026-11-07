@@ -262,6 +262,7 @@ function harness(overrides = {}) {
         showTour: false, openCard: null, quickMove: null, addCardCol: null,
         showAddCol: false, showShortcuts: false, showEditor: false, showDraw: false,
         showAi: false, showKroki: false, showBase64: false, showZpl: false,
+        showPdf: false, showImage: false,
         showJson: false, showCalendar: false, showOcr: false, showDiff: false,
         showSyncModal: false, showConflicts: false,
         commitRef: { current: null },
@@ -321,7 +322,8 @@ test('letter shortcuts are case-insensitive and cover every registered feature',
 
 test('typing, modal editing, tour, composition, repeats and browser shortcuts do not launch features', () => {
     for (const overrides of [{ showTour: true }, { openCard: {} }, { quickMove: {} }, { showEditor: true },
-        { showCalendar: true }, { showDraw: true }, { showSyncModal: true }, { showShortcuts: true }]) {
+        { showCalendar: true }, { showDraw: true }, { showSyncModal: true }, { showShortcuts: true },
+        { showPdf: true }, { showImage: true }]) {
         const h = harness(overrides);
         h.press('n');
         assert.deepEqual(h.calls, []);

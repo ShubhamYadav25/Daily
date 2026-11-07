@@ -999,7 +999,60 @@
         return true;
     }
 
-    window.DailyPdfTools = { pagePlacement, parsePages, pdfFields, filledDocument, sourceFontStyle, sourceTextFont, recoverSourceFont, embeddedFontBytes, drawAnnotationText,
+    function exportSize(value, unit) {
+        if (!String(value).trim()) return null;
+        const bytes = Number(value) * ({ bytes: 1, KB: 1000, MB: 1000000 })[unit];
+        if (!Number.isSafeInteger(bytes) || bytes < 128 || bytes > 100000000) throw new Error('Choose a size limit between 128 bytes and 100 MB.');
+        return bytes;
+    }
+    async function withRasterPages(bytes, scale, action) {
+        const render = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+        try {
+            for (let number = 1; number <= render.numPages; number++) {
+                const source = await render.getPage(number), physical = source.getViewport({ scale: 1 });
+                const actualScale = Math.min(scale, Math.sqrt(12000000 / (physical.width * physical.height)), 16384 / Math.max(physical.width, physical.height));
+                const viewport = source.getViewport({ scale: actualScale }), sheet = document.createElement('canvas');
+                sheet.width = Math.max(1, Math.floor(viewport.width)); sheet.height = Math.max(1, Math.floor(viewport.height));
+                try {
+                    await source.render({ canvasContext: sheet.getContext('2d'), viewport, intent: 'print', background: '#ffffff' }).promise;
+                    await action(sheet, { width: physical.width, height: physical.height, dpi: Math.max(1, Math.round(actualScale * 72)) }, number);
+                } finally { source.cleanup(); sheet.width = sheet.height = 1; }
+            }
+        } finally { await render.destroy(); }
+    }
+    async function rasterPdf(bytes, scale, quality) {
+        const output = await PDFLib.PDFDocument.create();
+        await withRasterPages(bytes, scale, async (sheet, physical) => {
+            const blob = await new Promise((resolve, reject) => sheet.toBlob(value => value ? resolve(value) : reject(new Error('Could not encode PDF page.')), 'image/jpeg', quality));
+            const image = await output.embedJpg(await blob.arrayBuffer()), page = output.addPage([physical.width, physical.height]);
+            page.drawImage(image, { x: 0, y: 0, width: physical.width, height: physical.height });
+        });
+        return output.save();
+    }
+    async function compressPdf(bytes, target, progress, raster = rasterPdf) {
+        exportSize(target, 'bytes');
+        if (bytes.length <= target) return { bytes, rasterized: false };
+        let scale = 2;
+        for (let attempt = 0; attempt < 45; attempt++) {
+            progress?.('Compressing PDF at ' + Math.round(scale * 72) + ' DPI...');
+            const high = await raster(bytes, scale, .95);
+            if (high.length <= target) return { bytes: high, rasterized: true, dpi: Math.round(scale * 72), quality: .95 };
+            const low = await raster(bytes, scale, .75);
+            if (low.length <= target) {
+                let best = low, lower = .75, upper = .95;
+                for (let step = 0; step < 8; step++) {
+                    const quality = (lower + upper) / 2, candidate = await raster(bytes, scale, quality);
+                    if (candidate.length <= target) { best = candidate; lower = quality; } else upper = quality;
+                }
+                return { bytes: best, rasterized: true, dpi: Math.round(scale * 72), quality: lower };
+            }
+            scale *= Math.min(.9, Math.max(.5, Math.sqrt(target / low.length) * .95));
+            if (scale < .001) break;
+        }
+        throw new Error('This limit is too small for a valid PDF with these pages. Increase the size limit.');
+    }
+
+    window.DailyPdfTools = { exportSize, compressPdf, pagePlacement, parsePages, pdfFields, filledDocument, sourceFontStyle, sourceTextFont, recoverSourceFont, embeddedFontBytes, drawAnnotationText,
         groupTextTargets, applyListMarkers, indentLines, signatureFields, verifySignature, FONT_CHOICES, markdownBlocks, layoutMarkdown, pageMarkdown, pageImages,
         layoutSource, parseLayoutSource, layoutEdits, textPatchColors, replacementObjects };
 
@@ -1040,6 +1093,8 @@
         const [toolsTab, setToolsTab] = useState('edit');
         const [inspectorTab, setInspectorTab] = useState('format');
         const [exportFormat, setExportFormat] = useState('pdf');
+        const [exportLimit, setExportLimit] = useState('');
+        const [exportUnit, setExportUnit] = useState('KB');
         const [stamp, setStamp] = useState('Reviewed');
         const [watermark, setWatermark] = useState('DRAFT');
         const [numberStart, setNumberStart] = useState(1);
@@ -1975,24 +2030,29 @@
             if (exportFormat === 'pdf') return exportPdf();
             if (exportFormat === 'text') { download(text, name + '-text.txt', 'text/plain;charset=utf-8'); return; }
             if (exportFormat === 'fields') { download(JSON.stringify(page.doc.formValues, null, 2), name + '-fields.json', 'application/json'); return; }
-            await task('Exporting page image...', async () => {
-                const document = await filledDocument(page.doc, customFont);
-                const render = await pdfjsLib.getDocument({ data: await document.save() }).promise;
-                let layer;
-                try {
-                    const source = await render.getPage(page.number);
-                    const viewport = source.getViewport({ scale: 2, rotation: page.rotation });
-                    const output = window.document.createElement('canvas'); output.width = viewport.width; output.height = viewport.height;
-                    await source.render({ canvasContext: output.getContext('2d'), viewport, intent: 'print' }).promise;
-                    layer = new fabric.StaticCanvas(window.document.createElement('canvas'), { width: viewport.width / 2, height: viewport.height / 2 });
-                    await new Promise(resolve => layer.loadFromJSON(page.overlay, resolve));
-                    const image = new Image();
-                    await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = layer.toDataURL({ format: 'png', multiplier: 2 }); });
-                    output.getContext('2d').drawImage(image, 0, 0);
-                    const blob = await new Promise(resolve => output.toBlob(resolve, 'image/png'));
-                    download(blob, name + '-page-' + (active + 1) + '.png', 'image/png');
-                } finally { layer?.dispose(); await render.destroy(); }
+            return exportPdf(undefined, true);
+        }
+        async function exportPageImages(bytes, indices, target) {
+            if (!window.DailyImageTools) throw new Error('Image export tools are unavailable. Reload the app and retry.');
+            if (indices.length > 1) await loadScript('JSZip', 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+            const zip = indices.length > 1 ? new window.JSZip() : null;
+            const type = ({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' })[exportFormat];
+            if (!type) throw new Error('Unsupported image export format.');
+            const images = [];
+            await withRasterPages(bytes, 2, async (sheet, physical, number) => {
+                const result = target
+                    ? await window.DailyImageTools.autoCompress(sheet, target, physical.dpi, setBusy, undefined, undefined, undefined, true, type)
+                    : { blob: await window.DailyImageTools.imageBlob(sheet, type, .95, physical.dpi), width: sheet.width, height: sheet.height };
+                const filename = (name || 'document').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') + '-page-' + (indices[number - 1] + 1) + '.' + exportFormat;
+                if (zip) zip.file(filename, await result.blob.arrayBuffer());
+                images.push({ ...result, filename });
             });
+            if (zip) {
+                download(await zip.generateAsync({ type: 'blob', compression: 'STORE' }), (name || 'document') + '-pages.zip', 'application/zip');
+            } else download(images[0].blob, images[0].filename, type);
+            setExportNote(images.length + ' page image' + (images.length === 1 ? '' : 's in ZIP') + ' exported.' +
+                (target ? ' Each image is at or below ' + target.toLocaleString() + ' bytes.' + (zip ? ' ZIP overhead is additional.' : '') : '') +
+                images.map((image, index) => ` Page ${indices[index] + 1}: ${image.blob.size.toLocaleString()} bytes, ${image.width} x ${image.height}.`).join(''));
         }
 
         async function previewFields() {
@@ -2088,10 +2148,11 @@
             return () => { window.removeEventListener('beforeunload', unload); window.removeEventListener('keydown', escape, true); };
         }, [dirty, !!markdown, mergeFiles !== null, busy]);
 
-        async function exportPdf(indices) {
+        async function exportPdf(indices, images = false) {
             await task('Exporting PDF...', async () => {
                 setExportNote('');
                 indices = indices || parsePages(range, pages.length);
+                const target = exportSize(exportLimit, exportUnit);
                 const result = await PDFLib.PDFDocument.create();
                 result.setTitle(title); result.setAuthor(author); result.setCreator('Daily PDF Editor');
                 const documents = new Map();
@@ -2156,8 +2217,13 @@
                     }
                 }
                 } finally { await Promise.all([...renders.values()].map(render => render.destroy())); }
-                download(await result.save(), (name || 'document') + '-edited.pdf');
+                const bytes = await result.save();
+                if (images) { await exportPageImages(bytes, indices, target); return; }
+                const compressed = target ? await compressPdf(bytes, target, setBusy) : { bytes, rasterized: false };
+                download(compressed.bytes, (name || 'document') + '-edited.pdf');
                 const notes = [];
+                notes.push('PDF: ' + compressed.bytes.length.toLocaleString() + ' bytes' + (target ? ' (limit ' + target.toLocaleString() + ')' : '') + '.');
+                if (compressed.rasterized) notes.push('Compressed to page images at ' + compressed.dpi + ' DPI; searchable text and vector content were removed.');
                 if (redactedPages) notes.push(`${redactedPages} page${redactedPages === 1 ? ' was' : 's were'} flattened to images so blacked-out content is permanently removed; ${redactedPages === 1 ? 'it is' : 'they are'} no longer text-searchable.`);
                 if (rasterFonts.size) notes.push('Some text uses image export because its font data or styling cannot be embedded: '
                     + [...rasterFonts].join(', ') + '. Load the matching TTF/OTF for plain text to enable sharp vector export.');
@@ -2284,8 +2350,16 @@
                     h('div', { className: 'pdf-export-menu' },
                         h('label', null, 'Filename', h('input', { className: 'finput', 'aria-label': 'Export filename', value: name, onChange: event => setName(event.target.value) })),
                         h('label', null, 'Format', h('select', { className: 'fselect', 'aria-label': 'Export format', value: exportFormat, onChange: event => setExportFormat(event.target.value) },
-                            [['pdf', 'PDF document'], ['png', 'Current page PNG'], ['text', 'Extracted text TXT'], ['fields', 'Form values JSON']].map(([value, label]) => h('option', { value, key: value }, label)))),
-                        exportFormat === 'pdf' && h('label', null, 'Pages', h('input', { className: 'finput', 'aria-label': 'Export page range', placeholder: 'All pages or 1,3-5', value: range, onChange: event => setRange(event.target.value) })),
+                            [['pdf', 'PDF document'], ['png', 'PNG images'], ['jpg', 'JPG images'], ['jpeg', 'JPEG images'], ['webp', 'WebP images'], ['text', 'Extracted text TXT'], ['fields', 'Form values JSON']].map(([value, label]) => h('option', { value, key: value }, label)))),
+                        !['text', 'fields'].includes(exportFormat) && h(React.Fragment, null,
+                            h('label', null, 'Pages', h('input', { className: 'finput', 'aria-label': 'Export page range', placeholder: 'All pages or 1,3-5', value: range, onChange: event => setRange(event.target.value) })),
+                            h('label', null, exportFormat === 'pdf' ? 'Size limit' : 'Size limit per image',
+                                h('input', { type: 'number', min: 0, className: 'finput', 'aria-label': 'Export size limit', placeholder: 'No limit', value: exportLimit, onChange: event => setExportLimit(event.target.value) })),
+                            h('label', null, 'Unit', h('select', { className: 'fselect', 'aria-label': 'Export size unit', value: exportUnit, onChange: event => setExportUnit(event.target.value) },
+                                [['bytes', 'Bytes'], ['KB', 'KB'], ['MB', 'MB']].map(([value, label]) => h('option', { key: value, value }, label)))),
+                            h('span', { className: 'pdf-hint' }, exportFormat === 'pdf'
+                                ? 'Small limits may rasterize pages and remove searchable text.'
+                                : 'Multiple pages download as ZIP. Small limits may reduce image dimensions.')),
                         h('button', { className: 'btn primary', disabled: !!busy || !page || (exportFormat === 'text' && !text) || (exportFormat === 'fields' && !page.doc.fields.length),
                             onClick: exportSelection }, h(Icon, { name: 'Download', size: 18 }), 'Download')))),
             error && h('div', { className: 'pdf-error', role: 'alert' }, error, !ready && button('RefreshCw', 'Retry loading libraries', () => task('Loading PDF libraries...', async () => { await loadCore(); setReady(true); }))),
