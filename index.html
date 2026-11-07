@@ -3607,6 +3607,9 @@
     <script src="./image-editor.js"></script>
     <link rel="stylesheet" href="./file-sharing.css" />
     <script src="./file-sharing-worker.js"></script>
+    <link rel="stylesheet" href="./invite-qr.css" />
+    <script src="./vendor/qrcode.js"></script>
+    <script src="./invite-qr.js"></script>
     <script src="./file-sharing.js"></script>
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useRef, useCallback, useMemo } = React;
@@ -8870,12 +8873,7 @@
             const online = useOnline();
             const shareUrl = (() => {
                 if (!activeRoom) return '';
-                const url = new URL(location.href);
-                url.searchParams.set('room', activeRoom);
-                url.searchParams.set('syncServer', serverUrl);
-                if (collaborative) url.searchParams.set('collaborate', '1');
-                else url.searchParams.delete('collaborate');
-                return url.href;
+                return DailyInviteQr.boardInvite(activeRoom, serverUrl, collaborative ? 'collaborate' : 'device');
             })();
             const connected = peerStatus === 'connected';
             const connecting = peerStatus === 'connecting';
@@ -8955,6 +8953,7 @@
                                     Share URL: <a href={shareUrl} style={{ color: 'var(--blue)' }} target="_blank"
                                         rel="noopener">{shareUrl}</a></div>}
                                 <button className="btn" onClick={() => copyText(shareUrl)}>Copy invite link</button>
+                                <DailyInviteQr.Component value={shareUrl} />
                                 {collaborative && <div style={{ fontSize: 12 }}>
                                     {participants.map(person => <div key={person.id}>
                                         {person.name}{person.id === myPeerId ? ' (you)' : ''}{person.host ? ' - Host' : ''}
@@ -9027,11 +9026,7 @@
             disconnectRoom, addToast }) {
             const online = useOnline();
             const busy = ['preparing', 'applying'].includes(commitStatus?.phase);
-            const invite = new URL(location.href);
-            invite.searchParams.set('room', activeRoom);
-            invite.searchParams.set('syncServer', serverUrl);
-            invite.searchParams.set('deviceSync', '1');
-            invite.searchParams.delete('collaborate');
+            const invite = new URL(DailyInviteQr.boardInvite(activeRoom, serverUrl, 'device'));
             return <div className="overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
                 <div className="sync-modal" role="dialog" aria-modal="true" aria-label="Device Sync">
                     <h3>Device Sync - laptop & mobile</h3>
@@ -9057,6 +9052,7 @@
                             try { await navigator.clipboard.writeText(invite.href); addToast('Device sync invite copied', 'success'); }
                             catch { addToast('Copy unavailable. Select and copy the invite link manually.', 'error'); }
                         }}>Copy device sync invite</button>
+                        <DailyInviteQr.Component value={invite.href} />
                         <div role="status">{peerStatus === 'connected' ? `${peerCount} devices connected` : 'Connecting / offline'}; {conflicts.length} unresolved conflicts</div>
                         <p style={{ fontSize: 12 }}>Close this dialog to review the preview board. Use the conflict review button to agree on final values.</p>
                         <button className="btn primary" onClick={commitFinalBoard}
