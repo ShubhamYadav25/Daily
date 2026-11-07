@@ -72,6 +72,8 @@
 .pdf-signature-targets .ui-icon { position: absolute; top: -10px; right: -10px; padding: 2px; border-radius: 50%; background: #4f8ef7; color: #ffffff; }
 .pdf-signature-targets [data-status="invalid"] { border-color: var(--red); background: #f76f6f14; }
 .pdf-signature-targets [data-status="invalid"] .ui-icon { background: var(--red); }
+.pdf-signature-targets [data-status="unknown"] .ui-icon, .pdf-signature-targets [data-status="modified"] .ui-icon { background: var(--amber); }
+.pdf-signature-targets [data-status="valid"] .ui-icon { background: #238636; }
 .pdf-popover { position: relative; flex-shrink: 0; }
 .pdf-popover > summary { list-style: none; display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 6px; border-radius: 5px; color: var(--text2); cursor: pointer; }
 .pdf-popover > summary::-webkit-details-marker { display: none; }
@@ -102,9 +104,11 @@
 .pdf-signature-card dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; color: var(--text2); }
 .pdf-signature-card dd { color: var(--text); overflow-wrap: anywhere; }
 .pdf-status-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; background: var(--bg3); color: var(--text2); }
-.pdf-status-chip[data-status="valid"] { background: var(--blue-dim); color: var(--blue); }
+.pdf-status-chip[data-status="valid"] { background: #23863622; color: #238636; }
 .pdf-status-chip[data-status="invalid"] { background: var(--red-dim); color: var(--red); }
-.pdf-status-chip[data-status="modified"], .pdf-status-chip[data-status="unsupported"] { background: #f7c35a22; color: var(--amber); }
+.pdf-status-chip[data-status="modified"], .pdf-status-chip[data-status="unsupported"], .pdf-status-chip[data-status="unknown"] { background: #f7c35a22; color: var(--amber); }
+.pdf-fingerprint { overflow-wrap: anywhere; font-size: 11px; }
+.pdf-unlock-backdrop { z-index: 50; }
 .pdf-caution, .pdf-font-source { color: var(--amber); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .pdf-font-source { color: var(--text3); }
 .pdf-inspector { overflow-y: auto; border-left: 1px solid var(--border); background: var(--bg2); min-width: 0; }

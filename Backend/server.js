@@ -10,9 +10,10 @@ function createSyncServer() {
     const server = http.createServer((request, response) => {
         const pathname = new URL(request.url, 'http://localhost').pathname;
         const assets = { '/': 'index.html', '/index.html': 'index.html', '/sync-engine.js': 'sync-engine.js',
+            '/pdf-editor.js': 'pdf-editor.js', '/pdf-editor.css': 'pdf-editor.css', '/pdf-unlock-worker.js': 'pdf-unlock-worker.js',
             '/daily-icon.png': 'daily-icon.png' };
         if (assets[pathname] && request.method === 'GET') {
-            const type = pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.png') ? 'image/png' : 'text/html';
+            const type = pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.css') ? 'text/css' : pathname.endsWith('.png') ? 'image/png' : 'text/html';
             fs.readFile(path.join(__dirname, '..', assets[pathname]), (error, data) => {
                 response.writeHead(error ? 500 : 200, { 'Content-Type': error ? 'text/plain' : type });
                 response.end(error ? 'Unable to load Daily app' : type === 'text/html'

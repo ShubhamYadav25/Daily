@@ -2,6 +2,25 @@
     'use strict';
 
     const dependencies = {};
+    const editorScriptUrl = typeof document === 'undefined' ? '' : document.currentScript?.src;
+    function unlockPdf(bytes, password) {
+        return new Promise((resolve, reject) => {
+            const workerUrl = new URL('pdf-unlock-worker.js', editorScriptUrl || window.location.href);
+            if (!['http:', 'https:'].includes(workerUrl.protocol)) {
+                reject(new Error('Open Daily through an HTTP(S) web server to unlock PDFs.'));
+                return;
+            }
+            const worker = new Worker(workerUrl, { type: 'module' });
+            const timeout = setTimeout(() => finish(new Error('PDF unlocking timed out. Retry with a smaller document.')), 120000);
+            function finish(error, result) {
+                clearTimeout(timeout); worker.terminate();
+                if (error) reject(error); else resolve(result);
+            }
+            worker.onerror = () => finish(new Error('Could not start the PDF unlock worker. Open Daily through a web server and retry.'));
+            worker.onmessage = ({ data }) => finish(data.error ? new Error(data.error) : null, data);
+            worker.postMessage({ bytes: bytes.slice(), password });
+        });
+    }
     function loadScript(name, url) {
         if (window[name]) return Promise.resolve(window[name]);
         if (!dependencies[name]) dependencies[name] = new Promise((resolve, reject) => {
@@ -179,7 +198,59 @@
         return value('2.5.4.3') || value('2.5.4.10') || names.typesAndValues.map(item => item.value.valueBlock.value).join(', ');
     }
 
-    async function verifySignature(bytes, entry) {
+    function signatureOutcome(result) {
+        if (!result.integrity) return { status: 'invalid', message: 'The signature does not match the signed content.' };
+        if (!result.coversWholeFile) return { status: 'modified', message: 'The signed revision is intact, but changes were added after signing.' };
+        if (result.certificateValidAtSigning === false) return { status: 'invalid', message: 'The claimed signing date is outside the signer certificate validity period.' };
+        if (result.revoked) return { status: 'invalid', message: 'A certificate in the signing chain has been revoked.' };
+        if (!result.chainTrusted) return { status: 'unknown', message: 'Signed bytes are intact. Signer identity is not trusted: ' + result.chainMessage };
+        if (!result.revocationChecked) return { status: 'unknown', message: 'Signed bytes and certificate trust passed, but revocation could not be confirmed: ' + result.revocationMessage };
+        return { status: 'valid', message: 'Signature, whole-file coverage, certificate trust and revocation checks passed.' };
+    }
+
+    async function readTrustFile(file, kind) {
+        const pki = await loadPki();
+        const raw = new Uint8Array(await file.arrayBuffer());
+        const text = new TextDecoder().decode(raw);
+        const label = kind === 'crl' ? 'X509 CRL' : 'CERTIFICATE';
+        const blocks = [...text.matchAll(new RegExp('-----BEGIN ' + label + '-----([\\s\\S]*?)-----END ' + label + '-----', 'g'))];
+        const buffers = blocks.length ? blocks.map(match => Uint8Array.from(atob(match[1].replace(/\s/g, '')), char => char.charCodeAt(0))) : [raw];
+        return Promise.all(buffers.map(async bytes => {
+            const value = kind === 'crl' ? pki.CertificateRevocationList.fromBER(bytes.slice().buffer) : pki.Certificate.fromBER(bytes.slice().buffer);
+            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+            return { value, fingerprint: Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join(':'),
+                name: distinguishedName(kind === 'crl' ? value.issuer : value.subject) };
+        }));
+    }
+
+    async function verifyCertificateTrust(pki, signed, certificate, trust) {
+        if (!certificate) return { chainTrusted: false, chainMessage: 'Signer certificate is missing.', revocationChecked: false };
+        if (!trust.certificates.length) return { chainTrusted: false, chainMessage: 'No independently trusted certificates have been imported.', revocationChecked: false };
+        const certs = (signed.certificates || []).filter(item => item instanceof pki.Certificate && item !== certificate).concat(certificate);
+        const now = new Date();
+        const makeEngine = crls => new pki.CertificateChainValidationEngine({
+            trustedCerts: trust.certificates.map(item => item.value), certs,
+            crls, checkDate: now
+        });
+        const chain = await makeEngine([]).verify({ passedWhenNotRevValues: true });
+        if (!chain.result) return { chainTrusted: false, chainMessage: chain.resultMessage, revocationChecked: false };
+        // Directly trusting the signer does not prove that its certificate was not revoked.
+        if (!trust.crls.length || !chain.certificatePath || chain.certificatePath.length < 2) {
+            return { chainTrusted: true, chainMessage: 'Certificate chain reaches a manually trusted certificate.',
+                revocationChecked: false, revocationMessage: 'Import current issuer CRLs and trust an issuer/root rather than the signer.' };
+        }
+        const currentCrls = trust.crls.map(item => item.value).filter(crl => crl.thisUpdate.value <= now
+            && crl.nextUpdate?.value > now
+            && !(crl.crlExtensions?.extensions || []).some(extension => ['2.5.29.27', '2.5.29.28'].includes(extension.extnID)));
+        if (!currentCrls.length) return { chainTrusted: true, chainMessage: 'Certificate chain reaches a manually trusted certificate.',
+            revocationChecked: false, revocationMessage: 'No current, complete issuer CRLs with a next-update date were imported.' };
+        const revocation = await makeEngine(currentCrls).verify({ passedWhenNotRevValues: false });
+        return { chainTrusted: true, chainMessage: 'Certificate chain reaches a manually trusted certificate.',
+            revocationChecked: revocation.result, revoked: revocation.resultCode === 12, revocationMessage: revocation.resultMessage,
+            certificateChain: chain.certificatePath.map(item => distinguishedName(item.subject)) };
+    }
+
+    async function verifySignature(bytes, entry, trust = { certificates: [], crls: [] }) {
         const dictionary = entry.field.acroField.dict.lookupMaybe(PDFLib.PDFName.of('V'), PDFLib.PDFDict);
         if (!dictionary) return { name: entry.name, status: 'unsigned', message: 'This signature field has not been signed.' };
         const read = key => {
@@ -189,13 +260,19 @@
         const subFilter = read('SubFilter') || '';
         const details = { name: entry.name, subFilter, reason: read('Reason'), location: read('Location'),
             claimedSigner: read('Name'), signedAt: pdfDate(read('M')) };
-        const range = dictionary.lookupMaybe(PDFLib.PDFName.of('ByteRange'), PDFLib.PDFArray)?.asArray().map(item => item.asNumber());
+        const range = dictionary.lookupMaybe(PDFLib.PDFName.of('ByteRange'), PDFLib.PDFArray)?.asArray().map(item => item.asNumber?.());
         const contents = dictionary.lookup(PDFLib.PDFName.of('Contents'));
         if (!range || range.length !== 4 || !contents?.asBytes) return { ...details, status: 'invalid', message: 'The signature has no valid byte range or contents.' };
         const [first, firstLength, second, secondLength] = range;
-        if (first !== 0 || firstLength < 1 || second <= firstLength || second + secondLength > bytes.length
+        if (!range.every(Number.isSafeInteger) || secondLength < 0 || first !== 0 || firstLength < 1 || second <= firstLength || second + secondLength > bytes.length
             || bytes[firstLength] !== 0x3c || bytes[second - 1] !== 0x3e) {
             return { ...details, status: 'invalid', message: 'The signed byte range does not match the signature contents in this file.' };
+        }
+        const excluded = new TextDecoder().decode(bytes.subarray(firstLength + 1, second - 1)).replace(/\s/g, '');
+        const stored = contents.asBytes();
+        if (!/^[0-9a-f]*$/i.test(excluded) || excluded.length !== stored.length * 2
+            || stored.some((value, index) => value !== parseInt(excluded.slice(index * 2, index * 2 + 2), 16))) {
+            return { ...details, status: 'invalid', message: 'The excluded byte range is not exactly this signature contents value.' };
         }
         if (!/^(adbe\.pkcs7\.(detached|sha1)|ETSI\.CAdES\.detached)$/.test(subFilter)) {
             return { ...details, status: 'unsupported', message: 'Signature format ' + (subFilter || 'unknown') + ' cannot be verified here.' };
@@ -235,11 +312,11 @@
             validFrom: certificate?.notBefore.value, validTo: certificate?.notAfter.value,
             certificateValidAtSigning: certificate && at ? at >= certificate.notBefore.value && at <= certificate.notAfter.value : undefined,
             timestamp: !!signerInfo.unsignedAttrs?.attributes.some(item => item.type === '1.2.840.113549.1.9.16.2.14'),
+            integrity: !!verification.signatureVerified,
             coversWholeFile: second + secondLength === bytes.length };
         if (!verification.signatureVerified) return { ...result, status: 'invalid', message: verification.message || 'The signature does not match the signed content. The document was altered or the signature is corrupt.' };
-        return { ...result, status: result.coversWholeFile ? 'valid' : 'modified',
-            message: result.coversWholeFile ? 'The document has not been changed since it was signed.'
-                : 'The signed revision is intact, but the file contains changes added after this signature.' };
+        const trustResult = await verifyCertificateTrust(pki, signed, certificate, trust);
+        return { ...result, ...trustResult, ...signatureOutcome({ ...result, ...trustResult }) };
     }
 
     function pagePlacement(width, height, rotation) {
@@ -1053,7 +1130,7 @@
     }
 
     window.DailyPdfTools = { exportSize, compressPdf, pagePlacement, parsePages, pdfFields, filledDocument, sourceFontStyle, sourceTextFont, recoverSourceFont, embeddedFontBytes, drawAnnotationText,
-        groupTextTargets, applyListMarkers, indentLines, signatureFields, verifySignature, FONT_CHOICES, markdownBlocks, layoutMarkdown, pageMarkdown, pageImages,
+        groupTextTargets, applyListMarkers, indentLines, signatureFields, verifySignature, signatureOutcome, verifyCertificateTrust, readTrustFile, unlockPdf, FONT_CHOICES, markdownBlocks, layoutMarkdown, pageMarkdown, pageImages,
         layoutSource, parseLayoutSource, layoutEdits, textPatchColors, replacementObjects };
 
     window.DailyPdfEditor = function PdfEditor({ Panel, Icon, MdEditor, onClose }) {
@@ -1107,6 +1184,13 @@
         const [activeSignature, setActiveSignature] = useState('');
         const [pageViewport, setPageViewport] = useState(null);
         const [mergeFiles, setMergeFiles] = useState(null);
+        const [lockedPdf, setLockedPdf] = useState(null);
+        const [pdfPassword, setPdfPassword] = useState('');
+        const unlockRequest = useRef(null);
+        const unlockRunning = useRef(false);
+        const [trust, setTrust] = useState({ certificates: [], crls: [] });
+        const trustCertificateInput = useRef();
+        const trustCrlInput = useRef();
         const [markdown, setMarkdown] = useState(null);
         const [markdownPreview, setMarkdownPreview] = useState([]);
         const [markdownError, setMarkdownError] = useState('');
@@ -1156,6 +1240,7 @@
             task('Loading PDF libraries...', async () => { await loadCore(); if (alive.current) setReady(true); });
             return () => {
                 alive.current = false;
+                unlockRequest.current?.(null); unlockRequest.current = null;
                 docs.current.forEach(doc => { doc.render.destroy(); doc.fonts.forEach(font => {
                     if (font.face) document.fonts.delete(font.face);
                     if (font.localFace) document.fonts.delete(font.localFace);
@@ -1524,12 +1609,23 @@
         }, [mode, highlightColor, busy, textTargets, textScope, renderRevision]);
 
         async function prepareDocument(file) {
-            const bytes = new Uint8Array(await file.arrayBuffer());
-            const pdf = await PDFLib.PDFDocument.load(bytes);
+            const originalBytes = new Uint8Array(await file.arrayBuffer());
+            let bytes = originalBytes;
+            // pdf-lib's browser bundle does not preserve EncryptedPDFError's prototype.
+            let pdf = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+            if (pdf.isEncrypted) {
+                const unlocked = await new Promise(resolve => {
+                    unlockRequest.current = resolve; setPdfPassword(''); setLockedPdf({ file, bytes });
+                });
+                if (!unlocked) throw new Error('PDF unlock cancelled. No pages were imported.');
+                if (unlocked.action === 'save') return null;
+                bytes = unlocked.bytes;
+                pdf = await PDFLib.PDFDocument.load(bytes);
+            }
             const render = await pdfjsLib.getDocument({ data: bytes.slice(), fontExtraProperties: true }).promise;
             try {
                 const fields = pdfFields(pdf);
-                return { id: crypto.randomUUID(), bytes, pdf, render, name: file.name, fields, fonts: new Map(),
+                return { id: crypto.randomUUID(), bytes, originalBytes, pdf, render, name: file.name, fields, fonts: new Map(),
                     signatures: signatureFields(pdf),
                     formValues: Object.fromEntries(fields.map(field => [field.name, field.value])) };
             } catch (failure) { await render.destroy(); throw failure; }
@@ -1545,6 +1641,7 @@
                         let doc;
                         try { doc = await prepareDocument(file); }
                         catch (failure) { throw new Error(file.name + ': ' + (failure.message || String(failure))); }
+                        if (!doc) continue;
                         prepared.push(doc);
                         doc.pdf.getPages().forEach((source, index) => added.push({ id: crypto.randomUUID(), doc, number: index + 1,
                             rotation: source.getRotation().angle, overlay: { objects: [] } }));
@@ -1555,9 +1652,46 @@
                 }
                 if (!alive.current) { prepared.forEach(doc => doc.render.destroy()); return; }
                 docs.current.push(...prepared);
-                if (!pages.length && files[0]) { setName(files[0].name.replace(/\.pdf$/i, '')); setTitle(files[0].name.replace(/\.pdf$/i, '')); }
+                if (!added.length) { if (merging) setMergeFiles(null); return; }
+                if (!pages.length && prepared[0]) { setName(prepared[0].name.replace(/\.pdf$/i, '')); setTitle(prepared[0].name.replace(/\.pdf$/i, '')); }
                 setPages(previous => previous.concat(added)); setDirty(true);
+                if (prepared.some(doc => doc.signatures.some(item => item.signed))) setInspectorTab('verify');
                 if (merging) setMergeFiles(null);
+            });
+        }
+
+        async function completeUnlock(action) {
+            if (unlockRunning.current) return;
+            unlockRunning.current = true;
+            activeTasks.current++; setBusy('Unlocking PDF...'); setError('');
+            try {
+                const result = await unlockPdf(lockedPdf.bytes, pdfPassword);
+                if (!alive.current) return;
+                await PDFLib.PDFDocument.load(result.bytes);
+                if (action === 'save') download(result.bytes, lockedPdf.file.name.replace(/\.pdf$/i, '') + '-unlocked.pdf');
+                setExportNote('Unlocked locally. Rewriting a PDF invalidates its original digital signatures. Verify uses the original file, not the unlocked copy.'
+                    + (result.warnings.length ? ' Decryption warnings: ' + result.warnings.join(' ') : ''));
+                const resolve = unlockRequest.current; unlockRequest.current = null;
+                setPdfPassword(''); setLockedPdf(null); resolve?.({ bytes: result.bytes, action });
+            } catch (failure) { if (alive.current) setError(failure.message || String(failure)); }
+            finally {
+                unlockRunning.current = false;
+                activeTasks.current--;
+                if (alive.current && unlockRequest.current) setBusy('Waiting for PDF password...');
+                else if (alive.current && activeTasks.current === 0) setBusy('');
+            }
+        }
+
+        async function importTrustFiles(files, kind) {
+            await task('Reading verification certificates...', async () => {
+                const entries = [];
+                for (const file of files) entries.push(...await readTrustFile(file, kind));
+                if (kind === 'certificate' && !window.confirm('Trust these certificates for this editor session?\n'
+                    + entries.map(item => item.name + '\nSHA-256: ' + item.fingerprint).join('\n\n')
+                    + '\n\nCompare fingerprints with an independent official source (for Indian documents, CCA). Never trust a certificate only because it is embedded in a PDF.')) return;
+                const key = kind === 'crl' ? 'crls' : 'certificates';
+                setTrust(previous => ({ ...previous, [key]: [...previous[key], ...entries].filter((item, index, all) => all.findIndex(other => other.fingerprint === item.fingerprint) === index) }));
+                setSignatureResults({});
             });
         }
 
@@ -1601,9 +1735,9 @@
         }, [markdownPreview, markdownPreviewPage, !!markdown]);
 
         useEffect(() => {
-            if (mergeFiles === null && !markdown) return;
+            if (mergeFiles === null && !markdown && !lockedPdf) return;
             const previous = document.activeElement;
-            const dialog = editorRef.current?.querySelector('.pdf-dialog');
+            const dialog = editorRef.current?.querySelector(lockedPdf ? '.pdf-unlock-dialog' : '.pdf-dialog');
             const controls = () => Array.from(dialog?.querySelectorAll('button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled)') || []);
             (dialog?.querySelector('textarea') || controls()[0])?.focus();
             function trap(event) {
@@ -1614,7 +1748,7 @@
             }
             dialog?.addEventListener('keydown', trap);
             return () => { dialog?.removeEventListener('keydown', trap); if (previous?.isConnected) previous.focus(); };
-        }, [mergeFiles !== null, !!markdown]);
+        }, [mergeFiles !== null, !!markdown, !!lockedPdf]);
 
         function openMarkdown() {
             setMarkdownPreview([]); setMarkdownError(''); setError('');
@@ -2011,9 +2145,12 @@
         async function verifyDocumentSignature(signature) {
             const key = page.doc.id + ':' + signature.name;
             setActiveSignature(key); setInspectorTab('verify');
+            setSignatureResults(previous => {
+                const next = { ...previous }; delete next[key]; return next;
+            });
             await task('Verifying signature...', async () => {
-                const result = await verifySignature(page.doc.bytes, signature);
-                setSignatureResults(previous => ({ ...previous, [key]: result }));
+                const result = await verifySignature(page.doc.originalBytes || page.doc.bytes, signature, trust);
+                setSignatureResults(previous => ({ ...previous, [key]: { ...result, checkedAt: new Date() } }));
             });
         }
 
@@ -2499,7 +2636,7 @@
                                             title: (signature.signed ? 'Click to verify signature: ' : 'Unsigned signature field: ') + signature.name,
                                             'aria-label': 'Verify signature ' + signature.name, onClick: () => verifyDocumentSignature(signature),
                                             style: { left: bounds[0], top: bounds[1], width: bounds[2] - bounds[0], height: bounds[3] - bounds[1] } },
-                                            h(Icon, { name: status === 'invalid' ? 'ShieldAlert' : 'ShieldCheck', size: 14 }));
+                                            h(Icon, { name: status === 'valid' ? 'ShieldCheck' : 'ShieldAlert', size: 14 }));
                                     })))))),
                 h('aside', { className: 'pdf-inspector' },
                     h('div', { className: 'pdf-inspector-tabs', role: 'tablist', 'aria-label': 'PDF properties' },
@@ -2647,6 +2784,17 @@
                                 setFieldRevision(version => version + 1); setDirty(true);
                             }))),
                     inspectorTab === 'verify' && h('div', { className: 'pdf-format-panel' },
+                        h('strong', null, 'Certificate trust (this session only)'),
+                        h('p', { className: 'pdf-hint' }, 'Import certificates from an independent official source, not from an unverified document. CCA roots are not automatically trusted. Validation uses current time; signing dates and embedded timestamps are not trusted time evidence.'),
+                        h('button', { className: 'btn', disabled: !!busy, onClick: () => trustCertificateInput.current.click() }, 'Import trusted certificates'),
+                        h('button', { className: 'btn', disabled: !!busy, onClick: () => trustCrlInput.current.click() }, 'Import issuer CRLs'),
+                        h('span', { className: 'pdf-hint' }, `${trust.certificates.length} trusted certificate(s); ${trust.crls.length} revocation list(s)`),
+                        trust.certificates.map(item => h('details', { key: item.fingerprint },
+                            h('summary', null, item.name), h('p', { className: 'pdf-fingerprint' }, 'SHA-256: ' + item.fingerprint))),
+                        h('button', { className: 'btn', disabled: !!busy || (!trust.certificates.length && !trust.crls.length), onClick: () => {
+                            setTrust({ certificates: [], crls: [] }); setSignatureResults({});
+                        } }, 'Clear trust settings'),
+                        page && h('button', { className: 'btn', disabled: !!busy, onClick: () => download(page.doc.originalBytes || page.doc.bytes, page.doc.name) }, 'Save original signed source'),
                         !page ? h('p', { className: 'pdf-hint' }, 'Open a PDF to verify its digital signatures.')
                             : !page.doc.signatures.length ? h('p', { className: 'pdf-hint' }, 'No digital signature fields were found. Drawn or image signatures cannot be cryptographically verified.')
                                 : h(React.Fragment, null,
@@ -2656,13 +2804,20 @@
                                     page.doc.signatures.map(signature => {
                                         const key = page.doc.id + ':' + signature.name, result = signatureResults[key];
                                         const status = result?.status || (signature.signed ? 'pending' : 'unsigned');
-                                        const labels = { valid: 'Valid', invalid: 'Invalid', modified: 'Changed after signing', unsupported: 'Unsupported', unsigned: 'Unsigned', pending: 'Not verified' };
+                                        const labels = { valid: 'Valid', unknown: 'Validity unknown', invalid: 'Invalid', modified: 'Changed after signing', unsupported: 'Unsupported', unsigned: 'Unsigned', pending: 'Not verified' };
                                         const pagesLabel = [...new Set(signature.widgets.map(widget => widget.pageIndex + 1).filter(number => number > 0))].join(', ');
                                         const rows = result ? [
                                             ['Signed by', result.signer || result.claimedSigner], ['Issued by', result.issuer && result.issuer + (result.selfSigned ? ' (self-signed)' : '')],
-                                            ['Signed on', result.signedAt?.toLocaleString()],
-                                            ['Certificate', result.certificateValidAtSigning === undefined ? undefined : result.certificateValidAtSigning ? 'Valid at signing time' : 'Not valid at signing time'],
-                                            ['Timestamp', result.signer ? (result.timestamp ? 'Embedded timestamp present' : 'No trusted timestamp') : undefined],
+                                            ['Claimed signed on', result.signedAt?.toLocaleString()],
+                                            ['Checked on', result.checkedAt?.toLocaleString()],
+                                            ['Certificate valid from', result.validFrom?.toLocaleString()], ['Certificate valid until', result.validTo?.toLocaleString()],
+                                            ['Certificate', result.certificateValidAtSigning === undefined ? undefined : result.certificateValidAtSigning ? 'Valid at claimed signing time' : 'Not valid at claimed signing time'],
+                                            ['Integrity', result.integrity === undefined ? undefined : result.integrity ? 'Signed bytes match' : 'Failed'],
+                                            ['Whole document', result.coversWholeFile === undefined ? undefined : result.coversWholeFile ? 'Covered by signature' : 'Later changes present'],
+                                            ['Trust chain', result.chainMessage],
+                                            ['Revocation', result.integrity ? result.revocationChecked ? 'Passed using imported issuer CRLs' : result.revocationMessage || 'Not checked' : undefined],
+                                            ['Chain', result.certificateChain?.join(' -> ')],
+                                            ['Timestamp', result.signer ? (result.timestamp ? 'Embedded timestamp present (not validated)' : 'No trusted timestamp') : undefined],
                                             ['Reason', result.reason], ['Location', result.location]
                                         ].filter(row => row[1]) : [];
                                         return h('div', { key, className: 'pdf-signature-card', 'data-active': activeSignature === key },
@@ -2673,7 +2828,7 @@
                                             h('button', { className: 'btn', type: 'button', disabled: !!busy || !signature.signed, onClick: () => verifyDocumentSignature(signature) },
                                                 h(Icon, { name: 'ShieldCheck', size: 16 }), result ? 'Verify again' : 'Verify'));
                                     }),
-                                    h('p', { className: 'pdf-hint' }, 'Checks that the signed bytes match the signature and signer certificate. Signer identity is not checked against a trusted certificate authority list, and revocation is not checked. Files exported from this editor do not keep valid digital signatures.'))),
+                                    h('p', { className: 'pdf-hint' }, 'Results apply only to the original source file, not editor changes or unlocked/exported copies. Missing trust, expired certificates or unavailable/currently unusable CRLs leave validity unknown. No network revocation requests or document uploads are made. This is not automatic CCA/AATL validation.'))),
                     inspectorTab === 'document' && h('div', { className: 'pdf-format-panel' },
                         h('label', null, 'PDF title', h('input', { className: 'finput', 'aria-label': 'PDF title', value: title, onChange: event => { setTitle(event.target.value); setDirty(true); } })),
                         h('label', null, 'Author', h('input', { className: 'finput', value: author, onChange: event => { setAuthor(event.target.value); setDirty(true); } }))),
@@ -2731,6 +2886,25 @@
                         } }, 'Cancel'),
                         h('button', { className: 'btn primary', disabled: !!busy || !markdownPreview.length || !!markdownError,
                             onClick: applyMarkdown }, markdown.replacing ? 'Apply to page' : 'Add pages')))),
+            lockedPdf && h('div', { className: 'pdf-dialog-backdrop pdf-unlock-backdrop' },
+                h('section', { className: 'pdf-dialog pdf-unlock-dialog', role: 'dialog', 'aria-modal': true, 'aria-label': 'Unlock PDF' },
+                    h('h2', null, 'Unlock PDF'),
+                    h('p', null, lockedPdf.file.name),
+                    h('p', { className: 'pdf-hint' }, 'Enter the correct PDF password. Files and passwords stay on this device. Unlocking rewrites the file and invalidates original digital signatures; verification will use the original source. Only unlock documents you are authorised to access.'),
+                    error && h('p', { className: 'pdf-error', role: 'alert' }, error),
+                    h('label', null, 'PDF password', h('input', { type: 'password', className: 'finput', autoFocus: true, autoComplete: 'off',
+                        'aria-label': 'PDF password', value: pdfPassword, disabled: busy === 'Unlocking PDF...',
+                        onChange: event => setPdfPassword(event.target.value), onKeyDown: event => {
+                            if (event.key === 'Enter' && busy !== 'Unlocking PDF...') { event.preventDefault(); completeUnlock('open'); }
+                        } })),
+                    h('p', { className: 'pdf-hint' }, 'For permission-only locks, try an empty password. Unlock and save downloads this file only, without importing pages or applying editor changes.'),
+                    h('div', { className: 'pdf-dialog-actions' },
+                        h('button', { className: 'btn', disabled: busy === 'Unlocking PDF...', onClick: () => {
+                            const resolve = unlockRequest.current; unlockRequest.current = null;
+                            setPdfPassword(''); setLockedPdf(null); resolve?.(null);
+                        } }, 'Cancel'),
+                        h('button', { className: 'btn', disabled: busy === 'Unlocking PDF...', onClick: () => completeUnlock('save') }, 'Unlock and save'),
+                        h('button', { className: 'btn primary', disabled: busy === 'Unlocking PDF...', onClick: () => completeUnlock('open') }, 'Unlock and open')))),
             signature && h('div', { className: 'pdf-signature', role: 'dialog', 'aria-label': 'Draw signature' },
                 h('div', { ref: stageHost, className: 'pdf-signature-stage' }),
                 button('Eraser', 'Clear signature', () => signatureStage.current?.getLayers()[0].destroyChildren()),
@@ -2740,6 +2914,12 @@
                     setSignature(false);
                 }), button('X', 'Cancel signature', () => setSignature(false))),
             h('input', { ref: fileInput, type: 'file', accept: '.pdf,application/pdf', multiple: true, hidden: true, onChange: event => { importFiles(Array.from(event.target.files)); event.target.value = ''; } }),
+            h('input', { ref: trustCertificateInput, type: 'file', accept: '.cer,.crt,.der,.pem', multiple: true, hidden: true, onChange: event => {
+                const files = Array.from(event.target.files); event.target.value = ''; importTrustFiles(files, 'certificate');
+            } }),
+            h('input', { ref: trustCrlInput, type: 'file', accept: '.crl,.pem,.der', multiple: true, hidden: true, onChange: event => {
+                const files = Array.from(event.target.files); event.target.value = ''; importTrustFiles(files, 'crl');
+            } }),
             h('input', { ref: mergeInput, type: 'file', accept: '.pdf,application/pdf', multiple: true, hidden: true, onChange: event => {
                 const files = Array.from(event.target.files); event.target.value = '';
                 setMergeFiles(previous => [...(previous || []), ...files]);
