@@ -1,0 +1,39 @@
+.file-sharing-content { flex: 1; min-height: 0; overflow: auto; padding: 18px; color: var(--text); font: inherit; }
+.file-sharing-content * { box-sizing: border-box; }
+.file-sharing-content .fs-intro { padding: 0 2px 12px; }
+.file-sharing-content h2 { margin: 0 0 6px; font-size: 18px; }
+.file-sharing-content h3 { margin: 0 0 14px; font-size: 14px; font-weight: 700; }
+.file-sharing-content p { line-height: 1.6; font-size: 12px; color: var(--text2); }
+.file-sharing-content section { padding: 16px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg2); }
+.file-sharing-content label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); }
+.file-sharing-content .finput { display: block; width: 100%; margin: 7px 0 12px; }
+.file-sharing-content .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.file-sharing-content .hint { font-size: 11px; color: var(--text3); }
+.file-sharing-content .fs-settings { margin-top: 14px; color: var(--text3); font-size: 11px; }
+.file-sharing-content .fs-settings summary { cursor: pointer; margin-bottom: 10px; }
+.file-sharing-content .fs-status { color: var(--text); padding: 10px 12px; background: var(--bg3); border-radius: 8px; }
+.file-sharing-content .drop { text-align: center; padding: 24px 12px; border: 2px dashed var(--border); border-radius: 10px; background: var(--bg3); cursor: pointer; }
+.file-sharing-content .drop.over { border-color: var(--blue); }
+.file-sharing-content input[type=file] { display: block; max-width: 100%; margin: 12px auto 0; font: inherit; }
+.file-sharing-content .peers { display: flex; flex-wrap: wrap; gap: 8px; }
+.file-sharing-content .peer { border: 1px solid var(--border); padding: 6px 10px; border-radius: 20px; font-size: 11px; background: var(--bg3); }
+.file-sharing-content .transfer { border-top: 1px solid var(--border); padding: 16px 0 4px; overflow-wrap: anywhere; }
+.file-sharing-content .transfer h3 { font-size: 13px; margin-bottom: 6px; color: var(--text); }
+.file-sharing-content .transfer p { margin: 8px 0; }
+.file-sharing-content progress { width: 100%; height: 8px; accent-color: var(--blue); }
+.file-sharing-content .prepared-download { color: var(--blue); font-size: 12px; padding: 8px; }
+.file-sharing-content .fs-error { position: sticky; bottom: 0; padding: 12px; background: var(--red-dim); color: var(--red); border: 1px solid var(--red); border-radius: 10px; }
+.file-sharing-content .fs-error[hidden] { display: none; }
+.file-sharing-standalone { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; color-scheme: dark; --bg: #0d0e10; --bg2: #141518; --bg3: #1c1e22; --border: #2a2c31; --text: #e8e8ec; --text2: #a1a1ab; --text3: #73737e; --blue: #7c9cfa; --red: #f76f6f; --red-dim: #352025; }
+.file-sharing-standalone main { max-width: 920px; margin: auto; }
+.file-sharing-standalone header { padding: 18px 20px 0; display: flex; justify-content: space-between; gap: 12px; }
+.file-sharing-standalone header a { color: var(--text); font-weight: 700; text-decoration: none; }
+.file-sharing-standalone .btn { border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--text); background: var(--bg3); font: inherit; font-size: 12px; cursor: pointer; }
+.file-sharing-standalone .btn.primary { color: var(--bg); background: var(--blue); }
+.file-sharing-standalone .btn:disabled { opacity: .5; cursor: not-allowed; }
+.file-sharing-standalone .finput { border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--bg); color: var(--text); font: inherit; }
+.file-sharing-content :is(button, input, summary, a):focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+@media (max-width: 600px) { .file-sharing-content { padding: 12px; } .file-sharing-content section { padding: 12px; } }
+@media (prefers-color-scheme: light) {
+    .file-sharing-standalone { color-scheme: light; --bg: #f5f5f8; --bg2: #fff; --bg3: #eeeef3; --border: #dcdce2; --text: #252530; --text2: #5d5d70; --text3: #76768a; --blue: #4266d5; --red: #ba3434; --red-dim: #fff0ee; }
+}

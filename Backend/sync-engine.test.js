@@ -48,6 +48,22 @@ const empty = () => ({ cols: [], cards: {}, scratch: '' });
 const snapshot = content => ({ cols: [{ id: 'TODO', label: 'Todo' }], cards: { TODO: [{ id: 'card-a', task: 'Card A', content }] }, scratch: '' });
 const peer = actor => createEngine({ actor, diffChars });
 const contentOf = engine => engine.materialize().cards.TODO[0].content;
+
+test('PDF editor and module unlock worker are served with executable MIME types', async context => {
+    const relay = await deviceRoom(context);
+    const origin = `http://127.0.0.1:${relay.server.address().port}`;
+    for (const [asset, type, text] of [
+        ['/pdf-editor.js', 'text/javascript', 'DailyPdfTools'],
+        ['/pdf-editor.css', 'text/css', '.pdf-window'],
+        ['/pdf-unlock-worker.js', 'text/javascript', 'qpdf.decrypt']
+    ]) {
+        const response = await fetch(origin + asset);
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get('content-type'), type);
+        assert.ok((await response.text()).includes(text));
+    }
+});
+
 function paired(content = 'abc') {
     const desktop = peer('desktop');
     const mobile = peer('mobile');

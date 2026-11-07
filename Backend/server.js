@@ -5,14 +5,26 @@ const path = require('path');
 const { mergeRecords, validRecords, recordsEqual, createEngine } = require('../sync-engine');
 const { diffChars } = require('diff');
 const { randomUUID } = require('crypto');
+const { createFileSharing, iceConfiguration } = require('./file-sharing');
 
 function createSyncServer() {
+    const fileSharing = createFileSharing();
     const server = http.createServer((request, response) => {
         const pathname = new URL(request.url, 'http://localhost').pathname;
+        if (pathname === '/file-sharing-config' && request.method === 'GET') {
+            response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store',
+                'Access-Control-Allow-Origin': '*' });
+            response.end(JSON.stringify(iceConfiguration()));
+            return;
+        }
         const assets = { '/': 'index.html', '/index.html': 'index.html', '/sync-engine.js': 'sync-engine.js',
+            '/pdf-editor.js': 'pdf-editor.js', '/pdf-editor.css': 'pdf-editor.css', '/pdf-unlock-worker.js': 'pdf-unlock-worker.js',
+            '/image-editor.js': 'image-editor.js', '/image-editor.css': 'image-editor.css',
+            '/file-sharing.html': 'file-sharing.html', '/file-sharing.js': 'file-sharing.js',
+            '/file-sharing-worker.js': 'file-sharing-worker.js', '/file-sharing.css': 'file-sharing.css',
             '/daily-icon.png': 'daily-icon.png' };
         if (assets[pathname] && request.method === 'GET') {
-            const type = pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.png') ? 'image/png' : 'text/html';
+            const type = pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.css') ? 'text/css' : pathname.endsWith('.png') ? 'image/png' : 'text/html';
             fs.readFile(path.join(__dirname, '..', assets[pathname]), (error, data) => {
                 response.writeHead(error ? 500 : 200, { 'Content-Type': error ? 'text/plain' : type });
                 response.end(error ? 'Unable to load Daily app' : type === 'text/html'
@@ -60,6 +72,10 @@ function createSyncServer() {
 
     wss.on('connection', (ws, request) => {
         const params = new URL(request.url, 'http://localhost').searchParams;
+        if (params.get('mode') === 'files') {
+            fileSharing.connect(ws, request);
+            return;
+        }
         const roomId = params.get('room');
         const collaborative = params.get('mode') === 'collaborate';
         const deviceSync = params.get('mode') === 'device';
@@ -252,6 +268,7 @@ function createSyncServer() {
     heartbeat.unref();
     wss.on('close', () => {
         clearInterval(heartbeat);
+        fileSharing.close();
         rooms.forEach(room => clearTimeout(room.commit?.timer));
     });
     return { server, wss, rooms };
