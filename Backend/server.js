@@ -11,9 +11,22 @@ function createSyncServer() {
     const fileSharing = createFileSharing();
     const server = http.createServer((request, response) => {
         const pathname = new URL(request.url, 'http://localhost').pathname;
-        if (pathname === '/file-sharing-config' && request.method === 'GET') {
-            response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store',
-                'Access-Control-Allow-Origin': '*' });
+        if (pathname === '/file-sharing-config') {
+            response.setHeader('Access-Control-Allow-Origin', '*');
+            response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+            response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+            response.setHeader('Cache-Control', 'no-store');
+            if (request.method === 'OPTIONS') {
+                response.writeHead(204);
+                response.end();
+                return;
+            }
+            if (request.method !== 'GET') {
+                response.writeHead(405, { 'Content-Type': 'application/json', Allow: 'GET, OPTIONS' });
+                response.end(JSON.stringify({ error: 'Method not allowed' }));
+                return;
+            }
+            response.writeHead(200, { 'Content-Type': 'application/json' });
             response.end(JSON.stringify(iceConfiguration()));
             return;
         }

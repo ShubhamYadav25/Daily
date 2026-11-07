@@ -192,11 +192,15 @@
             return register;
         }
 
-        function capture(before, after, { reviewScratch = true } = {}) {
+        function capture(before, after, { reviewScratch = true, reviewDeletions = true } = {}) {
             const oldFields = flatten(before);
             const newFields = flatten(after);
             const changed = {};
-            const options = key => ({ review: reviewScratch || !['scratch', 'scratchTab'].includes(JSON.parse(key)[0]) });
+            const options = key => {
+                const [entity, , field] = JSON.parse(key);
+                return { review: (reviewScratch || !['scratch', 'scratchTab'].includes(entity))
+                    && (reviewDeletions || field !== '__deleted') };
+            };
             newFields.forEach((value, key) => {
                 if (!state[key] || !same(value, oldFields.get(key))) changed[key] = write(key, value, { ...options(key), initialize: !state[key] });
             });

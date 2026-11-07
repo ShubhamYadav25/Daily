@@ -62,6 +62,7 @@
         function friendlyError(reason) {
             const message = reason instanceof Error ? reason.message : String(reason);
             if (reason?.name === 'AbortError') return 'Cancelled. Your saved progress is still here.';
+            if (/sharing settings|updated Daily backend/i.test(message)) return 'Sharing is not available on the connection service yet. Ask the site owner to update it, then try again.';
             if (/quota|disk|space/i.test(message)) return 'There is not enough free space to finish this step. Remove unneeded received files or use a device with more space.';
             if (/checksum|integrity|damaged|changed|ordering|chunk/i.test(message)) return 'We could not check this file. Your saved progress is kept. Rejoin and try again, or choose the original file again.';
             if (/worker/i.test(message)) return 'File Sharing could not start. Reload Daily and try again.';
@@ -276,10 +277,16 @@
             const url = new URL(server);
             url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
             url.pathname = '/file-sharing-config';
-            const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+            let response;
+            try {
+                response = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(10000) });
+            } catch (failure) {
+                console.error('Unable to fetch file-sharing configuration:', url.origin, failure);
+                throw new Error('Could not load sharing settings. Check the connection service is online and running the updated Daily backend.', { cause: failure });
+            }
             if (!response.ok) throw new Error(`Signaling configuration failed (${response.status}). Deploy the updated Daily backend.`);
             const config = await response.json();
-            if (!Array.isArray(config.iceServers)) throw new Error('Invalid signaling ICE configuration');
+            if (!Array.isArray(config.iceServers)) throw new Error('Invalid sharing settings. Deploy the updated Daily backend.');
             return config;
         }
 
