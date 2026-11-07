@@ -3601,6 +3601,10 @@
         <div class="boot-sub">Preparing offline cache</div>
     </div>
     <script src="./sync-engine.js"></script>
+    <link rel="stylesheet" href="./pdf-editor.css" />
+    <script src="./pdf-editor.js"></script>
+    <link rel="stylesheet" href="./image-editor.css" />
+    <script src="./image-editor.js"></script>
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
@@ -4502,7 +4506,7 @@
         }
 
         /* ── MD EDITOR ── */
-        function MdEditor({ value, onChange, fill = false, lineNumbers = false }) {
+        function MdEditor({ value, onChange, fill = false, lineNumbers = false, ariaLabel, previewValue, allowImages = true }) {
             const ta = useRef();
             const gutter = useRef();
             const mobile = useIsMobile();
@@ -4517,6 +4521,23 @@
             const [menuPosition, setMenuPosition] = useState({ left: 8, top: 8 });
             const historyRef = useRef({ stack: [value], idx: 0 });
             const historyTimer = useRef(null);
+            const [softWrap, setSoftWrap] = useState(true);
+            const [chord, setChord] = useState(false);
+            const chordTimer = useRef(null);
+            const [gotoLine, setGotoLine] = useState(null);
+            const expandStack = useRef([]);
+            const autoPair = useRef(null);
+
+            useEffect(() => () => clearTimeout(chordTimer.current), []);
+
+            function goToLine(number) {
+                const el = ta.current, lines = value.split('\n');
+                const line = Math.max(1, Math.min(lines.length, number));
+                const offset = lines.slice(0, line - 1).reduce((total, item) => total + item.length + 1, 0);
+                setGotoLine(null);
+                el.focus(); el.setSelectionRange(offset, offset);
+                el.scrollTop = Math.max(0, (line - 1) * 22.1 - el.clientHeight / 3);
+            }
 
             function syncLineNumbers() {
                 if (!gutter.current || !ta.current) return;
@@ -4739,11 +4760,152 @@
                 }, 0);
             }
 
+            function commit(nv, ns, ne = ns) {
+                clearTimeout(historyTimer.current);
+                pushHistory(value);
+                pushHistory(nv);
+                onChange(nv);
+                setTimeout(() => {
+                    const el = ta.current;
+                    if (el) { el.focus(); el.setSelectionRange(ns, ne); }
+                }, 0);
+            }
+
+            function lineBounds(s, e) {
+                const start = value.lastIndexOf('\n', s - 1) + 1;
+                const last = e > s && value[e - 1] === '\n' ? e - 1 : e;
+                const found = value.indexOf('\n', last);
+                return { start, end: found < 0 ? value.length : found };
+            }
+
+            function editLines(change) {
+                const el = ta.current, s = el.selectionStart, e = el.selectionEnd;
+                const { start, end } = lineBounds(s, e);
+                const lines = value.slice(start, end).split('\n');
+                const next = change(lines).join('\n');
+                if (s === e && lines.length === 1) {
+                    const caret = Math.max(start, s + next.length - lines[0].length);
+                    commit(value.slice(0, start) + next + value.slice(end), caret);
+                } else {
+                    commit(value.slice(0, start) + next + value.slice(end), start, start + next.length);
+                }
+            }
+
+            function shiftLines(direction) {
+                editLines(lines => lines.map(line => direction > 0 ? '  ' + line : line.replace(/^( {1,2}|\t)/, '')));
+            }
+
+            function moveLines(direction) {
+                const el = ta.current, s = el.selectionStart, e = el.selectionEnd;
+                const { start, end } = lineBounds(s, e);
+                const block = value.slice(start, end);
+                if (direction < 0) {
+                    if (start === 0) return;
+                    const above = value.lastIndexOf('\n', start - 2) + 1;
+                    const shift = start - above;
+                    commit(value.slice(0, above) + block + '\n' + value.slice(above, start - 1) + value.slice(end), s - shift, e - shift);
+                } else {
+                    if (end >= value.length) return;
+                    const found = value.indexOf('\n', end + 1), below = found < 0 ? value.length : found;
+                    const shift = below - end;
+                    commit(value.slice(0, start) + value.slice(end + 1, below) + '\n' + block + value.slice(below), s + shift, e + shift);
+                }
+            }
+
+            function copyLines(direction) {
+                const el = ta.current, s = el.selectionStart, e = el.selectionEnd;
+                const { start, end } = lineBounds(s, e);
+                const block = value.slice(start, end);
+                const nv = value.slice(0, end) + '\n' + block + value.slice(end);
+                if (direction < 0) commit(nv, s, e);
+                else commit(nv, s + block.length + 1, e + block.length + 1);
+            }
+
+            function deleteLines() {
+                const el = ta.current;
+                const { start, end } = lineBounds(el.selectionStart, el.selectionEnd);
+                const from = end < value.length ? start : Math.max(0, start - 1);
+                const to = end < value.length ? end + 1 : end;
+                commit(value.slice(0, from) + value.slice(to), Math.min(from, value.length - (to - from)));
+            }
+
+            function toggleComment(block) {
+                const el = ta.current, s = el.selectionStart, e = el.selectionEnd;
+                const range = block && s !== e ? { start: s, end: e } : lineBounds(s, e);
+                const text = value.slice(range.start, range.end);
+                const match = text.match(/^(\s*)<!--\s?([\s\S]*?)\s?-->(\s*)$/);
+                const next = match ? match[1] + match[2] + match[3] : '<!-- ' + text + ' -->';
+                commit(value.slice(0, range.start) + next + value.slice(range.end), range.start, range.start + next.length);
+            }
+
+            function selectWordAt(position) {
+                let start = position, end = position;
+                while (start > 0 && /[\w-]/.test(value[start - 1])) start--;
+                while (end < value.length && /[\w-]/.test(value[end])) end++;
+                return { start, end };
+            }
+
+            function expandSelection() {
+                const el = ta.current, s = el.selectionStart, e = el.selectionEnd;
+                const word = selectWordAt(s), line = lineBounds(s, e);
+                const blockStart = value.lastIndexOf('\n\n', s - 1), blockEnd = value.indexOf('\n\n', e);
+                const paragraph = { start: blockStart < 0 ? 0 : blockStart + 2, end: blockEnd < 0 ? value.length : blockEnd };
+                const next = [word, line, paragraph, { start: 0, end: value.length }]
+                    .find(range => range.start <= s && range.end >= e && (range.start < s || range.end > e));
+                if (!next) return;
+                expandStack.current.push([s, e]);
+                el.setSelectionRange(next.start, next.end);
+            }
+
+            function matchBracket() {
+                const el = ta.current, caret = el.selectionStart;
+                const pairs = { '(': ')', '[': ']', '{': '}', ')': '(', ']': '[', '}': '{' };
+                const at = pairs[value[caret]] ? caret : pairs[value[caret - 1]] ? caret - 1 : -1;
+                if (at < 0) return;
+                const open = '([{'.includes(value[at]), step = open ? 1 : -1;
+                for (let index = at + step, depth = 0; index >= 0 && index < value.length; index += step) {
+                    if (value[index] === value[at]) depth++;
+                    else if (value[index] === pairs[value[at]]) {
+                        if (depth === 0) { el.setSelectionRange(open ? index + 1 : index, open ? index + 1 : index); return; }
+                        depth--;
+                    }
+                }
+            }
+
+            function runChord(e) {
+                const key = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+                setChord(false);
+                clearTimeout(chordTimer.current);
+                if (key === 'escape') { e.preventDefault(); e.stopPropagation(); return true; }
+                const actions = {
+                    v: !ctrl && (() => setMode('split')),
+                    c: ctrl && (() => { const text = value.slice(...Object.values(lineBounds(ta.current.selectionStart, ta.current.selectionEnd))); if (!/^\s*<!--[\s\S]*-->\s*$/.test(text)) toggleComment(false); }),
+                    u: ctrl && (() => { const text = value.slice(...Object.values(lineBounds(ta.current.selectionStart, ta.current.selectionEnd))); if (/^\s*<!--[\s\S]*-->\s*$/.test(text)) toggleComment(false); }),
+                    x: ctrl && (() => editLines(lines => lines.map(line => line.replace(/[ \t]+$/, '')))),
+                    k: () => applyFmt('link')
+                };
+                if (!actions[key]) return false;
+                e.preventDefault();
+                actions[key]();
+                return true;
+            }
+
             function onKD(e) {
                 const el = e.target;
-                const s = el.selectionStart;
+                const s = el.selectionStart, end = el.selectionEnd;
                 const ctrl = e.ctrlKey || e.metaKey;
-                if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'z') {
+                const key = e.key.toLowerCase();
+                if (e.isComposing) return;
+                if (chord && runChord(e)) return;
+                if (!['shift', 'alt'].includes(key) && !(e.shiftKey && e.altKey && /^arrow(left|right)$/.test(key))) expandStack.current = [];
+                if (ctrl && !e.shiftKey && !e.altKey && key === 'k') {
+                    e.preventDefault();
+                    setChord(true);
+                    clearTimeout(chordTimer.current);
+                    chordTimer.current = setTimeout(() => setChord(false), 3000);
+                    return;
+                }
+                if (ctrl && !e.shiftKey && key === 'z') {
                     e.preventDefault();
                     const h = historyRef.current;
                     if (h.stack[h.idx] !== value) pushHistory(value);
@@ -4753,7 +4915,7 @@
                     }
                     return;
                 }
-                if (ctrl && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+                if (ctrl && (key === 'y' || (e.shiftKey && key === 'z'))) {
                     e.preventDefault();
                     const h = historyRef.current;
                     if (h.idx < h.stack.length - 1) {
@@ -4762,60 +4924,118 @@
                     }
                     return;
                 }
-                if (ctrl && !e.shiftKey) {
-                    const k = e.key.toLowerCase();
-                    if (k === 'b') {
+                const shortcuts = [
+                    [ctrl && !e.shiftKey && !e.altKey && key === 'b', () => applyFmt('bold')],
+                    [ctrl && !e.shiftKey && !e.altKey && key === 'i', () => applyFmt('italic')],
+                    [ctrl && !e.altKey && key === 'm', () => applyFmt(e.shiftKey ? 'block_math' : 'inline_math')],
+                    [!ctrl && e.altKey && !e.shiftKey && key === 's', () => applyFmt('strike')],
+                    [!ctrl && e.altKey && !e.shiftKey && key === 'c', () => editLines(lines => lines.map(line =>
+                        line.replace(/^(\s*(?:[-*+]\s+|\d+\.\s+)?)\[([ xX])\]/, (match, prefix, mark) => prefix + (mark === ' ' ? '[x]' : '[ ]'))))],
+                    [ctrl && e.shiftKey && !e.altKey && (e.code === 'BracketRight' || key === '}'), () => editLines(lines => lines.map(line =>
+                        line.startsWith('######') ? line : line.startsWith('#') ? '#' + line : '# ' + line))],
+                    [ctrl && e.shiftKey && !e.altKey && (e.code === 'BracketLeft' || key === '{'), () => editLines(lines => lines.map(line =>
+                        line.startsWith('# ') ? line.slice(2) : line.startsWith('#') ? line.slice(1) : line))],
+                    [ctrl && e.shiftKey && !e.altKey && key === 'v', () => setMode(current => current === 'preview' ? 'write' : 'preview')],
+                    [ctrl && !e.shiftKey && !e.altKey && key === ']', () => shiftLines(1)],
+                    [ctrl && !e.shiftKey && !e.altKey && key === '[', () => shiftLines(-1)],
+                    [ctrl && !e.shiftKey && !e.altKey && (key === '/' || e.code === 'Slash'), () => toggleComment(false)],
+                    [!ctrl && e.shiftKey && e.altKey && key === 'a', () => toggleComment(true)],
+                    [ctrl && e.shiftKey && !e.altKey && key === 'k', deleteLines],
+                    [!ctrl && e.altKey && !e.shiftKey && key === 'arrowup', () => moveLines(-1)],
+                    [!ctrl && e.altKey && !e.shiftKey && key === 'arrowdown', () => moveLines(1)],
+                    [!ctrl && e.altKey && e.shiftKey && key === 'arrowup', () => copyLines(-1)],
+                    [!ctrl && e.altKey && e.shiftKey && key === 'arrowdown', () => copyLines(1)],
+                    [!ctrl && e.altKey && e.shiftKey && key === 'arrowright', expandSelection],
+                    [!ctrl && e.altKey && e.shiftKey && key === 'arrowleft', () => { const previous = expandStack.current.pop(); if (previous) el.setSelectionRange(...previous); }],
+                    [ctrl && !e.altKey && key === 'enter', () => {
+                        const { start, end: lineEnd } = lineBounds(s, s);
+                        const indent = value.slice(start, lineEnd).match(/^\s*/)[0];
+                        if (e.shiftKey) commit(value.slice(0, start) + indent + '\n' + value.slice(start), start + indent.length);
+                        else commit(value.slice(0, lineEnd) + '\n' + indent + value.slice(lineEnd), lineEnd + 1 + indent.length);
+                    }],
+                    [ctrl && !e.shiftKey && !e.altKey && key === 'l', () => {
+                        const { start, end: lineEnd } = lineBounds(s, end);
+                        const full = s === start && (end === lineEnd + 1 || (end === lineEnd && lineEnd === value.length)) && end > s;
+                        const target = full ? lineBounds(end, end).end : lineEnd;
+                        el.setSelectionRange(start, Math.min(value.length, target + 1));
+                    }],
+                    [ctrl && !e.shiftKey && !e.altKey && key === 'd', () => {
+                        if (s === end) { const word = selectWordAt(s); el.setSelectionRange(word.start, word.end); return; }
+                        const needle = value.slice(s, end);
+                        let found = value.indexOf(needle, end);
+                        if (found < 0) found = value.indexOf(needle);
+                        if (found >= 0) el.setSelectionRange(found, found + needle.length);
+                    }],
+                    [ctrl && !e.shiftKey && !e.altKey && key === 'g', () => setGotoLine('')],
+                    [ctrl && e.shiftKey && !e.altKey && (key === '|' || e.code === 'Backslash'), matchBracket],
+                    [ctrl && !e.shiftKey && !e.altKey && (key === 'arrowup' || key === 'arrowdown'), () => { el.scrollTop += key === 'arrowup' ? -22 : 22; }],
+                    [!ctrl && e.altKey && !e.shiftKey && key === 'z' && !lineNumbers, () => setSoftWrap(wrap => !wrap)],
+                    [ctrl && !e.shiftKey && !e.altKey && (key === 'x' || key === 'c') && s === end, () => {
+                        const { start, end: lineEnd } = lineBounds(s, s);
+                        navigator.clipboard?.writeText(value.slice(start, lineEnd) + '\n').catch(() => { });
+                        if (key === 'x') deleteLines();
+                    }],
+                    [!ctrl && !e.altKey && e.key === 'Home', () => {
+                        const backward = el.selectionDirection === 'backward', head = backward ? s : end, anchor = backward ? end : s;
+                        const { start, end: lineEnd } = lineBounds(head, head);
+                        const first = start + value.slice(start, lineEnd).match(/^\s*/)[0].length;
+                        const target = head === first ? start : first;
+                        if (e.shiftKey) el.setSelectionRange(Math.min(target, anchor), Math.max(target, anchor), target < anchor ? 'backward' : 'forward');
+                        else el.setSelectionRange(target, target);
+                    }],
+                    [e.key === 'Tab' && !ctrl && !e.altKey, () => {
+                        const line = value.slice(...Object.values(lineBounds(s, s)));
+                        if (e.shiftKey) shiftLines(-1);
+                        else if (value.slice(s, end).includes('\n') || /^\s*([-*+]|\d+\.|\[[ x]\])\s/.test(line)) shiftLines(1);
+                        else commit(value.slice(0, s) + '  ' + value.slice(end), s + 2);
+                    }]
+                ];
+                const match = shortcuts.find(([active]) => active);
+                if (match) { e.preventDefault(); match[1](); return; }
+                if (!ctrl && !e.altKey && e.key.length === 1) {
+                    const pairs = { '(': ')', '[': ']', '{': '}', '<': '>', '"': '"', "'": "'", '`': '`', '*': '*', '_': '_', '~': '~' };
+                    if (s !== end && pairs[e.key]) {
                         e.preventDefault();
-                        applyFmt('bold'); return;
+                        commit(value.slice(0, s) + e.key + value.slice(s, end) + pairs[e.key] + value.slice(end), s + 1, end + 1);
+                        return;
                     }
-                    if (k === 'i') {
-                        e.preventDefault();
-                        applyFmt('italic'); return;
+                    if (s === end && autoPair.current !== null && s >= autoPair.current && ')]}'.includes(e.key) && value[s] === e.key) {
+                        e.preventDefault(); autoPair.current = null; el.setSelectionRange(s + 1, s + 1); return;
                     }
-                    if (k === 'k') {
+                    if (s === end && '([{'.includes(e.key) && (s === value.length || /[\s)\]}.,;:]/.test(value[s]))) {
                         e.preventDefault();
-                        applyFmt('link'); return;
+                        commit(value.slice(0, s) + e.key + pairs[e.key] + value.slice(s), s + 1);
+                        autoPair.current = s + 1;
+                        return;
                     }
                 }
-                if (ctrl && e.key.toLowerCase() === 'm') {
-                    e.preventDefault();
-                    applyFmt(e.shiftKey ? 'block_math' : 'inline_math');
+                if (e.key === 'Backspace' && !ctrl && s === end && autoPair.current === s && '([{'.includes(value[s - 1]) && value[s] === { '(': ')', '[': ']', '{': '}' }[value[s - 1]]) {
+                    e.preventDefault(); autoPair.current = null;
+                    commit(value.slice(0, s - 1) + value.slice(s + 1), s - 1);
                     return;
                 }
-                if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const nv = value.slice(0, s) + '  ' + value.slice(el.selectionEnd);
-                    pushHistory(nv);
-                    onChange(nv);
-                    setTimeout(() => { el.selectionStart = el.selectionEnd = s + 2; }, 0); return;
-                }
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !ctrl && !e.shiftKey && !e.altKey) {
                     const lineStart = value.lastIndexOf('\n', s - 1) + 1;
                     const line = value.slice(lineStart, s);
-                    const um = line.match(/^(\s*)([-*+])\s(.+)/),
+                    const empty = line.match(/^(\s*)(?:[-*+]|\d+\.|(?:[-*+]\s+)?\[[ xX]\])\s*$/);
+                    const um = line.match(/^(\s*)([-*+])\s(?!\[[ xX]\])(.+)/),
                         om = line.match(/^(\s*)(\d+)\.\s(.+)/),
-                        cm = line.match(/^(\s*)\[[ x]\]\s(.+)/);
-                    if (um) {
+                        cm = line.match(/^(\s*)((?:[-*+]\s+)?)\[[ xX]\]\s(.+)/);
+                    if (empty && s === end) {
+                        e.preventDefault();
+                        commit(value.slice(0, lineStart) + empty[1] + value.slice(s), lineStart + empty[1].length);
+                    } else if (cm) {
+                        e.preventDefault();
+                        const ins = '\n' + cm[1] + cm[2] + '[ ] ';
+                        commit(value.slice(0, s) + ins + value.slice(end), s + ins.length);
+                    } else if (um) {
                         e.preventDefault();
                         const ins = '\n' + um[1] + um[2] + ' ';
-                        const nv = value.slice(0, s) + ins + value.slice(s);
-                        pushHistory(nv);
-                        onChange(nv);
-                        setTimeout(() => { el.selectionStart = el.selectionEnd = s + ins.length; }, 0);
+                        commit(value.slice(0, s) + ins + value.slice(end), s + ins.length);
                     } else if (om) {
                         e.preventDefault();
                         const ins = '\n' + om[1] + (parseInt(om[2]) + 1) + '. ';
-                        const nv = value.slice(0, s) + ins + value.slice(s);
-                        pushHistory(nv);
-                        onChange(nv);
-                        setTimeout(() => { el.selectionStart = el.selectionEnd = s + ins.length; }, 0);
-                    } else if (cm) {
-                        e.preventDefault();
-                        const ins = '\n' + cm[1] + '[ ] ';
-                        const nv = value.slice(0, s) + ins + value.slice(s);
-                        pushHistory(nv);
-                        onChange(nv);
-                        setTimeout(() => { el.selectionStart = el.selectionEnd = s + ins.length; }, 0);
+                        commit(value.slice(0, s) + ins + value.slice(end), s + ins.length);
                     }
                 }
             }
@@ -4920,7 +5140,9 @@
                     }, { id: 'image', l: '🖼', tip: 'Image' }]
                 },
             ];
-            const TOOLS = mobile ? TOOLS_MOBILE : TOOLS_DESKTOP;
+            const TOOLS = (mobile ? TOOLS_MOBILE : TOOLS_DESKTOP).map(group => ({
+                ...group, items: group.items.filter(item => allowImages || item.id !== 'image')
+            }));
 
             return (
                 <div className={fill ? 'scratch-editor' : undefined} style={{
@@ -5071,9 +5293,26 @@
                         </div>
                     </div>
                     <div className="md-editor-body" style={{
-                        display: 'flex', height: fill ? undefined : edH,
+                        display: 'flex', height: fill ? undefined : edH, position: 'relative',
                         ...(fill ? { flex: 1, minHeight: 0 } : {})
                     }}>
+                        {(chord || gotoLine !== null) && <div role="status" style={{
+                            position: 'absolute', right: 8, bottom: 8, zIndex: 5, maxWidth: 'calc(100% - 16px)', display: 'flex', alignItems: 'center', gap: 6,
+                            background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 9px',
+                            fontSize: 11, color: 'var(--text2)', boxShadow: 'var(--shadow)'
+                        }}>
+                            {chord ? <span>(Ctrl+K) was pressed. Waiting for second key: V split preview · Ctrl+C comment · Ctrl+U uncomment · Ctrl+X trim whitespace · K link</span>
+                                : <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Go to line
+                                    <input type="number" min={1} max={value.split('\n').length} autoFocus value={gotoLine}
+                                        aria-label="Go to line number" placeholder={'1-' + value.split('\n').length}
+                                        onChange={event => setGotoLine(event.target.value)} onBlur={() => setGotoLine(null)}
+                                        onKeyDown={event => {
+                                            if (event.key === 'Enter' && Number(gotoLine)) { event.preventDefault(); goToLine(Number(gotoLine)); }
+                                            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setGotoLine(null); ta.current?.focus(); }
+                                        }}
+                                        style={{ width: 70, background: 'var(--bg3)', border: '1px solid var(--blue)', borderRadius: 4, color: 'var(--text)', padding: '2px 6px' }} />
+                                </label>}
+                        </div>}
                         {(mode === 'write' || mode === 'split') && (
                             <div className="md-editor-input" style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden',
                                 borderRight: mode === 'split' ? '1px solid var(--border)' : 'none' }}>
@@ -5081,8 +5320,8 @@
                                 <pre>{Array.from({ length: value.split('\n').length }, (_, i) => i + 1).join('\n')}</pre>
                             </div>}
                             <textarea ref={ta} onKeyDown={onKD} onPaste={onPaste}
-                                aria-label={fill ? 'Scratch tab content' : 'Notes'}
-                                wrap={lineNumbers ? 'off' : 'soft'}
+                                aria-label={ariaLabel || (fill ? 'Scratch tab content' : 'Notes')}
+                                wrap={lineNumbers || !softWrap ? 'off' : 'soft'}
                                 onScroll={syncLineNumbers}
                                 style={{
                                     flex: 1, minWidth: 0, background: 'var(--bg3)', border: 'none',
@@ -5109,7 +5348,7 @@
                                 padding: '10px', overflowY: 'auto'
                             }}
                                 dangerouslySetInnerHTML={{
-                                    __html: value ? renderMd(value) :
+                                    __html: value ? renderMd(previewValue === undefined ? value : previewValue) :
                                         '<p style="color:var(--text3);font-style:italic;font-size:12px">Nothing to preview…</p>'
                                 }} />
                         )}
@@ -5688,7 +5927,7 @@
                                 Math.max(0, timer.remaining))}</span>}
                         {card.content && !blocker && <span style={{ fontSize: 10, color: 'var(--text3)' }}><Icon name="NotebookPen" size="1em" /></span>}
                         <span className={`card-age ${ac}`}><Icon name="Clock" size="1em" /> {ageText}</span>
-                        <button className="chbtn" title="Move card to position" aria-label={'Move card: ' + card.task}
+                        <button className="chbtn" title="Move to any column" aria-label={'Move card: ' + card.task}
                             onClick={e => { e.stopPropagation(); onQuickMove(card.id); }}>
                             <Icon name="ArrowRightLeft" size={14} /></button>
                     </div>
@@ -5849,6 +6088,20 @@
                         <div className="modal-body">
                             <p style={{ marginBottom: 12, overflowWrap: 'anywhere' }}>{item?.task || item?.label || 'Item no longer exists'}</p>
                             {isCard && <div className="fgroup">
+                                <span className="flabel">Move instantly to</span>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                    {cols.filter(column => column.id !== source?.id).map(column =>
+                                        <button key={column.id} className="btn" disabled={!item}
+                                            title={'Move to end of ' + column.label}
+                                            onClick={() => { if (onMove(source?.id, column.id, undefined)) onClose(); }}>
+                                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: column.color }} />
+                                            {column.label}
+                                        </button>)}
+                                </div>
+                                <span style={{ fontSize: 12, color: 'var(--text3)' }}>One click moves this card to the end of that column. No confirmation needed.</span>
+                            </div>}
+                            {isCard && <h4 style={{ marginBottom: 10 }}>Or choose an exact position</h4>}
+                            {isCard && <div className="fgroup">
                                 <label className="flabel" htmlFor="move-destination">Destination column</label>
                                 <select id="move-destination" className="fselect" value={destination}
                                     onChange={e => { setDestination(e.target.value); setPosition(0); }}>
@@ -5960,7 +6213,7 @@
 
             if (mobile) return (
                 <div ref={ref} className={'fp ' + className}>
-                    <div className="fp-hdr">
+                    <div key="header" className="fp-hdr">
                         <Icon name={FEATURE_ICONS[title] || icon} /><span className="fp-title">{title}</span>
                         {extraHeaderContent}
                         <button onClick={onClose} aria-label="Close panel" style={{
@@ -5969,7 +6222,7 @@
                             marginLeft: extraHeaderContent ? 0 : 'auto'
                         }}><Icon name="X" size="1em" /></button>
                     </div>
-                    <div className="fp-content" style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                    <div key="content" className="fp-content" style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                         {children}</div>
                 </div>
             );
@@ -5983,7 +6236,7 @@
                         <div key={d} className={`fp-resize ${d}`} style={{ touchAction: 'none' }}
                             onPointerDown={e => startResize(d, e)} />
                     ))}
-                    <div className="fp-hdr" onPointerDown={dragSurface ? undefined : startPanelDrag}
+                    <div key="header" className="fp-hdr" onPointerDown={dragSurface ? undefined : startPanelDrag}
                         style={{ cursor: maximized ? 'default' : 'move', touchAction: 'none' }}>
                         <Icon name={FEATURE_ICONS[title] || icon} /><span className="fp-title">{title}</span>
                         {extraHeaderContent}
@@ -6013,7 +6266,7 @@
                         }}><Icon name="X" size="1em" /></button>
 
                     </div>
-                    <div className="fp-content" style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                    <div key="content" className="fp-content" style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                         {children}</div>
                 </div>
             );
@@ -7660,6 +7913,8 @@
             { id: 'ocr', key: 'o', label: 'Image → Text', icon: 'ScanText', body: 'Extract text from an image and copy the result instead of typing it again.' },
             { id: 'diff', key: 'f', label: 'Diff Checker', icon: 'Files', body: 'Compare two texts or files and inspect additions and removals. Use F7 and Shift+F7 inside the checker to navigate changes.' },
             { id: 'base64', key: 'b', label: 'Converter', icon: 'Binary', body: 'Convert Base64 to images, PDF or files, decode Base64 to ZPL, and render Base64 or ZPL labels in one tabbed workspace.' },
+            { id: 'pdf', key: 't', label: 'PDF Editor', icon: 'FilePenLine', body: 'Annotate PDFs locally, manage pages, merge documents, extract text, run OCR and export a new PDF. Annotations do not rewrite original text or securely redact it.' },
+            { id: 'image', key: 'z', label: 'Image Editor', icon: 'Image', body: 'Edit images locally: crop, resize, retouch, remove backgrounds, add text and build collages. Convert PNG, JPEG, WebP and imported HEIC, or convert images to PDF and PDF pages to images. Export below a chosen file-size limit.' },
             { id: 'diagrams', key: 'g', label: 'Diagrams', icon: 'Workflow', body: 'Write diagram source and preview it visually. Diagram rendering uses an external service; avoid submitting confidential content.' },
             { id: 'json', key: 'j', label: 'JSON Prettifier', icon: 'Braces', body: 'Format and validate JSON, inspect source diagnostics, and recover malformed input. Review recovery warnings and unresolved text before using repaired output.' },
             { id: 'calendar', key: 'c', label: 'Calendar & Time Machine', icon: 'CalendarDays', body: 'Schedule events and reminders in Events. Switch to Time Machine to browse automatic board snapshots and manage history backups. Events and history stay on this device.' },
@@ -11809,6 +12064,8 @@
             const openCardRef = useRef(null);
             const activeRoomRef = useRef('');
             const [showBase64, setShowBase64] = useState(false);
+            const [showPdf, setShowPdf] = useState(false);
+            const [showImage, setShowImage] = useState(false);
             const [showJson, setShowJson] = useState(false);
             const [showCalendar, setShowCalendar] = useState(false);
             const [calendarInitialTab, setCalendarInitialTab] = useState('events');
@@ -12852,7 +13109,7 @@
                     if (e.ctrlKey || e.metaKey || e.altKey) return;
                     if (e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return;
                     if (quickMove || openCard || addCardCol || showAddCol || showShortcuts || showEditor || showDraw
-                        || showAi || showKroki || showBase64 || showJson || showCalendar
+                        || showAi || showKroki || showBase64 || showPdf || showImage || showJson || showCalendar
                         || showOcr || showDiff || showSyncModal || (activeRoom && conflicts.length && showConflicts)) return;
                     const feature = APP_FEATURES.find(item => item.key === e.key.toLowerCase());
                     if (!feature) return;
@@ -12875,6 +13132,8 @@
                 setShowAi(false);
                 setShowKroki(false);
                 setShowBase64(false);
+                setShowPdf(false);
+                setShowImage(false);
                 setShowJson(false);
                 setShowCalendar(false);
                 setShowOcr(false);
@@ -12908,6 +13167,8 @@
                     ocr: () => setShowOcr(true),
                     diff: () => setShowDiff(true),
                     base64: () => setShowBase64(true),
+                    pdf: () => setShowPdf(true),
+                    image: () => setShowImage(true),
                     diagrams: () => setShowKroki(true),
                     json: () => setShowJson(true),
                     calendar: () => { setCalendarInitialTab('events'); setShowCalendar(true); },
@@ -13289,6 +13550,8 @@
                 { icon: '🔎', label: 'Image → Text', action: () => setShowOcr(true) },
                 { icon: '⚖️', label: 'Diff Checker', action: () => setShowDiff(true) },
                 { icon: 'Binary', label: 'Converter', action: () => setShowBase64(true) },
+                { icon: 'FilePenLine', label: 'PDF Editor', action: () => setShowPdf(true) },
+                { icon: 'Image', label: 'Image Editor', action: () => setShowImage(true) },
                 { icon: '📐', label: 'Diagrams', action: () => setShowKroki(true) },
                 { icon: '✨', label: 'JSON Prettifier', action: () => setShowJson(true) },
 
@@ -13346,6 +13609,10 @@
                         onClick={() => setShowDiff(o => !o)} />
                     <HeaderTool icon="Binary" label="Converter" active={showBase64}
                         onClick={() => setShowBase64(o => !o)} />
+                    <HeaderTool icon="FilePenLine" label="PDF Editor" active={showPdf}
+                        onClick={() => setShowPdf(o => !o)} />
+                    <HeaderTool icon="Image" label="Image Editor" active={showImage}
+                        onClick={() => setShowImage(true)} />
                     <HeaderTool icon="Workflow" label="Diagrams" active={showKroki}
                         onClick={() => setShowKroki(o => !o)} />
                     <HeaderTool icon="Braces" label="JSON Prettifier" active={showJson}
@@ -13575,6 +13842,8 @@
                     {showDiff && <DiffPanel onClose={() => setShowDiff(false)} addToast={addToast} />}
 
                     {showBase64 && <Converter onClose={() => setShowBase64(false)} />}
+                    {showPdf && <window.DailyPdfEditor Panel={FloatingPanel} Icon={Icon} MdEditor={MdEditor} onClose={() => setShowPdf(false)} />}
+                    {showImage && <window.DailyImageEditor Panel={FloatingPanel} Icon={Icon} onClose={() => setShowImage(false)} />}
                     {showSyncModal && syncDialog === 'device' && <DeviceSyncModal
                         onClose={() => setShowSyncModal(false)} roomId={roomId} setRoomId={setRoomId}
                         serverUrl={serverUrl} setServerUrl={setServerUrl} createRoom={createRoom} joinRoom={joinRoom}
