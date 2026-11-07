@@ -25,7 +25,7 @@ Whether you're a **solo entrepreneur**, **student**, **freelancer**, or **team l
 
 ### 📋 **Board & Card Management**
 - **Intuitive Drag & Drop Workflow** – Move cards between columns effortlessly
-- **Quick Move** - Use the arrow button on any card or unlocked column to select its exact final position. Cards can move within a column or into another column; drag-and-drop remains available.
+- **Quick Move** - Use a card's arrow button, then click a destination column to move it instantly to that column's end. Exact-position controls remain available for cards and unlocked columns; drag-and-drop still works.
 - **Custom Status Columns** – Create columns that match your workflow perfectly
 - **Rich Card Details** – Add descriptions, attachments, comments, and metadata to cards
 - **Priority & Urgency Levels** – Highlight important tasks at a glance
@@ -68,6 +68,7 @@ Whether you're a **solo entrepreneur**, **student**, **freelancer**, or **team l
 - **Synced Scratch Tabs** - Tab names and content participate in Device Sync conflict review/final commits and live collaboration. Personal Scratch tabs are restored when leaving a shared board. Tab layout and line-number preferences stay local.
 
 ### 📦 **Data & Reliability**
+- **Peer-to-Peer File Sharing** - Tools -> File Sharing (Y) opens a draggable, resizable panel like the PDF and image editors. Recipients accept files, and saved progress is reused after rejoining.
 - **Local Storage Support** – Your data stays on your device when offline
 - **JSON Import/Export** – Backup and migrate your boards anytime
 - **Scratch Backups** - JSON exports include Scratch text and all tabs. Older board-only JSON imports remain supported and leave existing Scratch notes untouched.
@@ -123,6 +124,147 @@ Built with modern, lightweight technologies:
 ### Backend Dependencies
 - **ws** (^8.21.0) – WebSocket server for real-time sync
 - **diff** (^9.0.0) – Text diffing engine for conflict resolution
+
+### Peer-to-peer file sharing
+
+Open **Tools -> File Sharing** or press **Y**. Start the updated backend:
+
+```powershell
+Set-Location Backend
+node server.js
+```
+
+That single process serves the Daily app, board sync, file-sharing connections
+and file-sharing settings. No separate worker server or frontend process is
+needed. `npm start` runs the same command.
+
+**Render settings**
+
+- Root Directory: `Backend`
+- Build Command: `npm ci`
+- Start Command: `node server.js`
+
+Render provides `PORT`; the server uses it automatically and otherwise defaults
+to 8080. Deploy the updated repository, including the frontend files in its
+root. Use your Render service's HTTPS address to open Daily and its matching
+`wss://` address if the frontend is hosted elsewhere. Optional TURN is the only
+separate service, needed for networks that block direct connections.
+
+**Try it locally**
+
+1. From the repository root, run `Set-Location Backend`, then `node server.js`.
+   If dependencies have not been installed, run `npm ci` first.
+2. Open `http://localhost:8080` in Chrome or Edge. Use **Tools -> File Sharing**
+   or **Y**, enter a name, and choose **Create room**.
+3. Copy the invitation and open it in another browser (for example, Edge when
+   sending from Chrome), or a fresh tab rather than a duplicated tab. Enter a
+   different name and choose **Join / rejoin**.
+4. On the first page, choose a file. On the second, choose **Accept / resume**.
+   When it finishes, choose **Save file**.
+5. To check resume, start a larger file, then pause or disconnect the receiver
+   partway through. Reopen/rejoin with the same invitation and accept again.
+   If you reopen the sender too, choose the original file again. Already-saved
+   progress should be reused.
+
+Keep the terminal running while trying this. Two different browsers are best
+for testing independent devices, since tabs in the same browser share received
+files and storage. For a phone, do not use the PC's `localhost` link: it points
+to the phone itself. Plain HTTP on your PC's LAN IP cannot receive large files;
+use a trusted HTTPS address, such as the deployed Render service, on both devices.
+
+Visit `http://localhost:8080/file-sharing.html`, create a room, and send the
+complete invitation link privately to the other devices. Alternatively, use
+the static frontend with the updated backend's `wss://` address. Internet and
+mobile access require HTTPS/WSS; plain HTTP on a LAN IP is not a secure browser
+context and cannot use the local filesystem APIs.
+
+File Sharing uses the existing `FloatingPanel` with shared theme, inputs,
+buttons, resize/maximize controls and saved panel position, just like the
+editors. There is no iframe or popup. Closing an active sharing panel asks
+for confirmation and stops its connections; reopen and rejoin to continue.
+The invitation page uses the same interface and transfer engine.
+
+Opening the downloaded `index.html` directly is supported for sending:
+the worker is created from bundled local script text instead of loading a
+`file://` worker URL, which browsers block. Receiving large files and durable
+resume still require HTTP(S) because local `file://` pages do not have a
+usable browser-private filesystem origin. The panel explains this in plain
+language. Use `http://localhost:8080` for full local functionality, or HTTPS
+for remote devices. Invitations created from a local file point to the
+configured server's sharing page, not to a private local disk path.
+
+- Up to eight devices can join. Selected files are offered to every connected
+  device; recipients choose what to accept. Each receiver has independent
+  progress. This is sender-to-many sharing, not a chunk-forwarding swarm.
+- Uses native reliable, ordered WebRTC DataChannels and SHA-256, with no
+  additional dependencies, paid SDK, cloud file storage, or compression.
+  Already-compressed videos/archives are sent as binary without Base64.
+- Logical chunks are 1 MiB; binary frames are at most 16 KiB and respect the
+  negotiated message-size limit. Receiver requests cap outstanding chunks at
+  four per peer. Sender buffering is separately bounded.
+- Sources are fingerprinted in a worker before offering, using a chain of
+  per-chunk SHA-256 hashes. The receiver verifies each chunk and then the
+  whole-file chain. The sender checks chunks again before transmitting.
+- Chunks are written as separate files in the origin-private filesystem.
+  Each writable is closed before an IndexedDB checkpoint and acknowledgement.
+  A restart revalidates checkpointed chunks, and damaged/missing chunks are
+  requested again. IndexedDB progress updates are constant-sized, not full
+  file manifests rewritten on every chunk.
+- **Resume:** network reconnect automatically restores peer connections and
+  file offers while the source tab remains open. Recipients click
+  **Accept / resume** again. After a browser restart, rejoin using the same
+  invitation and reselect the unchanged source files. No source file is
+  uploaded or retained by the server. Browser site data, including chunk
+  files, must still exist on the receiving device.
+- **Save:** desktop browsers with a save-file picker stream verified chunks
+  directly to a chosen destination. Other capable browsers prepare a
+  disk-backed download requiring another full copy inside their storage quota;
+  tap the download link afterwards. The page avoids a whole-file ArrayBuffer,
+  but the browser/OS may impose its own download and memory limits.
+- **Limits:** current implementation caps each source at 256 GiB and 100
+  offered files. Actual limits are browser quota, free disk, network and OS
+  behavior. Receiving requires OPFS, writable file handles, IndexedDB, workers,
+  Web Locks (to prevent competing writes from different tabs) and Web Crypto
+  in a secure context. Unsupported browsers show an error, not
+  an in-memory GB-sized fallback. There is no guarantee of universal multi-GB
+  mobile downloads, background transfer, or recovery after site-data eviction.
+- Keep pages open and devices awake. A screen wake lock is requested where
+  supported; it cannot prevent mobile OS suspension. Private browsing, clearing
+  site data, changing frontend origin, or browser eviction can remove resume
+  data. Delete local transfer data only after checking exported files.
+- Rooms use a random 256-bit invitation capability, not guessable short codes.
+  Signaling has size/rate limits and an eight-device room cap. Empty rooms
+  expire after 24 hours; invitations can recreate a room after a server restart.
+  Anyone holding the invitation can join, so do not publish it. TLS/WebRTC
+  encryption does not protect against a compromised frontend/signaling server.
+  For public deployment, also configure reverse-proxy connection/IP rate limits
+  and prevent query-string credential logging.
+
+#### Connectivity and cost
+
+Direct WebRTC is preferred. A public Google STUN endpoint is used by default;
+it assists connection discovery, does not store or relay file bytes, and has
+no availability guarantee. Set `FILE_SHARE_STUN_URL` to use your own endpoint.
+Restrictive NATs/firewalls may require TURN. Without TURN, connection failure
+is shown explicitly.
+
+Optional self-hosted coturn configuration:
+
+```powershell
+$env:FILE_SHARE_TURN_URLS = "turn:relay.example.com:3478?transport=udp,turns:relay.example.com:5349?transport=tcp"
+$env:FILE_SHARE_TURN_SECRET = "<your-coturn-shared-secret>"
+npm start
+```
+
+Configure coturn with `use-auth-secret`, the same `static-auth-secret`, a realm,
+valid TLS certificates for `turns:`, and appropriate relay ports/firewall rules.
+Keep the shared secret on the server, never in frontend files. The backend
+issues temporary HMAC credentials via `/file-sharing-config`; it does not
+expose the shared secret. Credentials are valid for one hour; rejoin refreshes
+configuration. The interface distinguishes direct P2P from relayed connections.
+TURN carries encrypted file bytes without storing files, but server bandwidth
+and hosting are not inherently zero-cost. No implementation can guarantee
+both free infrastructure and successful connections on every network.
 
 ---
 

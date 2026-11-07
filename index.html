@@ -246,7 +246,7 @@
                 try {
                     var sw = "self.addEventListener('install',e=>self.skipWaiting());"
                         + "self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));"
-                        + "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;"
+                        + "self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).pathname==='/file-sharing-config')return;"
                         + "e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{"
                         + "if(res&&res.ok){var c=res.clone();caches.open('daily-shell-v1').then(x=>x.put(e.request,c)).catch(()=>{});}"
                         + "return res;}).catch(()=>caches.match(e.request).then(x=>x||Response.error()))));});";
@@ -3605,6 +3605,9 @@
     <script src="./pdf-editor.js"></script>
     <link rel="stylesheet" href="./image-editor.css" />
     <script src="./image-editor.js"></script>
+    <link rel="stylesheet" href="./file-sharing.css" />
+    <script src="./file-sharing-worker.js"></script>
+    <script src="./file-sharing.js"></script>
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
@@ -7915,6 +7918,7 @@
             { id: 'base64', key: 'b', label: 'Converter', icon: 'Binary', body: 'Convert Base64 to images, PDF or files, decode Base64 to ZPL, and render Base64 or ZPL labels in one tabbed workspace.' },
             { id: 'pdf', key: 't', label: 'PDF Editor', icon: 'FilePenLine', body: 'Annotate PDFs locally, manage pages, merge documents, extract text, run OCR and export a new PDF. Annotations do not rewrite original text or securely redact it.' },
             { id: 'image', key: 'z', label: 'Image Editor', icon: 'Image', body: 'Edit images locally: crop, resize, retouch, remove backgrounds, add text and build collages. Convert PNG, JPEG, WebP and imported HEIC, or convert images to PDF and PDF pages to images. Export below a chosen file-size limit.' },
+            { id: 'files', key: 'y', label: 'File Sharing', icon: 'Send', body: 'Send files to other devices without uploading them. Create a room, share the invitation and choose your files. Each person accepts what they want. Rejoin with the same invitation to continue interrupted transfers. Keep devices awake while sharing.' },
             { id: 'diagrams', key: 'g', label: 'Diagrams', icon: 'Workflow', body: 'Write diagram source and preview it visually. Diagram rendering uses an external service; avoid submitting confidential content.' },
             { id: 'json', key: 'j', label: 'JSON Prettifier', icon: 'Braces', body: 'Format and validate JSON, inspect source diagnostics, and recover malformed input. Review recovery warnings and unresolved text before using repaired output.' },
             { id: 'calendar', key: 'c', label: 'Calendar & Time Machine', icon: 'CalendarDays', body: 'Schedule events and reminders in Events. Switch to Time Machine to browse automatic board snapshots and manage history backups. Events and history stay on this device.' },
@@ -12066,6 +12070,7 @@
             const [showBase64, setShowBase64] = useState(false);
             const [showPdf, setShowPdf] = useState(false);
             const [showImage, setShowImage] = useState(false);
+            const [showFileSharing, setShowFileSharing] = useState(false);
             const [showJson, setShowJson] = useState(false);
             const [showCalendar, setShowCalendar] = useState(false);
             const [calendarInitialTab, setCalendarInitialTab] = useState('events');
@@ -13109,7 +13114,7 @@
                     if (e.ctrlKey || e.metaKey || e.altKey) return;
                     if (e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return;
                     if (quickMove || openCard || addCardCol || showAddCol || showShortcuts || showEditor || showDraw
-                        || showAi || showKroki || showBase64 || showPdf || showImage || showJson || showCalendar
+                        || showAi || showKroki || showBase64 || showPdf || showImage || showFileSharing || showJson || showCalendar
                         || showOcr || showDiff || showSyncModal || (activeRoom && conflicts.length && showConflicts)) return;
                     const feature = APP_FEATURES.find(item => item.key === e.key.toLowerCase());
                     if (!feature) return;
@@ -13134,6 +13139,7 @@
                 setShowBase64(false);
                 setShowPdf(false);
                 setShowImage(false);
+                setShowFileSharing(false);
                 setShowJson(false);
                 setShowCalendar(false);
                 setShowOcr(false);
@@ -13169,6 +13175,7 @@
                     base64: () => setShowBase64(true),
                     pdf: () => setShowPdf(true),
                     image: () => setShowImage(true),
+                    files: () => setShowFileSharing(true),
                     diagrams: () => setShowKroki(true),
                     json: () => setShowJson(true),
                     calendar: () => { setCalendarInitialTab('events'); setShowCalendar(true); },
@@ -13552,6 +13559,7 @@
                 { icon: 'Binary', label: 'Converter', action: () => setShowBase64(true) },
                 { icon: 'FilePenLine', label: 'PDF Editor', action: () => setShowPdf(true) },
                 { icon: 'Image', label: 'Image Editor', action: () => setShowImage(true) },
+                { icon: 'Send', label: 'File Sharing', action: () => runFeature('files') },
                 { icon: '📐', label: 'Diagrams', action: () => setShowKroki(true) },
                 { icon: '✨', label: 'JSON Prettifier', action: () => setShowJson(true) },
 
@@ -13613,6 +13621,8 @@
                         onClick={() => setShowPdf(o => !o)} />
                     <HeaderTool icon="Image" label="Image Editor" active={showImage}
                         onClick={() => setShowImage(true)} />
+                    <HeaderTool icon="Send" label="File Sharing" active={showFileSharing}
+                        onClick={() => runFeature('files')} />
                     <HeaderTool icon="Workflow" label="Diagrams" active={showKroki}
                         onClick={() => setShowKroki(o => !o)} />
                     <HeaderTool icon="Braces" label="JSON Prettifier" active={showJson}
@@ -13844,6 +13854,8 @@
                     {showBase64 && <Converter onClose={() => setShowBase64(false)} />}
                     {showPdf && <window.DailyPdfEditor Panel={FloatingPanel} Icon={Icon} MdEditor={MdEditor} onClose={() => setShowPdf(false)} />}
                     {showImage && <window.DailyImageEditor Panel={FloatingPanel} Icon={Icon} onClose={() => setShowImage(false)} />}
+                    {showFileSharing && <window.DailyFileSharing Panel={FloatingPanel} serverUrl={serverUrl}
+                        onClose={() => setShowFileSharing(false)} />}
                     {showSyncModal && syncDialog === 'device' && <DeviceSyncModal
                         onClose={() => setShowSyncModal(false)} roomId={roomId} setRoomId={setRoomId}
                         serverUrl={serverUrl} setServerUrl={setServerUrl} createRoom={createRoom} joinRoom={joinRoom}
