@@ -1,0 +1,9 @@
+.invite-qr { margin: 8px 0; }
+.invite-qr-card { margin-top: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2); text-align: center; }
+.invite-qr-card[hidden], .invite-qr-error[hidden] { display: none; }
+.invite-qr-card img { display: block; width: min(100%, 320px); height: auto; margin: 0 auto; background: #fff; border-radius: 4px; image-rendering: pixelated; }
+.invite-qr-card p { font-size: 12px; line-height: 1.5; color: var(--text2); overflow-wrap: anywhere; }
+.invite-qr-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.invite-qr-actions a { text-decoration: none; }
+.invite-qr-error { font-size: 12px; color: var(--red); }
+.invite-qr-card .invite-qr-warning { color: var(--amber, var(--text2)); }

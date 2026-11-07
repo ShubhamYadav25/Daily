@@ -35,6 +35,7 @@ function createSyncServer() {
             '/image-editor.js': 'image-editor.js', '/image-editor.css': 'image-editor.css',
             '/file-sharing.html': 'file-sharing.html', '/file-sharing.js': 'file-sharing.js',
             '/file-sharing-worker.js': 'file-sharing-worker.js', '/file-sharing.css': 'file-sharing.css',
+            '/invite-qr.js': 'invite-qr.js', '/invite-qr.css': 'invite-qr.css', '/vendor/qrcode.js': 'vendor/qrcode.js',
             '/daily-icon.png': 'daily-icon.png' };
         if (assets[pathname] && request.method === 'GET') {
             const type = pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.css') ? 'text/css' : pathname.endsWith('.png') ? 'image/png' : 'text/html';

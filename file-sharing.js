@@ -14,6 +14,7 @@
             </div>
             <label>Invitation link <input data-share="invite" class="finput" placeholder="Paste the link from the other device" autocomplete="off"></label>
             <button data-share="copy" class="btn" disabled>Copy invitation</button>
+            <div data-share="qr"></div>
             <details class="fs-settings"><summary>Connection settings</summary>
                 <label>Connection address <input data-share="server" class="finput" type="url" autocomplete="off"></label>
                 <p class="hint">Usually you can leave this unchanged.</p>
@@ -41,6 +42,7 @@
 
     function mount(root, options = {}) {
         root.innerHTML = template;
+        const qr = DailyInviteQr.widget(root.querySelector('[data-share="qr"]'), () => room ? root.querySelector('[data-share="invite"]').value : '');
         const CHUNK_SIZE = 1024 * 1024;
         const WINDOW = 4;
         const UUID = /^[a-f0-9-]{36}$/i;
@@ -431,6 +433,7 @@
             room = value;
             $('server').value = value.server;
             $('invite').value = invitation(value.server);
+            qr.update();
             if (options.standalone && location.protocol !== 'file:') history.replaceState(null, '', $('invite').value);
             localStorage.setItem('daily_file_invite', $('invite').value);
             localStorage.setItem('daily_file_name', $('name').value);
@@ -893,6 +896,7 @@
                 || (/^https?:$/.test(location.protocol) && ['localhost', '127.0.0.1'].includes(location.hostname)
                     ? location.origin.replace(/^http/, 'ws') : 'wss://daily-2.onrender.com');
             $('invite').value = options.standalone && location.hash ? location.href : localStorage.getItem('daily_file_invite') || '';
+            $('invite').oninput = () => qr.update();
             $('create').disabled = false;
             $('join').disabled = false;
             $('copy').disabled = false;
@@ -945,6 +949,7 @@
                 requests.forEach(request => request.reject(new Error('File Sharing was closed.')));
                 requests.clear();
                 worker?.terminate();
+                qr.destroy();
                 if (workerUrl) URL.revokeObjectURL(workerUrl);
                 root.querySelectorAll('.prepared-download').forEach(link => URL.revokeObjectURL(link.href));
             }
