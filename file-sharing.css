@@ -1,31 +1,79 @@
 .file-sharing-content { flex: 1; min-height: 0; overflow: auto; padding: 18px; color: var(--text); font: inherit; }
 .file-sharing-content * { box-sizing: border-box; }
+
+/* ---------- intro + section headers ---------- */
 .file-sharing-content .fs-intro { padding: 0 2px 12px; }
 .file-sharing-content h2 { margin: 0 0 6px; font-size: 18px; }
-.file-sharing-content h3 { margin: 0 0 14px; font-size: 14px; font-weight: 700; }
+.file-sharing-content h3 { margin: 0; font-size: 14px; font-weight: 700; }
 .file-sharing-content p { line-height: 1.6; font-size: 12px; color: var(--text2); }
 .file-sharing-content section { padding: 16px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg2); }
+.file-sharing-content .fs-step-title { display: flex; align-items: center; gap: 9px; margin: 0 0 12px; }
+.file-sharing-content .fs-step-num { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--blue); color: var(--bg); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+
+/* ---------- forms ---------- */
 .file-sharing-content label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); }
+.file-sharing-content .fs-label-note { display: block; font-size: 10px; font-weight: 400; color: var(--text3); margin-top: 2px; }
 .file-sharing-content .finput { display: block; width: 100%; margin: 7px 0 12px; }
 .file-sharing-content .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .file-sharing-content .hint { font-size: 11px; color: var(--text3); }
 .file-sharing-content .fs-settings { margin-top: 14px; color: var(--text3); font-size: 11px; }
 .file-sharing-content .fs-settings summary { cursor: pointer; margin-bottom: 10px; }
-.file-sharing-content .fs-status { color: var(--text); padding: 10px 12px; background: var(--bg3); border-radius: 8px; }
-.file-sharing-content .drop { text-align: center; padding: 24px 12px; border: 2px dashed var(--border); border-radius: 10px; background: var(--bg3); cursor: pointer; }
-.file-sharing-content .drop.over { border-color: var(--blue); }
-.file-sharing-content input[type=file] { display: block; max-width: 100%; margin: 12px auto 0; font: inherit; }
+.file-sharing-content .fs-status { color: var(--text); padding: 10px 12px; background: var(--bg3); border-radius: 8px; margin: 0; }
+
+/* ---------- connect section: two columns on desktop ---------- */
+.file-sharing-content .fs-connect-grid { display: grid; gap: 16px; }
+.file-sharing-content .fs-devices { margin: 10px 0; }
+.file-sharing-content .fs-devices-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text3); margin: 0 0 7px; }
+
+/* ---------- device chips ---------- */
 .file-sharing-content .peers { display: flex; flex-wrap: wrap; gap: 8px; }
-.file-sharing-content .peer { border: 1px solid var(--border); padding: 6px 10px; border-radius: 20px; font-size: 11px; background: var(--bg3); }
-.file-sharing-content .transfer { border-top: 1px solid var(--border); padding: 16px 0 4px; overflow-wrap: anywhere; }
-.file-sharing-content .transfer h3 { font-size: 13px; margin-bottom: 6px; color: var(--text); }
-.file-sharing-content .transfer p { margin: 8px 0; }
-.file-sharing-content progress { width: 100%; height: 8px; accent-color: var(--blue); }
+.file-sharing-content .peer { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); padding: 6px 11px; border-radius: 20px; font-size: 11px; background: var(--bg3); }
+.file-sharing-content .peer-you { border-style: dashed; color: var(--text2); background: transparent; }
+.file-sharing-content .fs-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text3); }
+.file-sharing-content .fs-dot.on { background: var(--green, #4bc97b); box-shadow: 0 0 0 3px rgba(75, 201, 123, .15); }
+
+/* ---------- send / receive two-pane layout ---------- */
+.file-sharing-content .fs-columns { display: grid; gap: 14px; }
+.file-sharing-content .fs-pane { margin-bottom: 0; display: flex; flex-direction: column; min-width: 0; }
+.file-sharing-content .fs-pane .drop { flex: none; }
+.file-sharing-content .fs-pane .hint { margin: 8px 0 0; }
+.file-sharing-content .fs-list { margin-top: 4px; }
+.file-sharing-content .fs-list:empty::after { content: attr(data-empty); display: block; padding: 18px 12px; text-align: center; color: var(--text3); font-size: 11px; line-height: 1.6; border: 1px dashed var(--border); border-radius: 10px; margin-top: 10px; }
+
+/* ---------- drop zone ---------- */
+.file-sharing-content .drop { position: relative; text-align: center; padding: 24px 12px; border: 2px dashed var(--border); border-radius: 10px; background: var(--bg3); cursor: pointer; transition: border-color .15s, background .15s; }
+.file-sharing-content .drop:hover { border-color: var(--blue); }
+.file-sharing-content .drop.over { border-color: var(--blue); background: rgba(124, 156, 250, .08); }
+.file-sharing-content .drop:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.file-sharing-content .drop:has(input:disabled):hover { border-color: var(--border); }
+.file-sharing-content .drop:focus-within { outline: 2px solid var(--blue); outline-offset: 3px; }
+.file-sharing-content input[type=file] { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ---------- transfer cards: send / offer / received ---------- */
+.file-sharing-content .transfer { border: 1px solid var(--border); border-left-width: 3px; border-radius: 10px; padding: 12px 14px; margin-top: 10px; background: var(--bg3); overflow-wrap: anywhere; }
+.file-sharing-content .fs-send { border-left-color: var(--blue); }
+.file-sharing-content .fs-offer { border-left-color: #d9a13f; }
+.file-sharing-content .fs-download { border-left-color: var(--green, #4bc97b); }
+.file-sharing-content .fs-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.file-sharing-content .fs-badge { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 3px 9px; border-radius: 20px; border: 1px solid; }
+.file-sharing-content .fs-send .fs-badge { color: var(--blue); border-color: var(--blue); }
+.file-sharing-content .fs-offer .fs-badge { color: #d9a13f; border-color: #d9a13f; }
+.file-sharing-content .fs-download .fs-badge { color: var(--green, #4bc97b); border-color: var(--green, #4bc97b); }
+.file-sharing-content .fs-file-name { font-size: 13px; font-weight: 700; color: var(--text); min-width: 0; }
+.file-sharing-content .fs-file-meta { font-size: 11px; color: var(--text3); margin: 7px 0 9px; }
+.file-sharing-content .fs-status-line { font-size: 12px; color: var(--text2); margin: 8px 0; }
+.file-sharing-content .fs-peerline { font-size: 12px; color: var(--text2); border-top: 1px dashed var(--border); padding-top: 8px; margin: 10px 0 0; }
+.file-sharing-content .transfer progress { width: 100%; height: 8px; accent-color: var(--blue); }
+.file-sharing-content .fs-offer progress { accent-color: #d9a13f; }
+.file-sharing-content .fs-download progress { accent-color: var(--green, #4bc97b); }
+.file-sharing-content .transfer .actions { margin: 10px 0 0; }
 .file-sharing-content .prepared-download { color: var(--blue); font-size: 12px; padding: 8px; }
 .file-sharing-content .fs-error { position: sticky; bottom: 0; padding: 12px; background: var(--red-dim); color: var(--red); border: 1px solid var(--red); border-radius: 10px; }
 .file-sharing-content .fs-error[hidden] { display: none; }
+
+/* ---------- standalone page ---------- */
 .file-sharing-standalone { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; color-scheme: dark; --bg: #0d0e10; --bg2: #141518; --bg3: #1c1e22; --border: #2a2c31; --text: #e8e8ec; --text2: #a1a1ab; --text3: #73737e; --blue: #7c9cfa; --red: #f76f6f; --red-dim: #352025; }
-.file-sharing-standalone main { max-width: 920px; margin: auto; }
+.file-sharing-standalone main { max-width: 1080px; margin: auto; }
 .file-sharing-standalone header { padding: 18px 20px 0; display: flex; justify-content: space-between; gap: 12px; }
 .file-sharing-standalone header a { color: var(--text); font-weight: 700; text-decoration: none; }
 .file-sharing-standalone .btn { border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--text); background: var(--bg3); font: inherit; font-size: 12px; cursor: pointer; }
@@ -33,7 +81,21 @@
 .file-sharing-standalone .btn:disabled { opacity: .5; cursor: not-allowed; }
 .file-sharing-standalone .finput { border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--bg); color: var(--text); font: inherit; }
 .file-sharing-content :is(button, input, summary, a):focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
-@media (max-width: 600px) { .file-sharing-content { padding: 12px; } .file-sharing-content section { padding: 12px; } }
+
+/* ---------- responsive ---------- */
+@media (min-width: 760px) {
+    .file-sharing-content .fs-connect-grid { grid-template-columns: 1.15fr 1fr; align-items: start; }
+    .file-sharing-content .fs-columns { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 759px) {
+    .file-sharing-content { padding: 12px; }
+    .file-sharing-content section { padding: 12px; }
+    .file-sharing-content .fs-connect-grid { grid-template-columns: 1fr; }
+    .file-sharing-content .transfer { padding: 11px 12px; }
+}
 @media (prefers-color-scheme: light) {
     .file-sharing-standalone { color-scheme: light; --bg: #f5f5f8; --bg2: #fff; --bg3: #eeeef3; --border: #dcdce2; --text: #252530; --text2: #5d5d70; --text3: #76768a; --blue: #4266d5; --red: #ba3434; --red-dim: #fff0ee; }
+    .file-sharing-content .fs-offer { border-left-color: #b57f17; }
+    .file-sharing-content .fs-offer .fs-badge { color: #8a6210; border-color: #b57f17; }
+    .file-sharing-content .fs-offer progress { accent-color: #b57f17; }
 }

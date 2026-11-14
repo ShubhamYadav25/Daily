@@ -3,41 +3,56 @@
 (() => {
     const scriptUrl = document.currentScript?.src || location.href;
     const template = `
-        <div class="fs-intro"><h2>Send files to another device</h2><p>Your files stay on your devices. Choose who to share with and pick up where you left off.</p></div>
-        <section aria-label="Connect devices">
-            <h3>Connect devices</h3>
-            <label>Your name <input data-share="name" class="finput" maxlength="40" placeholder="Guest" autocomplete="off"></label>
-            <div class="actions">
-                <button data-share="create" class="btn primary" disabled>Create room</button>
-                <button data-share="join" class="btn" disabled>Join / rejoin</button>
-                <button data-share="leave" class="btn" disabled>Disconnect</button>
+        <div class="fs-intro"><h2>Send files between devices</h2><p>Files go directly from device to device and stay on your devices. Every connected device can send <em>and</em> receive at the same time — creating or joining a room does not fix who sends. Connect, choose files to send, and accept whatever the other device offers.</p></div>
+        <section class="fs-connect" aria-label="Connect devices">
+            <div class="fs-step-title"><span class="fs-step-num">1</span><h3>Connect the devices</h3></div>
+            <div class="fs-connect-grid">
+                <div class="fs-connect-form">
+                    <label>Your name <span class="fs-label-note">shown on the other devices</span>
+                        <input data-share="name" class="finput" maxlength="40" placeholder="Guest" autocomplete="off">
+                    </label>
+                    <div class="actions">
+                        <button data-share="create" class="btn primary" disabled>Create room</button>
+                        <button data-share="join" class="btn" disabled>Join / rejoin</button>
+                        <button data-share="leave" class="btn" disabled>Disconnect</button>
+                    </div>
+                    <label>Invitation link <span class="fs-label-note">paste the link from the other device, or copy yours</span>
+                        <input data-share="invite" class="finput" placeholder="Paste the link from the other device" autocomplete="off">
+                    </label>
+                    <button data-share="copy" class="btn" disabled>Copy invitation</button>
+                    <details class="fs-settings"><summary>Connection settings</summary>
+                        <label>Connection address <input data-share="server" class="finput" type="url" autocomplete="off"></label>
+                        <p class="hint">Usually you can leave this unchanged.</p>
+                    </details>
+                </div>
+                <div class="fs-connect-side">
+                    <p data-share="connection" class="fs-status" role="status">Not connected</p>
+                    <div class="fs-devices">
+                        <p class="fs-devices-title">Devices in this room</p>
+                        <div data-share="peers" class="peers"></div>
+                    </div>
+                    <div data-share="qr"></div>
+                    <p class="hint">Share your invitation privately. Up to 8 devices can join.</p>
+                    <p data-share="power" class="hint">Keep your devices awake while sharing.</p>
+                </div>
             </div>
-            <label>Invitation link <input data-share="invite" class="finput" placeholder="Paste the link from the other device" autocomplete="off"></label>
-            <button data-share="copy" class="btn" disabled>Copy invitation</button>
-            <div data-share="qr"></div>
-            <details class="fs-settings"><summary>Connection settings</summary>
-                <label>Connection address <input data-share="server" class="finput" type="url" autocomplete="off"></label>
-                <p class="hint">Usually you can leave this unchanged.</p>
-            </details>
-            <p class="hint">Share your invitation privately. Up to 8 devices can join.</p>
-            <p data-share="power" class="hint">Keep your devices awake while sharing.</p>
-            <p data-share="connection" class="fs-status" role="status">Not connected</p>
-            <div data-share="peers" class="peers"></div>
         </section>
-        <section aria-label="Send files">
-            <h3>Send files</h3>
-            <label class="drop" data-share="drop">Choose or drop files
-                <input data-share="files" type="file" multiple disabled>
-            </label>
-            <p class="hint">Each person chooses which files to accept. After reopening Daily, rejoin with the same invitation and choose the original files again to continue.</p>
-            <div data-share="sources"></div>
-        </section>
-        <section aria-label="Received files">
-            <h3>Received files</h3>
-            <p data-share="storage" class="hint" role="status">Checking available space...</p>
-            <p class="hint">Your progress stays on this device. Save completed files before clearing browser data. Some browsers need extra space when saving.</p>
-            <div data-share="transfers"></div>
-        </section>
+        <div class="fs-columns">
+            <section class="fs-pane" aria-label="Send files">
+                <div class="fs-step-title"><span class="fs-step-num">2</span><h3>You send — files chosen here</h3></div>
+                <label class="drop" data-share="drop">Choose or drop files
+                    <input data-share="files" type="file" multiple disabled>
+                </label>
+                <p class="hint">Files stay on this device. Each other device decides which ones to accept. After reopening Daily, rejoin with the same invitation and choose the original files again to continue.</p>
+                <div data-share="sources" class="fs-list" data-empty="No files chosen yet. Pick files above to offer them to the room."></div>
+            </section>
+            <section class="fs-pane" aria-label="Incoming files">
+                <div class="fs-step-title"><span class="fs-step-num">3</span><h3>You receive — offers and saved files</h3></div>
+                <p data-share="storage" class="hint" role="status">Checking available space...</p>
+                <div data-share="transfers" class="fs-list" data-empty="Nothing incoming yet. When another device offers a file, it appears here for you to accept."></div>
+                <p class="hint">Your progress stays on this device. Save completed files before clearing browser data. Some browsers need extra space when saving.</p>
+            </section>
+        </div>
         <p data-share="error" class="fs-error" role="alert" hidden></p>`;
 
     function mount(root, options = {}) {
@@ -132,9 +147,9 @@
             });
         }
 
-        function button(text, action) {
+        function button(text, action, extra = '') {
             const element = document.createElement('button');
-            element.className = 'btn';
+            element.className = ('btn ' + extra).trim();
             element.textContent = text;
             element.onclick = () => run(async () => {
                 element.disabled = true;
@@ -143,28 +158,37 @@
             return element;
         }
 
-        function row(container, title, detail) {
+        function row(container, title, detail, kind) {
             const element = document.createElement('div');
-            element.className = 'transfer';
-            const heading = document.createElement('h3');
-            heading.textContent = title;
+            element.className = 'transfer' + (kind ? ' fs-' + kind : '');
+            const head = document.createElement('div');
+            head.className = 'fs-row-head';
+            const badge = document.createElement('span');
+            badge.className = 'fs-badge';
+            badge.textContent = { send: '↑ You send', offer: '↓ Offer to you', download: '✓ Received' }[kind] || '';
+            const name = document.createElement('span');
+            name.className = 'fs-file-name';
+            name.textContent = title;
+            head.append(badge, name);
             const description = document.createElement('p');
+            description.className = 'fs-file-meta';
             description.textContent = detail;
             const progress = document.createElement('progress');
             progress.max = 1;
             progress.value = 0;
             const status = document.createElement('p');
+            status.className = 'fs-status-line';
             const actions = document.createElement('div');
             actions.className = 'actions';
-            element.append(heading, description, progress, status, actions);
+            element.append(head, description, progress, status, actions);
             container.append(element);
-            return { element, progress, status, actions };
+            return { element, progress, status, actions, description, badge };
         }
 
         function downloadRow(record) {
             let item = downloads.get(record.id);
             if (!item) {
-                item = { record, ui: row($('transfers'), record.meta.name, `${bytes(record.meta.size)} - on this device`), receivers: new Set() };
+                item = { record, ui: row($('transfers'), record.meta.name, `${bytes(record.meta.size)} · saved on this device`, 'download'), receivers: new Set() };
                 downloads.set(record.id, item);
                 item.ui.actions.append(
                     button('Save file', () => exportFile(item)),
@@ -182,6 +206,7 @@
                 );
             }
             item.record = record;
+            item.ui.badge.textContent = record.complete ? '✓ Received' : '↓ Receiving';
             item.ui.progress.value = record.meta.size ? record.bytes / record.meta.size : record.complete ? 1 : 0;
             item.ui.status.textContent = record.complete ? 'Ready to save. Your file has been checked.'
                 : `${bytes(record.bytes)} / ${bytes(record.meta.size)} saved. Waiting for sender; rejoin and accept its offer to resume.`;
@@ -303,14 +328,24 @@
         }
 
         function updatePeers() {
-            $('peers').replaceChildren();
+            const states = { new: 'Connecting', connecting: 'Connecting', connected: 'Connected',
+                disconnected: 'Reconnecting', failed: 'Could not connect', closed: 'Disconnected' };
+            const wrap = $('peers');
+            wrap.replaceChildren();
+            const you = document.createElement('span');
+            you.className = 'peer peer-you';
+            you.textContent = `You: ${$('name').value.trim() || 'Guest'}`;
+            wrap.append(you);
             peers.forEach(peer => {
                 const element = document.createElement('span');
                 element.className = 'peer';
-                const states = { new: 'Connecting', connecting: 'Connecting', connected: 'Connected',
-                    disconnected: 'Reconnecting', failed: 'Could not connect', closed: 'Disconnected' };
-                element.textContent = `${peer.name} - ${peer.network || states[peer.pc.connectionState] || 'Connecting'}`;
-                $('peers').append(element);
+                const state = peer.network || states[peer.pc.connectionState] || 'Connecting';
+                const dot = document.createElement('span');
+                dot.className = 'fs-dot' + (/^Connected/.test(state) ? ' on' : '');
+                const label = document.createElement('span');
+                label.textContent = `${peer.name} · ${state}`;
+                element.append(dot, label);
+                wrap.append(element);
             });
         }
 
@@ -593,6 +628,8 @@
                 offerUi.status.textContent = 'Checking your saved progress and available space...';
                 const record = await rpc('prepare', { room: room.id, meta });
                 const item = downloadRow(record);
+                item.ui.description.textContent = `${bytes(meta.size)} · sent by ${peer.name} · saved on this device`;
+                offerUi.badge.textContent = '↓ Receiving';
                 await checkSpace(Math.max(0, meta.size - record.bytes));
                 if (navigator.storage.persist) {
                     const persistent = await navigator.storage.persist();
@@ -629,9 +666,9 @@
                 if (!validMeta(message.meta)) throw new Error('Invalid file offer');
                 if (peer.offers.has(message.meta.fileId)) return;
                 if (peer.offers.size >= 100) throw new Error('Too many file offers from this device');
-                const ui = row($('transfers'), message.meta.name, `${bytes(message.meta.size)} - offered by ${peer.name}`);
+                const ui = row($('transfers'), message.meta.name, `${bytes(message.meta.size)} · offered by ${peer.name}`, 'offer');
                 ui.status.textContent = 'Waiting for your permission. Nothing is downloaded until you accept.';
-                ui.actions.append(button('Accept / resume', () => accept(peer, message.meta, ui)));
+                ui.actions.append(button('Accept / resume', () => accept(peer, message.meta, ui), 'primary'));
                 peer.offers.set(message.meta.fileId, ui);
             } else if (message.type === 'accepted') {
                 const source = sources.get(message.fileId);
@@ -641,6 +678,7 @@
                 let state = peer.sending.get(message.fileId);
                 if (!state) {
                     const status = document.createElement('p');
+                    status.className = 'fs-peerline';
                     source.ui.element.append(status);
                     state = { source, status, queue: [], pending: new Set(), busy: false, bytes: 0, paused: false };
                     peer.sending.set(message.fileId, state);
@@ -753,6 +791,8 @@
             receive.peer.receive = null;
             receive.stopped = true;
             if (!receive.committing) receive.release();
+            const offerUi = receive.peer.offers.get(receive.meta.fileId);
+            if (offerUi) { offerUi.element.remove(); receive.peer.offers.delete(receive.meta.fileId); }
             await storageStatus();
         }
 
@@ -828,7 +868,7 @@
             fingerprinting = true;
             try {
                 for (const file of files) {
-                    const ui = row($('sources'), file.name, `${bytes(file.size)} - source stays on your device`);
+                    const ui = row($('sources'), file.name, `${bytes(file.size)} · stays on this device`, 'send');
                     ui.status.textContent = 'Preparing your file...';
                     try {
                         const result = await rpc('hash-file', { file }, progress => {
@@ -842,7 +882,7 @@
                         const source = { file, ...result, ui };
                         sources.set(result.meta.fileId, source);
                         ui.progress.value = 1;
-                        ui.status.textContent = 'Ready. Connected devices can accept this file. Keep this page open.';
+                        ui.status.textContent = 'Offered to the room. When a device accepts, its progress shows below.';
                         ui.actions.append(button('Offer again', () => peers.forEach(peer => offer(peer, source))));
                         peers.forEach(peer => offer(peer, source));
                     } catch (failure) {
@@ -897,6 +937,8 @@
                     ? location.origin.replace(/^http/, 'ws') : 'wss://daily-2.onrender.com');
             $('invite').value = options.standalone && location.hash ? location.href : localStorage.getItem('daily_file_invite') || '';
             $('invite').oninput = () => qr.update();
+            $('name').oninput = () => updatePeers();
+            updatePeers();
             $('create').disabled = false;
             $('join').disabled = false;
             $('copy').disabled = false;
