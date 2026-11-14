@@ -10,8 +10,8 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, 'image-editor.js'), 'utf8')
 const tools = context.window.DailyImageTools;
 const plain = value => JSON.parse(JSON.stringify(value));
 
-test('dimensions reject invalid, unsafe and excessive allocations', () => {
-    for (const pair of [[0, 1], [-1, 20], [1.5, 30], [NaN, 2], [Infinity, 2], [20000, 1], [4000, 4000]]) {
+test('dimensions reject invalid and unsafe allocations', () => {
+    for (const pair of [[0, 1], [-1, 20], [1.5, 30], [NaN, 2], [Infinity, 2], [20000, 1]]) {
         assert.throws(() => tools.dimensions(...pair), /dimensions/);
     }
     assert.deepEqual(plain(tools.dimensions(4000, 3000)), { width: 4000, height: 3000 });

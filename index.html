@@ -12157,7 +12157,8 @@
                 const next = { cols: colsRef.current, cards: cardsRef.current, scratch: scratchRef.current, scratchTabs: scratchTabsRef.current };
                 if (joiningRef.current && JSON.stringify(next) === JSON.stringify(syncBaseline.current)) return;
                 const changed = syncEngine.capture(syncBaseline.current, next, {
-                    reviewScratch: deviceSyncRef.current, reviewDeletions: deviceSyncRef.current
+                    reviewScratch: deviceSyncRef.current, reviewDeletions: deviceSyncRef.current,
+                    confirmDeletions: deviceSyncRef.current
                 });
                 syncBaseline.current = next;
                 if (Object.keys(changed).length) {

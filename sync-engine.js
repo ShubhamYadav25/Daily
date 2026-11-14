@@ -192,7 +192,7 @@
             return register;
         }
 
-        function capture(before, after, { reviewScratch = true, reviewDeletions = true } = {}) {
+        function capture(before, after, { reviewScratch = true, reviewDeletions = true, confirmDeletions = false } = {}) {
             const oldFields = flatten(before);
             const newFields = flatten(after);
             const changed = {};
@@ -204,10 +204,18 @@
             newFields.forEach((value, key) => {
                 if (!state[key] || !same(value, oldFields.get(key))) changed[key] = write(key, value, { ...options(key), initialize: !state[key] });
             });
+            const removals = [];
             oldFields.forEach((value, key) => {
                 const [entity, id, field] = JSON.parse(key);
-                if (field === '__deleted' && !newFields.has(key)) changed[key] = write(key, true, options(key));
+                if (field === '__deleted' && !newFields.has(key)) removals.push(key);
                 else if (newFields.has(keyOf(entity, id, '__deleted')) && !newFields.has(key)) changed[key] = write(key, null, options(key));
+            });
+            // remove cards and comments before columns so a column's deletion review record
+            // already covers the newest card deletions and stays self-approved
+            removals.sort((left, right) => (JSON.parse(left)[0] === 'column') - (JSON.parse(right)[0] === 'column'));
+            removals.forEach(key => {
+                const opts = options(key);
+                changed[key] = write(key, true, { ...opts, resolve: confirmDeletions && opts.review });
             });
             return changed;
         }

@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const MAX_PIXELS = 12000000, MAX_TOTAL_PIXELS = 60000000, MAX_IMAGES = 24;
+    const MAX_TOTAL_PIXELS = 60000000;
     const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
     const OPEN_FONTS = [{ family: 'Roboto Condensed', label: 'Roboto Condensed (open source)', package: 'roboto-condensed', version: '5.2.8' }];
     const fontLoads = new Map();
@@ -32,8 +32,8 @@
     }
     function dimensions(width, height) {
         if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 ||
-            width > 16384 || height > 16384 || width * height > MAX_PIXELS) {
-            throw new Error('Use whole-number dimensions from 1 to 16,384, with at most 12 megapixels.');
+            width > 16384 || height > 16384) {
+            throw new Error('Use whole-number dimensions from 1 to 16,384.');
         }
         return { width, height };
     }
@@ -612,16 +612,11 @@
             } finally { c.dispose(); }
         }
         async function bake(base, message) {
-            const total = [...docs.current.values()].reduce((sum, value) => sum + (value === doc() ? 0 : value.base.width * value.base.height), base.width * base.height);
-            if (total > MAX_TOTAL_PIXELS) throw new Error('Workspace limit is 60 megapixels. Remove an image or use smaller dimensions.');
             doc().targets = [];
             await renderState({ base, overlay: { objects: [] }, dpi: doc().dpi, adjustments: ADJUSTMENTS }, true);
             commit(); setNote(message || 'Applied');
         }
         function addCanvas(base, name) {
-            if (docs.current.size >= MAX_IMAGES) throw new Error('The workspace supports up to 24 images. Remove images before importing more.');
-            const total = [...docs.current.values()].reduce((sum, value) => sum + value.base.width * value.base.height, base.width * base.height);
-            if (total > MAX_TOTAL_PIXELS) throw new Error('Workspace limit is 60 megapixels. Remove images before importing more.');
             const id = crypto.randomUUID(), thumbnail = canvasOf(90, Math.max(1, Math.round(90 * base.height / base.width)));
             thumbnail.getContext('2d').drawImage(base, 0, 0, thumbnail.width, thumbnail.height);
             const value = { id, name, base, dpi: 300, adjustments: { ...ADJUSTMENTS }, targets: [], thumbnail: thumbnail.toDataURL(),
@@ -641,14 +636,12 @@
                 let failure;
                 try {
                     for (const file of files) {
-                        if (file.size > 80000000) throw new Error(file.name + ': maximum file size is 80 MB.');
                         if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
                             if (asOverlay) throw new Error('Use a PNG, JPEG, WebP or HEIC image for an overlay.');
                             await loadScript('pdfjsLib', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
                             window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
                             const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
                             try {
-                                if (pdf.numPages + docs.current.size > MAX_IMAGES) throw new Error('This PDF exceeds the remaining 24-image workspace capacity.');
                                 for (let number = 1; number <= pdf.numPages; number++) {
                                     const page = await pdf.getPage(number), viewport = page.getViewport({ scale: 2 });
                                     const base = canvasOf(Math.ceil(viewport.width), Math.ceil(viewport.height));

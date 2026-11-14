@@ -143,6 +143,47 @@ test('card deletion remains visible until resolved and stale peers cannot resurr
     assert.equal(mobile.materialize().cards.TODO.length, 0);
 });
 
+test('confirmed deletions survive a reload and stay approved for peers without newer edits', () => {
+    const mobile = peer('mobile');
+    mobile.capture(empty(), snapshot('abc'));
+    mobile.capture(snapshot('abc'), { cols: snapshot('abc').cols, cards: { TODO: [] }, scratch: '' }, { confirmDeletions: true });
+    assert.equal(mobile.materialize().cards.TODO.length, 0);
+    assert.equal(mobile.materialize().conflicts.length, 0);
+
+    const reloaded = createEngine({ actor: 'mobile-next-session', records: JSON.parse(JSON.stringify(mobile.getRecords())), diffChars });
+    assert.equal(reloaded.materialize().cards.TODO.length, 0);
+    assert.equal(reloaded.materialize().conflicts.length, 0);
+
+    const desktop = createEngine({ actor: 'desktop', records: JSON.parse(JSON.stringify(mobile.getRecords())), diffChars });
+    assert.equal(desktop.materialize().cards.TODO.length, 0);
+    assert.equal(desktop.materialize().conflicts.length, 0);
+});
+
+test('confirmed deletion of every card in a column clears the column without pending conflicts', () => {
+    const engine = peer('solo');
+    const before = { cols: snapshot('abc').cols, cards: { TODO: [snapshot('abc').cards.TODO[0], { ...snapshot('abc').cards.TODO[0], id: 'card-b', task: 'Card B' }] }, scratch: '' };
+    engine.capture(empty(), before);
+    engine.capture(before, { cols: before.cols, cards: { TODO: [] }, scratch: '' }, { confirmDeletions: true });
+    assert.equal(engine.materialize().cards.TODO.length, 0);
+    assert.equal(engine.materialize().conflicts.length, 0);
+
+    const reloaded = createEngine({ actor: 'solo-next-session', records: JSON.parse(JSON.stringify(engine.getRecords())), diffChars });
+    assert.equal(reloaded.materialize().cards.TODO.length, 0);
+    assert.equal(reloaded.materialize().conflicts.length, 0);
+});
+
+test('a peer with unsynced edits keeps a confirmed deletion for review', () => {
+    const mobile = peer('mobile');
+    mobile.capture(empty(), snapshot('abc'));
+    const offline = peer('laptop');
+    offline.capture(empty(), snapshot('abc'));
+    offline.capture(snapshot('abc'), { ...snapshot('def'), cards: { TODO: [{ ...snapshot('abc').cards.TODO[0], content: 'def' }] }, scratch: '' });
+    mobile.capture(snapshot('abc'), { cols: snapshot('abc').cols, cards: { TODO: [] }, scratch: '' }, { confirmDeletions: true });
+    offline.merge(mobile.getRecords());
+    assert.equal(offline.materialize().cards.TODO.length, 1);
+    assert.ok(offline.materialize().conflicts.some(item => item.field === '__deleted'));
+});
+
 test('conflict choices converge across three devices and survive serialization', () => {
     const { desktop, mobile } = paired();
     const laptop = peer('laptop');

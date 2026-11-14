@@ -16,10 +16,20 @@
                         <button data-share="join" class="btn" disabled>Join / rejoin</button>
                         <button data-share="leave" class="btn" disabled>Disconnect</button>
                     </div>
-                    <label>Invitation link <span class="fs-label-note">paste the link from the other device, or copy yours</span>
+                    <label>Invitation link <span class="fs-label-note">paste the link, copy yours, or scan the other device's QR</span>
                         <input data-share="invite" class="finput" placeholder="Paste the link from the other device" autocomplete="off">
                     </label>
-                    <button data-share="copy" class="btn" disabled>Copy invitation</button>
+                    <div class="fs-invite-actions">
+                        <button data-share="copy" class="btn" disabled>Copy invitation</button>
+                        <button data-share="scan" class="btn" title="Scan the invitation QR code with your camera" aria-label="Scan the invitation QR code with your camera">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                            Scan QR</button>
+                    </div>
+                    <div data-share="scanner" class="fs-scanner" hidden>
+                        <video data-share="scanvideo" autoplay playsinline muted aria-label="Camera preview for scanning the invitation QR code"></video>
+                        <p data-share="scanstatus" class="fs-scanstatus" role="status">Starting camera...</p>
+                        <div class="actions"><button data-share="scanclose" class="btn">Stop camera</button></div>
+                    </div>
                     <details class="fs-settings"><summary>Connection settings</summary>
                         <label>Connection address <input data-share="server" class="finput" type="url" autocomplete="off"></label>
                         <p class="hint">Usually you can leave this unchanged.</p>
@@ -67,6 +77,7 @@
         let worker, supported = false, room, socket, ice, reconnectTimer, intentional = true;
         let requestNumber = 0, reconnectAttempt = 0, wakeLock, wakeLockDenied = false, fingerprinting = false;
         let peerId, disposed = false, workerUrl, connectionError = false;
+        let scanStream = null, scanLoop = 0, scanLibrary = null;
 
         function error(reason) {
             if (disposed) return;
@@ -96,6 +107,7 @@
             if (/256 GiB/i.test(message)) return 'This file is too large to share here. Choose a smaller file.';
             if (/file names/i.test(message)) return 'Choose a file with a name no longer than 255 characters.';
             if (/pause|wait|100 files|not complete|file to finish|busy in another tab/i.test(message)) return message;
+            if (/camera|QR/i.test(message)) return message;
             return 'This step could not be completed. Your saved progress is kept. Try again.';
         }
 
@@ -894,6 +906,93 @@
             } finally { fingerprinting = false; }
         }
 
+        function loadJsQr() {
+            if (typeof window.jsQR !== 'undefined') return Promise.resolve(window.jsQR);
+            if (scanLibrary) return scanLibrary;
+            scanLibrary = new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+                script.onload = () => {
+                    if (typeof window.jsQR !== 'undefined') resolve(window.jsQR);
+                    else { scanLibrary = null; reject(new Error('The QR scanner library did not load. Reload Daily and try again.')); }
+                };
+                script.onerror = () => {
+                    scanLibrary = null;
+                    reject(new Error('Could not load the QR scanner. Connect to the internet once, then try again. You can always paste the invitation link instead.'));
+                };
+                document.head.append(script);
+            });
+            return scanLibrary;
+        }
+
+        function stopScanner() {
+            if (scanLoop) { cancelAnimationFrame(scanLoop); scanLoop = 0; }
+            if (scanStream) {
+                scanStream.getTracks().forEach(track => track.stop());
+                scanStream = null;
+            }
+            const scanner = $('scanner');
+            if (scanner) {
+                scanner.hidden = true;
+                const video = $('scanvideo');
+                if (video) video.srcObject = null;
+            }
+        }
+
+        async function startScanner() {
+            stopScanner();
+            $('scanner').hidden = false;
+            $('scanstatus').textContent = 'Starting camera...';
+            const video = $('scanvideo');
+            if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+                $('scanstatus').textContent = 'The camera needs HTTPS or localhost here. Paste the invitation link instead.';
+                return;
+            }
+            try { await loadJsQr(); }
+            catch (failure) { $('scanstatus').textContent = failure.message; return; }
+            try {
+                scanStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
+                    facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+            } catch (failure) {
+                const messages = {
+                    NotAllowedError: 'Camera permission denied. Allow camera access for this site, then try again.',
+                    NotFoundError: 'No camera found on this device. Paste the invitation link instead.',
+                    NotReadableError: 'The camera is in use by another application. Close it and try again.',
+                    OverconstrainedError: 'The selected camera is unavailable. Try again.'
+                };
+                $('scanstatus').textContent = messages[failure.name] || 'Could not open the camera. Paste the invitation link instead.';
+                return;
+            }
+            if (disposed) { scanStream.getTracks().forEach(track => track.stop()); scanStream = null; return; }
+            video.srcObject = scanStream;
+            await video.play().catch(() => { });
+            $('scanstatus').textContent = 'Point the camera at the invitation QR code.';
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d', { willReadFrequently: true });
+            const tick = () => {
+                if (!scanStream || disposed) return;
+                if (video.readyState >= 2 && video.videoWidth) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    context.drawImage(video, 0, 0);
+                    let code = null;
+                    try {
+                        code = window.jsQR(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+                    } catch { code = null; }
+                    if (code && code.data) {
+                        stopScanner();
+                        $('invite').value = code.data;
+                        qr.update();
+                        $('connection').textContent = 'Invitation scanned. Joining...';
+                        run(() => join(readInvitation(code.data)));
+                        return;
+                    }
+                }
+                scanLoop = requestAnimationFrame(tick);
+            };
+            scanLoop = requestAnimationFrame(tick);
+        }
+
         async function initialize() {
             if (!window.isSecureContext || !window.RTCPeerConnection || !crypto.subtle || !crypto.randomUUID) throw new Error('File sharing requires HTTPS (or localhost) and an up-to-date browser with WebRTC support.');
             peerId = sessionStorage.getItem('daily_file_peer') || crypto.randomUUID();
@@ -948,6 +1047,8 @@
             });
             $('join').onclick = () => run(() => join(readInvitation($('invite').value)));
             $('leave').onclick = disconnect;
+            $('scan').onclick = () => run(startScanner);
+            $('scanclose').onclick = stopScanner;
             $('copy').onclick = () => run(async () => {
                 readInvitation($('invite').value);
                 await navigator.clipboard.writeText($('invite').value);
@@ -985,6 +1086,7 @@
             destroy() {
                 disconnect();
                 disposed = true;
+                stopScanner();
                 document.removeEventListener('visibilitychange', onVisibility);
                 window.removeEventListener('beforeunload', onBeforeUnload);
                 if (wakeLock) wakeLock.release().catch(failure => console.warn('Could not release screen wake lock:', failure));
